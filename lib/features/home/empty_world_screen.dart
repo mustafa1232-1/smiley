@@ -1384,6 +1384,15 @@ class _MoreHubTabV2 extends StatelessWidget {
         ),
       ),
       _MoreItem(
+        'صباح ومساء',
+        Icons.wb_twilight_rounded,
+        () => guarded(
+          'صباح ومساء',
+          Icons.wb_twilight_rounded,
+          () => _DailyRitualsScreen(repository: repository),
+        ),
+      ),
+      _MoreItem(
         'الشجرة اليومية',
         Icons.park_outlined,
         () => guarded(
@@ -1478,6 +1487,330 @@ class _PartnerRequiredScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _DailyRitualsScreen extends StatefulWidget {
+  const _DailyRitualsScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_DailyRitualsScreen> createState() => _DailyRitualsScreenState();
+}
+
+class _DailyRitualsScreenState extends State<_DailyRitualsScreen> {
+  static const _morningType = 'daily.good_morning';
+  static const _nightType = 'daily.good_night';
+
+  late Future<_DailyRitualData> _future = _load();
+  final _morningMessage = TextEditingController();
+  final _nightReflection = TextEditingController();
+  bool _ready = false;
+  bool _morningEnabled = true;
+  bool _nightEnabled = true;
+  TimeOfDay _morningTime = const TimeOfDay(hour: 7, minute: 30);
+  TimeOfDay _nightTime = const TimeOfDay(hour: 22, minute: 30);
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _morningMessage.dispose();
+    _nightReflection.dispose();
+    super.dispose();
+  }
+
+  Future<_DailyRitualData> _load() async {
+    final summary = await widget.repository.summary();
+    final occasions = await widget.repository.occasions();
+    final preferences = await widget.repository.notificationPreferences();
+    return _DailyRitualData(
+      summary: summary,
+      nextOccasion: _nextOccasion(occasions),
+      preferences: {
+        for (final preference in preferences) preference.type: preference,
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('صباح ومساء')),
+      body: FutureBuilder<_DailyRitualData>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final data = snapshot.requireData;
+          if (!_ready) {
+            final morning = data.preferences[_morningType];
+            final night = data.preferences[_nightType];
+            _morningEnabled = morning?.enabled ?? true;
+            _nightEnabled = night?.enabled ?? true;
+            _morningTime = _timeFromClock(morning?.quietFrom) ?? _morningTime;
+            _nightTime = _timeFromClock(night?.quietFrom) ?? _nightTime;
+            _ready = true;
+          }
+
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              _SectionHeader(
+                icon: Icons.wb_twilight_rounded,
+                title: 'تجربة يومية اختيارية',
+                subtitle: data.summary.daysTogether == null
+                    ? 'ابدأا بعادة صغيرة مشتركة.'
+                    : 'اليوم ${data.summary.daysTogether} معاً',
+              ),
+              if (data.nextOccasion != null) ...[
+                const SizedBox(height: 12),
+                _InfoTile(
+                  icon: Icons.event_available_outlined,
+                  title: 'المناسبة القادمة',
+                  subtitle:
+                      '${data.nextOccasion!.title} - ${_date(data.nextOccasion!.date)}',
+                ),
+              ],
+              const SizedBox(height: 16),
+              SwitchListTile(
+                value: _morningEnabled,
+                onChanged: (value) => setState(() => _morningEnabled = value),
+                title: const Text('تفعيل صباح الخير'),
+                subtitle: Text('وقت التذكير ${_clockLabel(_morningTime)}'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.schedule_rounded),
+                title: const Text('وقت الصباح'),
+                trailing: Text(_clockLabel(_morningTime)),
+                onTap: () => _pickTime(true),
+              ),
+              TextField(
+                controller: _morningMessage,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'رسالة تظهر في الصباح',
+                  prefixIcon: Icon(Icons.schedule_send_rounded),
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _busy ? null : _scheduleMorningMessage,
+                icon: const Icon(Icons.send_time_extension_rounded),
+                label: const Text('جدولة للصباح القادم'),
+              ),
+              const Divider(height: 32),
+              SwitchListTile(
+                value: _nightEnabled,
+                onChanged: (value) => setState(() => _nightEnabled = value),
+                title: const Text('تفعيل قبل النوم'),
+                subtitle: Text('وقت التذكير ${_clockLabel(_nightTime)}'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.nightlight_round),
+                title: const Text('وقت المساء'),
+                trailing: Text(_clockLabel(_nightTime)),
+                onTap: () => _pickTime(false),
+              ),
+              TextField(
+                controller: _nightReflection,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'ما أجمل شيء حدث اليوم؟',
+                  prefixIcon: Icon(Icons.park_outlined),
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _busy ? null : _saveNightReflection,
+                icon: const Icon(Icons.eco_outlined),
+                label: const Text('حفظ كورقة اليوم'),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ActionChip(
+                    avatar: const Text('🙂'),
+                    label: const Text('هادئ'),
+                    onPressed: _busy ? null : () => _setNightMood('calm', '🙂'),
+                  ),
+                  ActionChip(
+                    avatar: const Text('😴'),
+                    label: const Text('نعسان'),
+                    onPressed: _busy
+                        ? null
+                        : () => _setNightMood('sleepy', '😴'),
+                  ),
+                  ActionChip(
+                    avatar: const Text('💛'),
+                    label: const Text('ممتن'),
+                    onPressed: _busy
+                        ? null
+                        : () => _setNightMood('grateful', '💛'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _savePreferences,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('حفظ إعدادات التذكير'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _pickTime(bool morning) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: morning ? _morningTime : _nightTime,
+    );
+    if (picked == null) return;
+    setState(() {
+      if (morning) {
+        _morningTime = picked;
+      } else {
+        _nightTime = picked;
+      }
+    });
+  }
+
+  Future<void> _savePreferences() async {
+    setState(() => _busy = true);
+    try {
+      await widget.repository.updateNotificationPreference(
+        type: _morningType,
+        enabled: _morningEnabled,
+        quietFrom: _clockValue(_morningTime),
+        quietTo: _clockValue(_morningTime),
+      );
+      await widget.repository.updateNotificationPreference(
+        type: _nightType,
+        enabled: _nightEnabled,
+        quietFrom: _clockValue(_nightTime),
+        quietTo: _clockValue(_nightTime),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ إعدادات الصباح والمساء.')),
+      );
+      setState(() {
+        _ready = false;
+        _future = _load();
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _scheduleMorningMessage() async {
+    final body = _morningMessage.text.trim();
+    if (body.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      await widget.repository.scheduleMessage(
+        body: body,
+        sendAt: _nextDateTime(_morningTime),
+      );
+      _morningMessage.clear();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تمت جدولة الرسالة للصباح القادم.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveNightReflection() async {
+    final body = _nightReflection.text.trim();
+    if (body.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      await widget.repository.createTreeLeaf(title: 'قبل النوم', body: body);
+      _nightReflection.clear();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تم حفظ ورقة قبل النوم.')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setNightMood(String kind, String emoji) async {
+    setState(() => _busy = true);
+    try {
+      await widget.repository.createMood(
+        kind: kind,
+        emoji: emoji,
+        note: 'مزاج نهاية اليوم',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تسجيل مزاج نهاية اليوم.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+}
+
+class _DailyRitualData {
+  const _DailyRitualData({
+    required this.summary,
+    required this.preferences,
+    this.nextOccasion,
+  });
+
+  final SpaceSummary summary;
+  final OccasionItem? nextOccasion;
+  final Map<String, NotificationPreferenceModel> preferences;
+}
+
+OccasionItem? _nextOccasion(List<OccasionItem> occasions) {
+  final now = DateTime.now();
+  final upcoming = occasions.where((item) => item.date.isAfter(now)).toList()
+    ..sort((a, b) => a.date.compareTo(b.date));
+  return upcoming.isEmpty ? null : upcoming.first;
+}
+
+TimeOfDay? _timeFromClock(String? value) {
+  if (value == null) return null;
+  final parts = value.split(':');
+  if (parts.length != 2) return null;
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+  if (hour == null || minute == null) return null;
+  return TimeOfDay(hour: hour, minute: minute);
+}
+
+String _clockValue(TimeOfDay value) {
+  return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+}
+
+String _clockLabel(TimeOfDay value) => _clockValue(value);
+
+DateTime _nextDateTime(TimeOfDay value) {
+  final now = DateTime.now();
+  var scheduled = DateTime(
+    now.year,
+    now.month,
+    now.day,
+    value.hour,
+    value.minute,
+  );
+  if (!scheduled.isAfter(now)) {
+    scheduled = scheduled.add(const Duration(days: 1));
+  }
+  return scheduled;
 }
 
 class _RelationshipSummaryScreen extends StatefulWidget {
