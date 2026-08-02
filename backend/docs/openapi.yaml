@@ -395,6 +395,29 @@ paths:
       responses:
         "200":
           description: Updated
+  /games:
+    get:
+      summary: List shared games
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Games
+    post:
+      summary: Create X/O game
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /games/{id}/moves:
+    post:
+      summary: Play X/O move
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated game
   /places:
     get:
       summary: List places

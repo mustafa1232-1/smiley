@@ -47,6 +47,7 @@ Event types:
 - `wish.created`
 - `goal.created`
 - `shared_list.created`
+- `game.updated`
 - `place.created`
 - `album.created`
 - `time_capsule.created`

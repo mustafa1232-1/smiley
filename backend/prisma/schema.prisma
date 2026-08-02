@@ -214,6 +214,7 @@ model Partnership {
   places      Place[]
   musicRooms  MusicRoom[]
   watchRooms  WatchRoom[]
+  games       GameSession[]
   sharedLists SharedList[]
   notifications Notification[]
   reports     Report[]
@@ -698,6 +699,23 @@ model WatchProgress {
   positionMs  Int
   updatedAt   DateTime  @updatedAt
   watchRoom   WatchRoom @relation(fields: [watchRoomId], references: [id], onDelete: Cascade)
+}
+
+model GameSession {
+  id                String      @id @default(uuid()) @db.Uuid
+  partnershipId     String      @db.Uuid
+  gameType          String
+  status            String      @default("active")
+  state             Json
+  currentTurnUserId String?     @db.Uuid
+  winnerUserId      String?     @db.Uuid
+  createdById       String      @db.Uuid
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  partnership       Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+
+  @@index([partnershipId, updatedAt])
+  @@index([partnershipId, status])
 }
 
 model SharedList {

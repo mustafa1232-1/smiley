@@ -56,6 +56,12 @@ abstract interface class SpaceRepository {
     required String title,
   });
   Future<void> toggleSharedListItem(String id);
+  Future<List<GameSessionModel>> games();
+  Future<GameSessionModel> createGame();
+  Future<GameSessionModel> playGameMove({
+    required String gameId,
+    required int position,
+  });
   Future<List<PlaceItem>> places();
   Future<void> createPlace(String title);
   Future<List<AlbumModel>> albums();
@@ -325,6 +331,29 @@ class HttpSpaceRepository implements SpaceRepository {
   @override
   Future<void> toggleSharedListItem(String id) async {
     await _api.postJson('/shared-list-items/$id/toggle', {});
+  }
+
+  @override
+  Future<List<GameSessionModel>> games() async {
+    final json = await _api.getJson('/games');
+    return _items(json).map(GameSessionModel.fromJson).toList();
+  }
+
+  @override
+  Future<GameSessionModel> createGame() async {
+    final json = await _api.postJson('/games', {'gameType': 'tic_tac_toe'});
+    return GameSessionModel.fromJson(json['game'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<GameSessionModel> playGameMove({
+    required String gameId,
+    required int position,
+  }) async {
+    final json = await _api.postJson('/games/$gameId/moves', {
+      'position': position,
+    });
+    return GameSessionModel.fromJson(json['game'] as Map<String, dynamic>);
   }
 
   @override
@@ -803,6 +832,40 @@ class SharedListEntry {
       id: json['id'] as String,
       title: json['title'] as String,
       completed: json['completedAt'] != null,
+    );
+  }
+}
+
+class GameSessionModel {
+  const GameSessionModel({
+    required this.id,
+    required this.status,
+    required this.board,
+    this.currentTurnUserId,
+    this.winnerUserId,
+  });
+
+  final String id;
+  final String status;
+  final List<String?> board;
+  final String? currentTurnUserId;
+  final String? winnerUserId;
+
+  bool get finished => status == 'finished';
+
+  factory GameSessionModel.fromJson(Map<String, dynamic> json) {
+    final board = (json['board'] as List<dynamic>? ?? [])
+        .map((item) => item?.toString())
+        .toList();
+    while (board.length < 9) {
+      board.add(null);
+    }
+    return GameSessionModel(
+      id: json['id'] as String,
+      status: json['status'] as String? ?? 'active',
+      board: board.take(9).toList(),
+      currentTurnUserId: json['currentTurnUserId'] as String?,
+      winnerUserId: json['winnerUserId'] as String?,
     );
   }
 }

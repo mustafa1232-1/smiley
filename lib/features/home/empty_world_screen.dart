@@ -1125,6 +1125,15 @@ class _MoreHubTabV2 extends StatelessWidget {
         ),
       ),
       _MoreItem(
+        'Ø§Ù„Ø£Ù„Ø¹Ø§Ø¨',
+        Icons.grid_3x3_rounded,
+        () => guarded(
+          'Ø§Ù„Ø£Ù„Ø¹Ø§Ø¨',
+          Icons.grid_3x3_rounded,
+          () => _GamesScreen(repository: repository),
+        ),
+      ),
+      _MoreItem(
         'الأمان والدعم',
         Icons.shield_outlined,
         () => _SafetyScreen(repository: repository),
@@ -2167,6 +2176,121 @@ class _SharedListsScreenState extends State<_SharedListsScreen> {
   Future<void> _toggleItem(String id) async {
     await widget.repository.toggleSharedListItem(id);
     setState(() => _future = widget.repository.sharedLists());
+  }
+}
+
+class _GamesScreen extends StatefulWidget {
+  const _GamesScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_GamesScreen> createState() => _GamesScreenState();
+}
+
+class _GamesScreenState extends State<_GamesScreen> {
+  late Future<List<GameSessionModel>> _future = widget.repository.games();
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الألعاب')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _busy ? null : _createGame,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('لعبة جديدة'),
+      ),
+      body: FutureBuilder<List<GameSessionModel>>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final games = snapshot.requireData;
+          if (games.isEmpty) {
+            return const Center(child: Text('لا توجد ألعاب بعد.'));
+          }
+          final game = games.first;
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              _SectionHeader(
+                icon: Icons.grid_3x3_rounded,
+                title: 'X/O',
+                subtitle: game.finished ? 'انتهت اللعبة' : 'اللعبة مستمرة',
+              ),
+              const SizedBox(height: 16),
+              AspectRatio(
+                aspectRatio: 1,
+                child: GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                  ),
+                  itemCount: 9,
+                  itemBuilder: (context, index) {
+                    final value = game.board[index];
+                    return FilledButton.tonal(
+                      onPressed: _busy || game.finished || value != null
+                          ? null
+                          : () => _play(game.id, index),
+                      child: Text(
+                        value?.toUpperCase() ?? '',
+                        style: Theme.of(context).textTheme.displayMedium,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (game.winnerUserId != null)
+                const _EmptyLine(
+                  text: 'هناك فائز في هذه الجولة.',
+                  color: Colors.green,
+                )
+              else if (game.finished)
+                const _EmptyLine(
+                  text: 'انتهت الجولة بالتعادل.',
+                  color: Colors.grey,
+                )
+              else
+                const _EmptyLine(
+                  text: 'اضغط على خانة عندما يكون الدور لك.',
+                  color: Colors.grey,
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _createGame() async {
+    setState(() => _busy = true);
+    try {
+      await widget.repository.createGame();
+      setState(() => _future = widget.repository.games());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _play(String gameId, int position) async {
+    setState(() => _busy = true);
+    try {
+      await widget.repository.playGameMove(gameId: gameId, position: position);
+      setState(() => _future = widget.repository.games());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 

@@ -311,6 +311,30 @@ Adds an item to a shared list.
 
 Toggles shared list item completion.
 
+### `GET /games`
+
+Lists recent shared games for the active partnership.
+
+### `POST /games`
+
+Creates a persisted X/O game session.
+
+```json
+{
+  "gameType": "tic_tac_toe"
+}
+```
+
+### `POST /games/:id/moves`
+
+Plays one X/O move. The backend validates turn order, occupied cells, winner detection, and draw state.
+
+```json
+{
+  "position": 4
+}
+```
+
 ### `GET /places`
 
 Lists saved places for the memory map.

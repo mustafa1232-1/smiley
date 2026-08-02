@@ -316,6 +316,30 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<List<GoalItem>> goals() async => [];
 
   @override
+  Future<List<GameSessionModel>> games() async => [];
+
+  @override
+  Future<GameSessionModel> createGame() async {
+    return const GameSessionModel(
+      id: 'game',
+      status: 'active',
+      board: [null, null, null, null, null, null, null, null, null],
+    );
+  }
+
+  @override
+  Future<GameSessionModel> playGameMove({
+    required String gameId,
+    required int position,
+  }) async {
+    return GameSessionModel(
+      id: gameId,
+      status: 'active',
+      board: List<String?>.filled(9, null)..[position] = 'x',
+    );
+  }
+
+  @override
   Future<UserProfile> me() async {
     return const UserProfile(
       id: 'user-id',

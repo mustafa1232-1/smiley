@@ -86,6 +86,14 @@ const sharedListItemSchema = z.object({
   title: z.string().trim().min(1).max(160)
 });
 
+const gameCreateSchema = z.object({
+  gameType: z.literal('tic_tac_toe').default('tic_tac_toe')
+});
+
+const gameMoveSchema = z.object({
+  position: z.number().int().min(0).max(8)
+});
+
 const placeSchema = z.object({
   title: z.string().trim().min(1).max(120),
   latitude: z.number().min(-90).max(90).optional(),
@@ -868,6 +876,82 @@ spaceRouter.post('/shared-list-items/:id/toggle', requireAuth, async (request, r
   response.json({ item: updated });
 });
 
+spaceRouter.get('/games', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const items = await prisma.gameSession.findMany({
+    where: { partnershipId: partnership.id },
+    orderBy: { updatedAt: 'desc' },
+    take: 20
+  });
+  response.json({ items: items.map(serializeGameSession) });
+});
+
+spaceRouter.post('/games', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = gameCreateSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const gamePlayers = [
+    userId,
+    ...partnership.members.map((member) => member.userId).filter((id) => id !== userId)
+  ].slice(0, 2);
+
+  const game = await prisma.gameSession.create({
+    data: {
+      partnershipId: partnership.id,
+      gameType: input.gameType,
+      status: 'active',
+      state: initialTicTacToeState(gamePlayers),
+      currentTurnUserId: gamePlayers[0],
+      createdById: userId
+    }
+  });
+  emitToPartnership('game.updated', userId, partnership.id, { gameId: game.id });
+  response.status(201).json({ game: serializeGameSession(game) });
+});
+
+spaceRouter.post('/games/:id/moves', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = gameMoveSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+
+  const game = await prisma.$transaction(async (tx) => {
+    const existing = await tx.gameSession.findFirst({
+      where: {
+        id: routeParam(request.params.id),
+        partnershipId: partnership.id
+      }
+    });
+    if (!existing) {
+      throw new AppError(404, 'game_not_found', 'Ø§Ù„Ù„Ø¹Ø¨Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©');
+    }
+    if (existing.status !== 'active') {
+      throw new AppError(409, 'game_finished', 'Ø§Ù†ØªÙ‡Øª Ø§Ù„Ù„Ø¹Ø¨Ø©');
+    }
+    if (existing.currentTurnUserId !== userId) {
+      throw new AppError(409, 'not_your_turn', 'Ù„ÙŠØ³ Ø¯ÙˆØ±Ùƒ Ø§Ù„Ø¢Ù†');
+    }
+
+    const next = applyTicTacToeMove(
+      normalizeTicTacToeState(existing.state, partnership.members.map((member) => member.userId)),
+      userId,
+      input.position
+    );
+
+    return tx.gameSession.update({
+      where: { id: existing.id },
+      data: {
+        state: next.state as Prisma.InputJsonValue,
+        status: next.status,
+        winnerUserId: next.winnerUserId,
+        currentTurnUserId: next.currentTurnUserId
+      }
+    });
+  });
+
+  emitToPartnership('game.updated', userId, partnership.id, { gameId: game.id });
+  response.json({ game: serializeGameSession(game) });
+});
+
 spaceRouter.get('/places', requireAuth, async (request, response) => {
   const partnership = await requireActivePartnership(request.user!.sub);
   const items = await prisma.place.findMany({
@@ -1253,6 +1337,121 @@ async function markMessageReceipt(
       readAt: mode === 'read' ? now : undefined
     }
   });
+}
+
+type TicTacToeState = {
+  board: Array<string | null>;
+  players: string[];
+  symbols: Record<string, 'x' | 'o'>;
+};
+
+function initialTicTacToeState(players: string[]): Prisma.InputJsonValue {
+  const orderedPlayers = players.slice(0, 2);
+  return {
+    board: Array<string | null>(9).fill(null),
+    players: orderedPlayers,
+    symbols: {
+      ...(orderedPlayers[0] ? { [orderedPlayers[0]]: 'x' } : {}),
+      ...(orderedPlayers[1] ? { [orderedPlayers[1]]: 'o' } : {})
+    }
+  };
+}
+
+function normalizeTicTacToeState(value: unknown, players: string[]): TicTacToeState {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const board = Array.isArray(raw.board)
+    ? raw.board.map((cell) => (cell === 'x' || cell === 'o' ? cell : null)).slice(0, 9)
+    : [];
+  while (board.length < 9) board.push(null);
+
+  const normalizedPlayers = Array.isArray(raw.players)
+    ? raw.players.map(String).slice(0, 2)
+    : players.slice(0, 2);
+  const symbols = raw.symbols && typeof raw.symbols === 'object'
+    ? (raw.symbols as Record<string, 'x' | 'o'>)
+    : {
+        ...(normalizedPlayers[0] ? { [normalizedPlayers[0]]: 'x' as const } : {}),
+        ...(normalizedPlayers[1] ? { [normalizedPlayers[1]]: 'o' as const } : {})
+      };
+
+  return { board, players: normalizedPlayers, symbols };
+}
+
+function applyTicTacToeMove(
+  state: TicTacToeState,
+  userId: string,
+  position: number
+) {
+  const symbol = state.symbols[userId];
+  if (!symbol) {
+    throw new AppError(403, 'not_game_player', 'Ù„Ø³Øª Ù„Ø§Ø¹Ø¨Ø§Ù‹ ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„Ù„Ø¹Ø¨Ø©');
+  }
+  if (state.board[position]) {
+    throw new AppError(409, 'cell_taken', 'Ø§Ù„Ø®Ø§Ù†Ø© Ù…Ø­Ø¬ÙˆØ²Ø©');
+  }
+
+  const board = [...state.board];
+  board[position] = symbol;
+  const winningSymbol = ticTacToeWinner(board);
+  const winnerUserId = winningSymbol
+    ? Object.entries(state.symbols).find(([, value]) => value === winningSymbol)?.[0] ?? null
+    : null;
+  const draw = !winnerUserId && board.every(Boolean);
+  const nextUserId = state.players.find((player) => player !== userId) ?? null;
+  const finished = Boolean(winnerUserId || draw || !nextUserId);
+
+  return {
+    state: { ...state, board },
+    status: finished ? 'finished' : 'active',
+    winnerUserId,
+    currentTurnUserId: finished ? null : nextUserId
+  };
+}
+
+function ticTacToeWinner(board: Array<string | null>) {
+  const lines = [
+    [0, 1, 2],
+    [3, 4, 5],
+    [6, 7, 8],
+    [0, 3, 6],
+    [1, 4, 7],
+    [2, 5, 8],
+    [0, 4, 8],
+    [2, 4, 6]
+  ];
+  for (const [a, b, c] of lines) {
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+      return board[a];
+    }
+  }
+  return null;
+}
+
+function serializeGameSession(game: {
+  id: string;
+  gameType: string;
+  status: string;
+  state: Prisma.JsonValue;
+  currentTurnUserId: string | null;
+  winnerUserId: string | null;
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  const state = normalizeTicTacToeState(game.state, []);
+  return {
+    id: game.id,
+    gameType: game.gameType,
+    status: game.status,
+    board: state.board,
+    players: state.players,
+    symbols: state.symbols,
+    currentTurnUserId: game.currentTurnUserId,
+    winnerUserId: game.winnerUserId,
+    createdById: game.createdById,
+    createdAt: game.createdAt,
+    updatedAt: game.updatedAt
+  };
 }
 
 function serializePost(post: {
