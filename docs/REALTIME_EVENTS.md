@@ -31,6 +31,7 @@ Event types:
 - `user.typing.started`
 - `user.typing.stopped`
 - `message.created`
+- `message.scheduled`
 - `message.updated`
 - `message.deleted`
 - `message.delivered`

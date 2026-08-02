@@ -34,6 +34,11 @@ abstract interface class SpaceRepository {
   });
   Future<List<ChatMessage>> messages();
   Future<ChatMessage> sendMessage(String body, {List<String> assetIds});
+  Future<List<ScheduledMessageModel>> scheduledMessages();
+  Future<void> scheduleMessage({
+    required String body,
+    required DateTime sendAt,
+  });
   Future<void> readAllMessages();
   Future<List<CalendarItem>> calendarEvents();
   Future<CalendarItem> createCalendarEvent({
@@ -230,6 +235,23 @@ class HttpSpaceRepository implements SpaceRepository {
       if (assetIds.isNotEmpty) 'assetIds': assetIds,
     });
     return ChatMessage.fromJson(json['message'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<ScheduledMessageModel>> scheduledMessages() async {
+    final json = await _api.getJson('/messages/scheduled');
+    return _items(json).map(ScheduledMessageModel.fromJson).toList();
+  }
+
+  @override
+  Future<void> scheduleMessage({
+    required String body,
+    required DateTime sendAt,
+  }) async {
+    await _api.postJson('/messages/scheduled', {
+      'body': body.trim(),
+      'sendAt': sendAt.toUtc().toIso8601String(),
+    });
   }
 
   @override
@@ -707,6 +729,29 @@ class ChatMessage {
       senderUsername: sender?['username'] as String?,
       deliveredAt: _optionalDate(json['deliveredAt']),
       readAt: _optionalDate(json['readAt']),
+    );
+  }
+}
+
+class ScheduledMessageModel {
+  const ScheduledMessageModel({
+    required this.id,
+    required this.body,
+    required this.sendAt,
+    this.sentAt,
+  });
+
+  final String id;
+  final String body;
+  final DateTime sendAt;
+  final DateTime? sentAt;
+
+  factory ScheduledMessageModel.fromJson(Map<String, dynamic> json) {
+    return ScheduledMessageModel(
+      id: json['id'] as String,
+      body: json['body'] as String? ?? '',
+      sendAt: DateTime.parse(json['sendAt'] as String).toLocal(),
+      sentAt: _optionalDate(json['sentAt'])?.toLocal(),
     );
   }
 }

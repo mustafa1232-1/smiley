@@ -771,6 +771,7 @@ class _ChatTab extends StatefulWidget {
 
 class _ChatTabState extends State<_ChatTab> {
   late Future<List<ChatMessage>> _messages = _loadMessages();
+  late Future<List<ScheduledMessageModel>> _scheduled = _loadScheduled();
   final _message = TextEditingController();
   final List<MediaAssetModel> _attachments = [];
   bool _sending = false;
@@ -844,6 +845,23 @@ class _ChatTabState extends State<_ChatTab> {
             },
           ),
         ),
+        FutureBuilder<List<ScheduledMessageModel>>(
+          future: _scheduled,
+          builder: (context, snapshot) {
+            final items = snapshot.data ?? const <ScheduledMessageModel>[];
+            if (items.isEmpty) return const SizedBox.shrink();
+            return Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: _InfoTile(
+                icon: Icons.schedule_send_rounded,
+                title: 'رسائل مجدولة',
+                subtitle:
+                    '${items.length} قادمة - التالية ${_date(items.first.sendAt)}',
+              ),
+            );
+          },
+        ),
         SafeArea(
           top: false,
           child: Padding(
@@ -874,6 +892,12 @@ class _ChatTabState extends State<_ChatTab> {
                     ),
                     onSubmitted: (_) => _send(),
                   ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.outlined(
+                  tooltip: 'جدولة الرسالة',
+                  onPressed: (_sending || _uploading) ? null : _schedule,
+                  icon: const Icon(Icons.schedule_send_rounded),
                 ),
                 const SizedBox(width: 8),
                 IconButton.filled(
@@ -944,6 +968,15 @@ class _ChatTabState extends State<_ChatTab> {
     ];
   }
 
+  Future<List<ScheduledMessageModel>> _loadScheduled() async {
+    try {
+      return widget.repository.scheduledMessages();
+    } on ApiException catch (error) {
+      if (error.code == 'network_error') return const [];
+      rethrow;
+    }
+  }
+
   Future<void> _syncPendingMessages() async {
     final pending = await widget.offlineOutbox.messages();
     for (final message in pending) {
@@ -957,6 +990,60 @@ class _ChatTabState extends State<_ChatTab> {
         if (error.code == 'network_error') return;
         await widget.offlineOutbox.removeMessage(message.id);
       }
+    }
+  }
+
+  Future<void> _schedule() async {
+    final body = _message.text.trim();
+    if (body.isEmpty) return;
+    if (_attachments.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('جدولة الرسائل النصية فقط حالياً.')),
+      );
+      return;
+    }
+
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now.add(const Duration(days: 1)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365 * 5)),
+    );
+    if (date == null || !mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))),
+    );
+    if (time == null) return;
+
+    final sendAt = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    if (sendAt.isBefore(now)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('اختر وقتاً مستقبلياً للإرسال.')),
+      );
+      return;
+    }
+
+    setState(() => _sending = true);
+    try {
+      await widget.repository.scheduleMessage(body: body, sendAt: sendAt);
+      _message.clear();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تمت جدولة الرسالة.')));
+      setState(() => _scheduled = _loadScheduled());
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
   }
 

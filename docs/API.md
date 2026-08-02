@@ -223,6 +223,21 @@ Creates an idempotent text or media message using `clientMessageId`. The request
 }
 ```
 
+### `GET /messages/scheduled`
+
+Lists unsent scheduled messages for the active conversation. Due messages are published before the response is returned.
+
+### `POST /messages/scheduled`
+
+Schedules a text message for a future time. The message is published into the normal conversation when a conversation endpoint runs after `sendAt`.
+
+```json
+{
+  "body": "رسالة لاحقة",
+  "sendAt": "2026-08-04T09:00:00.000Z"
+}
+```
+
 ### `POST /messages/:id/delivered`
 
 Marks a partner message as delivered for the current user and emits `message.delivered`.

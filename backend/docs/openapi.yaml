@@ -247,6 +247,21 @@ paths:
       responses:
         "201":
           description: Created
+  /messages/scheduled:
+    get:
+      summary: List scheduled conversation messages
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Scheduled messages
+    post:
+      summary: Schedule a text message
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Scheduled
   /messages/read-all:
     post:
       summary: Mark all partner messages as read

@@ -499,6 +499,15 @@ class FakeSpaceRepository implements SpaceRepository {
   }
 
   @override
+  Future<List<ScheduledMessageModel>> scheduledMessages() async => [];
+
+  @override
+  Future<void> scheduleMessage({
+    required String body,
+    required DateTime sendAt,
+  }) async {}
+
+  @override
   Future<SpaceSummary> summary() async {
     return const SpaceSummary(
       partnershipId: 'partnership',

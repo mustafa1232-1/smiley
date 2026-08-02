@@ -54,6 +54,11 @@ const messageSchema = z.object({
   assetIds: z.array(z.string().uuid()).max(10).optional()
 });
 
+const scheduledMessageSchema = z.object({
+  body: z.string().trim().min(1).max(4000),
+  sendAt: z.coerce.date()
+});
+
 const messageReceiptSchema = z.object({
   messageId: z.string().uuid()
 });
@@ -128,6 +133,7 @@ const uploadCompleteSchema = z.object({
 
 const defaultNotificationTypes = [
   'message.created',
+  'message.scheduled',
   'partnership.requested',
   'post.created',
   'mood.updated',
@@ -607,6 +613,8 @@ spaceRouter.get('/messages', requireAuth, async (request, response) => {
     return;
   }
 
+  await publishDueScheduledMessages(partnership, conversation.id);
+
   const messages = await prisma.message.findMany({
     where: { conversationId: conversation.id, deletedAt: null },
     include: {
@@ -619,6 +627,63 @@ spaceRouter.get('/messages', requireAuth, async (request, response) => {
   });
 
   response.json({ items: messages.reverse().map(serializeMessage) });
+});
+
+spaceRouter.get('/messages/scheduled', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const partnership = await requireActivePartnership(userId);
+  const conversation = await prisma.conversation.findFirst({
+    where: { partnershipId: partnership.id }
+  });
+
+  if (!conversation) {
+    response.json({ items: [] });
+    return;
+  }
+
+  await publishDueScheduledMessages(partnership, conversation.id);
+
+  const items = await prisma.scheduledMessage.findMany({
+    where: { conversationId: conversation.id, sentAt: null },
+    orderBy: { sendAt: 'asc' },
+    take: 50
+  });
+
+  response.json({ items: items.map(serializeScheduledMessage) });
+});
+
+spaceRouter.post('/messages/scheduled', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = scheduledMessageSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  if (input.sendAt.getTime() <= Date.now()) {
+    throw new AppError(422, 'send_at_must_be_future', 'اختر وقتاً مستقبلياً للإرسال');
+  }
+
+  const scheduledMessage = await prisma.$transaction(async (tx) => {
+    const conversation = await ensureConversation(
+      tx,
+      partnership.id,
+      partnership.members.map((member) => member.userId)
+    );
+    return tx.scheduledMessage.create({
+      data: {
+        conversationId: conversation.id,
+        senderId: userId,
+        body: input.body,
+        sendAt: input.sendAt
+      }
+    });
+  });
+
+  await notifyPartner(partnership, userId, {
+    type: 'message.scheduled',
+    title: 'رسالة مجدولة',
+    body: `رسالة ستصل في ${input.sendAt.toISOString()}`,
+    payload: { scheduledMessageId: scheduledMessage.id }
+  });
+
+  response.status(201).json({ scheduledMessage: serializeScheduledMessage(scheduledMessage) });
 });
 
 spaceRouter.post('/messages', requireAuth, async (request, response) => {
@@ -634,6 +699,13 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
 
   if (assetIds.length > 0) {
     await assertMediaAssetAccess(userId, partnership.id, assetIds);
+  }
+
+  const currentConversation = await prisma.conversation.findFirst({
+    where: { partnershipId: partnership.id }
+  });
+  if (currentConversation) {
+    await publishDueScheduledMessages(partnership, currentConversation.id);
   }
 
   const message = await prisma.$transaction(async (tx) => {
@@ -1702,6 +1774,22 @@ function serializePost(post: {
   };
 }
 
+function serializeScheduledMessage(message: {
+  id: string;
+  body: string;
+  sendAt: Date;
+  sentAt: Date | null;
+  createdAt: Date;
+}) {
+  return {
+    id: message.id,
+    body: message.body,
+    sendAt: message.sendAt,
+    sentAt: message.sentAt,
+    createdAt: message.createdAt
+  };
+}
+
 function serializeMessage(message: {
   id: string;
   clientMessageId: string;
@@ -1734,6 +1822,54 @@ function serializeMessage(message: {
         }
       : null
   };
+}
+
+async function publishDueScheduledMessages(
+  partnership: { id: string; members: Array<{ userId: string }> },
+  conversationId: string
+) {
+  const due = await prisma.scheduledMessage.findMany({
+    where: {
+      conversationId,
+      sentAt: null,
+      sendAt: { lte: new Date() }
+    },
+    orderBy: { sendAt: 'asc' },
+    take: 20
+  });
+
+  for (const scheduled of due) {
+    const message = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.scheduledMessage.updateMany({
+        where: { id: scheduled.id, sentAt: null },
+        data: { sentAt: new Date() }
+      });
+      if (claimed.count === 0) return null;
+
+      return tx.message.create({
+        data: {
+          conversationId,
+          senderId: scheduled.senderId,
+          clientMessageId: `scheduled-${scheduled.id}`,
+          kind: 'text',
+          body: scheduled.body,
+          serverTimestamp: scheduled.sendAt
+        },
+        include: {
+          attachments: true,
+          sender: { select: { username: true, profile: { select: { displayName: true } } } }
+        }
+      });
+    });
+
+    if (!message) continue;
+    await notifyPartner(partnership, scheduled.senderId, {
+      type: 'message.created',
+      title: 'رسالة مجدولة وصلت',
+      body: scheduled.body.slice(0, 120),
+      payload: { messageId: message.id, scheduledMessageId: scheduled.id }
+    });
+  }
 }
 
 function daysBetween(start: Date, end: Date) {
