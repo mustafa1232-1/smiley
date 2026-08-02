@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smiley/core/secure_stores.dart';
@@ -69,7 +71,9 @@ void main() {
     expect(await gateStore.isUnlocked(), isTrue);
     expect(find.text('الدخول'), findsOneWidget);
   });
-  testWidgets('tabs show distinct empty states before adding partner', (tester) async {
+  testWidgets('tabs show distinct empty states before adding partner', (
+    tester,
+  ) async {
     final gateStore = MemoryGateStore()..unlocked = true;
     final tokenStore = MemoryAuthTokenStore();
     await tokenStore.saveTokens(accessToken: 'access', refreshToken: 'refresh');
@@ -266,12 +270,17 @@ class FakeSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<SpacePost> createPost({String? title, required String body}) async {
+  Future<SpacePost> createPost({
+    String? title,
+    required String body,
+    List<String> assetIds = const [],
+  }) async {
     return SpacePost(
       id: 'post',
       title: title,
       body: body,
       createdAt: DateTime(2026, 8, 3),
+      assetIds: assetIds,
     );
   }
 
@@ -330,6 +339,20 @@ class FakeSpaceRepository implements SpaceRepository {
 
   @override
   Future<List<OccasionItem>> occasions() async => [];
+
+  @override
+  Future<MediaAssetModel> uploadMedia({
+    required String fileName,
+    required String mimeType,
+    required Uint8List bytes,
+  }) async {
+    return MediaAssetModel(
+      id: 'asset',
+      objectKey: fileName,
+      mimeType: mimeType,
+      sizeBytes: bytes.length,
+    );
+  }
 
   @override
   Future<List<PlaceItem>> places() async => [];

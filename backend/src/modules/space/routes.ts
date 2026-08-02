@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
@@ -8,7 +9,9 @@ import {
   otherPartnerId,
   requireActivePartnership
 } from '../../lib/access.js';
+import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
+import { createPutUploadUrl } from '../../lib/storage.js';
 import { requireAuth } from '../../middleware/auth.js';
 import type { RealtimeEventType } from '../../realtime/events.js';
 import { emitToPartnership, emitToUser } from '../../realtime/server.js';
@@ -25,7 +28,8 @@ const postSchema = z.object({
   title: z.string().trim().max(120).optional(),
   body: z.string().trim().min(1).max(4000),
   memoryDate: z.coerce.date().optional(),
-  category: z.string().trim().max(40).optional()
+  category: z.string().trim().max(40).optional(),
+  assetIds: z.array(z.string().uuid()).max(20).optional()
 });
 
 const eventSchema = z.object({
@@ -85,6 +89,21 @@ const placeSchema = z.object({
 
 const albumSchema = z.object({
   title: z.string().trim().min(1).max(120)
+});
+
+const albumAssetSchema = z.object({
+  assetId: z.string().uuid(),
+  caption: z.string().trim().max(240).optional()
+});
+
+const uploadPresignSchema = z.object({
+  mimeType: z.string().trim().min(3).max(120),
+  sizeBytes: z.number().int().positive(),
+  fileName: z.string().trim().min(1).max(180).optional()
+});
+
+const uploadCompleteSchema = z.object({
+  checksum: z.string().trim().max(160).optional()
 });
 
 const roomItemSchema = z.object({
@@ -169,6 +188,81 @@ spaceRouter.patch('/partnerships/current/settings', requireAuth, async (request,
   });
 
   response.json({ settings });
+});
+
+spaceRouter.post('/uploads/presign', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = uploadPresignSchema.parse(request.body);
+  const objectKey = buildObjectKey(userId, input.mimeType, input.fileName);
+  const signed = await createPutUploadUrl({
+    objectKey,
+    mimeType: input.mimeType,
+    sizeBytes: input.sizeBytes
+  });
+
+  const upload = await prisma.upload.create({
+    data: {
+      userId,
+      status: 'pending',
+      objectKey,
+      mimeType: input.mimeType,
+      sizeBytes: BigInt(input.sizeBytes)
+    }
+  });
+
+  response.status(201).json({
+    upload: serializeUpload(upload),
+    uploadUrl: signed.uploadUrl,
+    headers: signed.headers,
+    expiresIn: signed.expiresIn,
+    publicUrl: signed.publicUrl
+  });
+});
+
+spaceRouter.post('/uploads/:id/complete', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = uploadCompleteSchema.parse(request.body);
+  const upload = await prisma.upload.findFirst({
+    where: {
+      id: routeParam(request.params.id),
+      userId,
+      status: 'pending'
+    }
+  });
+
+  if (!upload) {
+    response.status(404).json({
+      code: 'upload_not_found',
+      message: 'ملف الرفع غير موجود'
+    });
+    return;
+  }
+
+  const partnership = await getOptionalActivePartnership(userId);
+  const asset = await prisma.$transaction(async (tx) => {
+    await tx.upload.update({
+      where: { id: upload.id },
+      data: { status: 'ready' }
+    });
+
+    return tx.mediaAsset.upsert({
+      where: { objectKey: upload.objectKey },
+      update: {
+        checksum: input.checksum,
+        deletedAt: null
+      },
+      create: {
+        ownerUserId: userId,
+        partnershipId: partnership?.id,
+        objectKey: upload.objectKey,
+        mimeType: upload.mimeType,
+        sizeBytes: upload.sizeBytes,
+        checksum: input.checksum
+      }
+    });
+  });
+
+  response.json({ asset: serializeMediaAsset(asset) });
 });
 
 spaceRouter.get('/space', requireAuth, async (request, response) => {
@@ -270,6 +364,7 @@ spaceRouter.get('/posts', requireAuth, async (request, response) => {
   const posts = await prisma.post.findMany({
     where: { partnershipId: partnership.id, deletedAt: null },
     include: {
+      media: true,
       author: { select: { username: true, profile: { select: { displayName: true } } } }
     },
     orderBy: { createdAt: 'desc' },
@@ -290,9 +385,15 @@ spaceRouter.post('/posts', requireAuth, async (request, response) => {
       title: input.title,
       body: input.body,
       memoryDate: input.memoryDate,
-      category: input.category
+      category: input.category,
+      media: input.assetIds?.length
+        ? {
+            create: await buildPostMediaCreate(userId, partnership.id, input.assetIds)
+          }
+        : undefined
     },
     include: {
+      media: true,
       author: { select: { username: true, profile: { select: { displayName: true } } } }
     }
   });
@@ -688,6 +789,24 @@ spaceRouter.post('/albums', requireAuth, async (request, response) => {
   response.status(201).json({ album });
 });
 
+spaceRouter.post('/albums/:id/items', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = albumAssetSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const album = await prisma.album.findFirstOrThrow({
+    where: { id: routeParam(request.params.id), partnershipId: partnership.id }
+  });
+  await assertMediaAssetAccess(userId, partnership.id, [input.assetId]);
+  const item = await prisma.albumItem.create({
+    data: {
+      albumId: album.id,
+      assetId: input.assetId,
+      caption: input.caption
+    }
+  });
+  response.status(201).json({ item });
+});
+
 spaceRouter.get('/music-room', requireAuth, async (request, response) => {
   const partnership = await requireActivePartnership(request.user!.sub);
   const room = await ensureMusicRoom(partnership.id);
@@ -955,6 +1074,7 @@ function serializePost(post: {
   memoryDate: Date | null;
   category: string | null;
   createdAt: Date;
+  media?: Array<{ assetId: string }>;
   author?: {
     username: string;
     profile: { displayName: string } | null;
@@ -967,6 +1087,7 @@ function serializePost(post: {
     memoryDate: post.memoryDate,
     category: post.category,
     createdAt: post.createdAt,
+    assetIds: post.media?.map((item) => item.assetId) ?? [],
     author: post.author
       ? {
           username: post.author.username,
@@ -1043,4 +1164,95 @@ async function ensureWatchRoom(partnershipId: string) {
 async function getOptionalActivePartnership(userId: string) {
   const partnership = await getCurrentPartnership(userId);
   return partnership?.status === 'active' ? partnership : null;
+}
+
+async function buildPostMediaCreate(
+  userId: string,
+  partnershipId: string,
+  assetIds: string[]
+) {
+  await assertMediaAssetAccess(userId, partnershipId, assetIds);
+  return assetIds.map((assetId) => ({ assetId }));
+}
+
+async function assertMediaAssetAccess(
+  userId: string,
+  partnershipId: string,
+  assetIds: string[]
+) {
+  const uniqueAssetIds = [...new Set(assetIds)];
+  const count = await prisma.mediaAsset.count({
+    where: {
+      id: { in: uniqueAssetIds },
+      deletedAt: null,
+      OR: [
+        { ownerUserId: userId },
+        { partnershipId }
+      ]
+    }
+  });
+  if (count !== uniqueAssetIds.length) {
+    throw new AppError(404, 'media_asset_not_found', 'ملف الوسائط غير موجود');
+  }
+}
+
+function buildObjectKey(userId: string, mimeType: string, fileName?: string) {
+  const extension = extensionFromMimeType(mimeType) ?? extensionFromFileName(fileName);
+  const suffix = extension ? `.${extension}` : '';
+  return `users/${userId}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}${suffix}`;
+}
+
+function extensionFromMimeType(mimeType: string) {
+  const safe = mimeType.toLowerCase();
+  if (safe === 'image/jpeg') return 'jpg';
+  if (safe === 'image/png') return 'png';
+  if (safe === 'image/webp') return 'webp';
+  if (safe === 'image/gif') return 'gif';
+  if (safe === 'video/mp4') return 'mp4';
+  if (safe === 'audio/mpeg') return 'mp3';
+  if (safe === 'audio/mp4') return 'm4a';
+  if (safe === 'audio/wav') return 'wav';
+  if (safe === 'application/pdf') return 'pdf';
+  return null;
+}
+
+function extensionFromFileName(fileName?: string) {
+  const match = fileName?.toLowerCase().match(/\.([a-z0-9]{1,12})$/);
+  return match?.[1] ?? null;
+}
+
+function serializeUpload(upload: {
+  id: string;
+  status: string;
+  objectKey: string;
+  mimeType: string;
+  sizeBytes: bigint;
+  createdAt: Date;
+}) {
+  return {
+    id: upload.id,
+    status: upload.status,
+    objectKey: upload.objectKey,
+    mimeType: upload.mimeType,
+    sizeBytes: upload.sizeBytes.toString(),
+    createdAt: upload.createdAt
+  };
+}
+
+function serializeMediaAsset(asset: {
+  id: string;
+  objectKey: string;
+  mimeType: string;
+  sizeBytes: bigint;
+  checksum: string | null;
+  createdAt: Date;
+}) {
+  return {
+    id: asset.id,
+    objectKey: asset.objectKey,
+    mimeType: asset.mimeType,
+    sizeBytes: asset.sizeBytes.toString(),
+    checksum: asset.checksum,
+    createdAt: asset.createdAt
+  };
 }

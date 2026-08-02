@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
+
 import '../../core/api_client.dart';
 
 abstract interface class SpaceRepository {
@@ -11,7 +15,16 @@ abstract interface class SpaceRepository {
   Future<void> updateSettings({String? worldName, String? themeColor});
   Future<SpaceSummary> summary();
   Future<List<SpacePost>> posts();
-  Future<SpacePost> createPost({String? title, required String body});
+  Future<SpacePost> createPost({
+    String? title,
+    required String body,
+    List<String> assetIds,
+  });
+  Future<MediaAssetModel> uploadMedia({
+    required String fileName,
+    required String mimeType,
+    required Uint8List bytes,
+  });
   Future<SpaceMood> createMood({
     required String kind,
     String? emoji,
@@ -37,7 +50,10 @@ abstract interface class SpaceRepository {
   Future<void> toggleGoalStep(String id);
   Future<List<SharedListModel>> sharedLists();
   Future<void> createSharedList({required String title, required String kind});
-  Future<void> addSharedListItem({required String listId, required String title});
+  Future<void> addSharedListItem({
+    required String listId,
+    required String title,
+  });
   Future<void> toggleSharedListItem(String id);
   Future<List<PlaceItem>> places();
   Future<void> createPlace(String title);
@@ -109,12 +125,49 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<SpacePost> createPost({String? title, required String body}) async {
+  Future<SpacePost> createPost({
+    String? title,
+    required String body,
+    List<String> assetIds = const [],
+  }) async {
     final json = await _api.postJson('/posts', {
       if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
       'body': body.trim(),
+      if (assetIds.isNotEmpty) 'assetIds': assetIds,
     });
     return SpacePost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<MediaAssetModel> uploadMedia({
+    required String fileName,
+    required String mimeType,
+    required Uint8List bytes,
+  }) async {
+    final presignJson = await _api.postJson('/uploads/presign', {
+      'fileName': fileName,
+      'mimeType': mimeType,
+      'sizeBytes': bytes.length,
+    });
+
+    final upload = UploadTicket.fromJson(presignJson);
+    final putResponse = await http.put(
+      Uri.parse(upload.uploadUrl),
+      headers: upload.headers,
+      body: bytes,
+    );
+    if (putResponse.statusCode < 200 || putResponse.statusCode >= 300) {
+      throw ApiException(
+        code: 'upload_failed',
+        message: 'تعذر رفع الملف. حاول مرة أخرى.',
+      );
+    }
+
+    final completed = await _api.postJson(
+      '/uploads/${upload.uploadId}/complete',
+      {},
+    );
+    return MediaAssetModel.fromJson(completed['asset'] as Map<String, dynamic>);
   }
 
   @override
@@ -171,7 +224,10 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<void> createOccasion({required String title, required DateTime date}) async {
+  Future<void> createOccasion({
+    required String title,
+    required DateTime date,
+  }) async {
     await _api.postJson('/occasions', {
       'title': title.trim(),
       'date': date.toUtc().toIso8601String(),
@@ -212,10 +268,16 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<void> createGoal({required String title, List<String> steps = const []}) async {
+  Future<void> createGoal({
+    required String title,
+    List<String> steps = const [],
+  }) async {
     await _api.postJson('/goals', {
       'title': title.trim(),
-      'steps': steps.map((step) => step.trim()).where((step) => step.isNotEmpty).toList(),
+      'steps': steps
+          .map((step) => step.trim())
+          .where((step) => step.isNotEmpty)
+          .toList(),
     });
   }
 
@@ -236,7 +298,10 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<void> createSharedList({required String title, required String kind}) async {
+  Future<void> createSharedList({
+    required String title,
+    required String kind,
+  }) async {
     await _api.postJson('/shared-lists', {
       'title': title.trim(),
       'kind': kind.trim().isEmpty ? 'general' : kind.trim(),
@@ -244,7 +309,10 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<void> addSharedListItem({required String listId, required String title}) async {
+  Future<void> addSharedListItem({
+    required String listId,
+    required String title,
+  }) async {
     await _api.postJson('/shared-lists/$listId/items', {'title': title.trim()});
   }
 
@@ -339,7 +407,8 @@ class HttpSpaceRepository implements SpaceRepository {
   Future<void> report({required String reason, String? details}) async {
     await _api.postJson('/reports', {
       'reason': reason.trim(),
-      if (details != null && details.trim().isNotEmpty) 'details': details.trim(),
+      if (details != null && details.trim().isNotEmpty)
+        'details': details.trim(),
     });
   }
 
@@ -448,6 +517,7 @@ class SpacePost {
     required this.id,
     required this.body,
     required this.createdAt,
+    required this.assetIds,
     this.title,
   });
 
@@ -455,13 +525,65 @@ class SpacePost {
   final String? title;
   final String body;
   final DateTime createdAt;
+  final List<String> assetIds;
 
   factory SpacePost.fromJson(Map<String, dynamic> json) {
+    final assetIds = (json['assetIds'] as List<dynamic>? ?? [])
+        .map((item) => item.toString())
+        .toList();
     return SpacePost(
       id: json['id'] as String,
       title: json['title'] as String?,
       body: json['body'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String),
+      assetIds: assetIds,
+    );
+  }
+}
+
+class UploadTicket {
+  const UploadTicket({
+    required this.uploadId,
+    required this.uploadUrl,
+    required this.headers,
+  });
+
+  final String uploadId;
+  final String uploadUrl;
+  final Map<String, String> headers;
+
+  factory UploadTicket.fromJson(Map<String, dynamic> json) {
+    final upload = json['upload'] as Map<String, dynamic>;
+    final headers = (json['headers'] as Map<String, dynamic>? ?? {}).map(
+      (key, value) => MapEntry(key, value.toString()),
+    );
+    return UploadTicket(
+      uploadId: upload['id'] as String,
+      uploadUrl: json['uploadUrl'] as String,
+      headers: headers,
+    );
+  }
+}
+
+class MediaAssetModel {
+  const MediaAssetModel({
+    required this.id,
+    required this.objectKey,
+    required this.mimeType,
+    required this.sizeBytes,
+  });
+
+  final String id;
+  final String objectKey;
+  final String mimeType;
+  final int sizeBytes;
+
+  factory MediaAssetModel.fromJson(Map<String, dynamic> json) {
+    return MediaAssetModel(
+      id: json['id'] as String,
+      objectKey: json['objectKey'] as String,
+      mimeType: json['mimeType'] as String,
+      sizeBytes: int.parse(json['sizeBytes'].toString()),
     );
   }
 }
@@ -507,11 +629,7 @@ class CalendarItem {
 }
 
 class NotificationItem {
-  const NotificationItem({
-    required this.id,
-    required this.title,
-    this.body,
-  });
+  const NotificationItem({required this.id, required this.title, this.body});
 
   final String id;
   final String title;
@@ -674,10 +792,7 @@ class SharedListEntry {
 }
 
 class PlaceItem {
-  const PlaceItem({
-    required this.id,
-    required this.title,
-  });
+  const PlaceItem({required this.id, required this.title});
 
   final String id;
   final String title;
@@ -708,10 +823,7 @@ class AlbumModel {
 }
 
 class RoomModel {
-  const RoomModel({
-    required this.id,
-    required this.items,
-  });
+  const RoomModel({required this.id, required this.items});
 
   final String id;
   final List<RoomItem> items;
@@ -734,10 +846,7 @@ class RoomModel {
 }
 
 class RoomItem {
-  const RoomItem({
-    required this.id,
-    required this.title,
-  });
+  const RoomItem({required this.id, required this.title});
 
   final String id;
   final String title;
@@ -792,11 +901,7 @@ class TreeDayModel {
 }
 
 class TreeLeafItem {
-  const TreeLeafItem({
-    required this.id,
-    required this.body,
-    this.title,
-  });
+  const TreeLeafItem({required this.id, required this.body, this.title});
 
   final String id;
   final String? title;

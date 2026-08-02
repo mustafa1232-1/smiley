@@ -159,6 +159,26 @@ paths:
       responses:
         "201":
           description: Created
+  /uploads/presign:
+    post:
+      summary: Create a signed media upload URL
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Pending upload and signed PUT URL
+        "503":
+          description: Storage is not configured
+  /uploads/{id}/complete:
+    post:
+      summary: Complete a pending media upload
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Media asset
+        "404":
+          description: Upload not found
   /moods:
     get:
       summary: List moods
@@ -345,6 +365,14 @@ paths:
           description: Albums
     post:
       summary: Create album
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /albums/{id}/items:
+    post:
+      summary: Add media asset to album
       security:
         - bearerAuth: []
       responses:

@@ -144,11 +144,11 @@ Returns the active world summary: members, world name, days together, latest moo
 
 ### `GET /posts`
 
-Lists recent shared posts.
+Lists recent shared posts. Each post response includes `assetIds` for attached media.
 
 ### `POST /posts`
 
-Creates a shared memory post.
+Creates a shared memory post. Optional `assetIds` attaches uploaded media assets.
 
 ```json
 {
@@ -284,13 +284,55 @@ Lists saved places for the memory map.
 
 Creates a saved place.
 
+### `POST /uploads/presign`
+
+Creates a pending upload and returns a signed PUT URL for Cloudflare R2/S3-compatible storage.
+
+```json
+{
+  "fileName": "memory.jpg",
+  "mimeType": "image/jpeg",
+  "sizeBytes": 2450000
+}
+```
+
+Response includes:
+
+- `upload.id`: pass this to `/uploads/:id/complete` after the PUT succeeds.
+- `uploadUrl`: signed URL for the direct file upload.
+- `headers`: required request headers for the PUT request.
+- `publicUrl`: public object URL when `R2_PUBLIC_BASE_URL` is configured.
+
+If storage environment variables are missing, the API returns `503 storage_not_configured`.
+
+### `POST /uploads/:id/complete`
+
+Marks a pending upload as ready and creates or updates its media asset.
+
+```json
+{
+  "checksum": "optional-client-checksum"
+}
+```
+
 ### `GET /albums`
 
 Lists albums.
 
 ### `POST /albums`
 
-Creates an album shell. Media upload/storage can be layered on top of this.
+Creates an album.
+
+### `POST /albums/:id/items`
+
+Adds an uploaded media asset to an album.
+
+```json
+{
+  "assetId": "00000000-0000-0000-0000-000000000000",
+  "caption": "اختياري"
+}
+```
 
 ### `GET /music-room`
 

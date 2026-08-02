@@ -29,6 +29,10 @@ Required variables:
 - `R2_SECRET_ACCESS_KEY`
 - `R2_BUCKET`
 - `R2_PUBLIC_BASE_URL`
+- `STORAGE_SIGNED_URL_TTL_SECONDS`
+- `STORAGE_MAX_UPLOAD_BYTES`
+
+Media uploads use signed PUT URLs: the app asks the API for `/uploads/presign`, uploads directly to R2/S3, then calls `/uploads/:id/complete` before attaching the returned asset to posts or albums.
 
 Private media must be served through signed URLs. Do not expose raw private object keys to unrelated users.
 

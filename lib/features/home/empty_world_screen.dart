@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
@@ -87,10 +88,13 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
             ],
           ),
           body: snapshot.hasError
-              ? _ErrorState(message: snapshot.error.toString(), onRetry: _reload)
+              ? _ErrorState(
+                  message: snapshot.error.toString(),
+                  onRetry: _reload,
+                )
               : !snapshot.hasData
-                  ? const Center(child: CircularProgressIndicator())
-                  : _pageFor(state!),
+              ? const Center(child: CircularProgressIndicator())
+              : _pageFor(state!),
           floatingActionButton: active
               ? null
               : FloatingActionButton(
@@ -134,52 +138,52 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
     if (current == null) {
       return switch (_index) {
         0 => _NoPartnerTab(
-            requests: state.requests,
-            onAddPartner: _openPartnerSearch,
-            onAccept: _acceptRequest,
-            onReject: _rejectRequest,
-            onCancel: _cancelRequest,
-          ),
+          requests: state.requests,
+          onAddPartner: _openPartnerSearch,
+          onAccept: _acceptRequest,
+          onReject: _rejectRequest,
+          onCancel: _cancelRequest,
+        ),
         1 => _PartnerRequiredTab(
-            icon: Icons.chat_bubble_outline_rounded,
-            title: 'المحادثة',
-            onAddPartner: _openPartnerSearch,
-          ),
+          icon: Icons.chat_bubble_outline_rounded,
+          title: 'المحادثة',
+          onAddPartner: _openPartnerSearch,
+        ),
         2 => _PartnerRequiredTab(
-            icon: Icons.favorite_border_rounded,
-            title: 'عالم Smiley',
-            onAddPartner: _openPartnerSearch,
-          ),
+          icon: Icons.favorite_border_rounded,
+          title: 'عالم Smiley',
+          onAddPartner: _openPartnerSearch,
+        ),
         3 => _PartnerRequiredTab(
-            icon: Icons.calendar_month_rounded,
-            title: 'التقويم',
-            onAddPartner: _openPartnerSearch,
-          ),
+          icon: Icons.calendar_month_rounded,
+          title: 'التقويم',
+          onAddPartner: _openPartnerSearch,
+        ),
         _ => _MoreHubTabV2(
-            repository: widget.spaceRepository,
-            hasActivePartnership: false,
-            onSignOut: _signOut,
-          ),
+          repository: widget.spaceRepository,
+          hasActivePartnership: false,
+          onSignOut: _signOut,
+        ),
       };
     }
 
     if (current.needsOnboarding) {
       return switch (_index) {
         0 => _OnboardingTab(
-            partnership: current,
-            onComplete: _completeOnboarding,
-          ),
+          partnership: current,
+          onComplete: _completeOnboarding,
+        ),
         4 => _MoreHubTabV2(
-            repository: widget.spaceRepository,
-            hasActivePartnership: false,
-            onSignOut: _signOut,
-          ),
+          repository: widget.spaceRepository,
+          hasActivePartnership: false,
+          onSignOut: _signOut,
+        ),
         _ => _PartnerRequiredTab(
-            icon: Icons.auto_awesome_rounded,
-            title: 'إعداد العلاقة',
-            message: 'أكمل إعداد البداية أولاً لتفعيل هذا التبويب.',
-            onAddPartner: _reload,
-          ),
+          icon: Icons.auto_awesome_rounded,
+          title: 'إعداد العلاقة',
+          message: 'أكمل إعداد البداية أولاً لتفعيل هذا التبويب.',
+          onAddPartner: _reload,
+        ),
       };
     }
 
@@ -189,10 +193,10 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
       2 => _WorldTab(repository: widget.spaceRepository),
       3 => _CalendarTab(repository: widget.spaceRepository),
       _ => _MoreHubTabV2(
-          repository: widget.spaceRepository,
-          hasActivePartnership: true,
-          onSignOut: _signOut,
-        ),
+        repository: widget.spaceRepository,
+        hasActivePartnership: true,
+        onSignOut: _signOut,
+      ),
     };
   }
 
@@ -390,10 +394,7 @@ class _PartnerRequiredTab extends StatelessWidget {
 }
 
 class _OnboardingTab extends StatefulWidget {
-  const _OnboardingTab({
-    required this.partnership,
-    required this.onComplete,
-  });
+  const _OnboardingTab({required this.partnership, required this.onComplete});
 
   final CurrentPartnership partnership;
   final ValueChanged<OnboardingInput> onComplete;
@@ -421,7 +422,8 @@ class _OnboardingTabState extends State<_OnboardingTab> {
         _SectionHeader(
           icon: Icons.auto_awesome_rounded,
           title: 'إعداد عالم Smiley',
-          subtitle: 'حددوا اسم العالم وتاريخ البداية ليتم تفعيل التجربة المشتركة.',
+          subtitle:
+              'حددوا اسم العالم وتاريخ البداية ليتم تفعيل التجربة المشتركة.',
         ),
         const SizedBox(height: 18),
         TextField(
@@ -490,7 +492,9 @@ class _HomeTab extends StatefulWidget {
 class _HomeTabState extends State<_HomeTab> {
   late Future<SpaceSummary> _summary = widget.repository.summary();
   final _post = TextEditingController();
+  final List<MediaAssetModel> _attachments = [];
   bool _posting = false;
+  bool _uploading = false;
 
   @override
   void dispose() {
@@ -504,7 +508,10 @@ class _HomeTabState extends State<_HomeTab> {
       future: _summary,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return _ErrorState(message: snapshot.error.toString(), onRetry: _reload);
+          return _ErrorState(
+            message: snapshot.error.toString(),
+            onRetry: _reload,
+          );
         }
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
@@ -527,6 +534,9 @@ class _HomeTabState extends State<_HomeTab> {
               _PostComposer(
                 controller: _post,
                 busy: _posting,
+                uploading: _uploading,
+                attachmentCount: _attachments.length,
+                onAttach: _attachMedia,
                 onSubmit: _createPost,
               ),
               const SizedBox(height: 20),
@@ -534,7 +544,8 @@ class _HomeTabState extends State<_HomeTab> {
                 _InfoTile(
                   icon: Icons.mood_rounded,
                   title: 'آخر مزاج',
-                  subtitle: summary.latestMood!.note ?? summary.latestMood!.kind,
+                  subtitle:
+                      summary.latestMood!.note ?? summary.latestMood!.kind,
                 ),
               if (summary.nextEvent != null)
                 _InfoTile(
@@ -544,10 +555,16 @@ class _HomeTabState extends State<_HomeTab> {
                       '${summary.nextEvent!.title} - ${_date(summary.nextEvent!.startsAt)}',
                 ),
               const SizedBox(height: 10),
-              Text('آخر الذكريات', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                'آخر الذكريات',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 8),
               if (summary.latestPosts.isEmpty)
-                const _EmptyLine(text: 'لا توجد ذكريات بعد.', color: Colors.grey)
+                const _EmptyLine(
+                  text: 'لا توجد ذكريات بعد.',
+                  color: Colors.grey,
+                )
               else
                 for (final post in summary.latestPosts) _PostTile(post: post),
             ],
@@ -562,14 +579,42 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   Future<void> _createPost() async {
-    if (_post.text.trim().isEmpty) return;
+    if (_post.text.trim().isEmpty && _attachments.isEmpty) return;
     setState(() => _posting = true);
     try {
-      await widget.repository.createPost(body: _post.text);
+      await widget.repository.createPost(
+        body: _post.text.trim().isEmpty ? 'مرفق جديد' : _post.text,
+        assetIds: _attachments.map((asset) => asset.id).toList(),
+      );
       _post.clear();
+      _attachments.clear();
       _reload();
     } finally {
       if (mounted) setState(() => _posting = false);
+    }
+  }
+
+  Future<void> _attachMedia() async {
+    final result = await FilePicker.platform.pickFiles(withData: true);
+    final file = result?.files.single;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null) return;
+
+    setState(() => _uploading = true);
+    try {
+      final asset = await widget.repository.uploadMedia(
+        fileName: file.name,
+        mimeType: _mimeTypeFromName(file.name),
+        bytes: bytes,
+      );
+      setState(() => _attachments.add(asset));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
     }
   }
 }
@@ -811,7 +856,10 @@ class _CalendarTabState extends State<_CalendarTab> {
             }
             final events = snapshot.requireData;
             if (events.isEmpty) {
-              return const _EmptyLine(text: 'لا توجد مواعيد بعد.', color: Colors.grey);
+              return const _EmptyLine(
+                text: 'لا توجد مواعيد بعد.',
+                color: Colors.grey,
+              );
             }
             return Column(
               children: [
@@ -1097,9 +1145,9 @@ class _MoreHubTabV2 extends StatelessWidget {
             leading: Icon(item.icon),
             title: Text(item.title),
             trailing: const Icon(Icons.chevron_left_rounded),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => item.builder()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => item.builder())),
           ),
         const Divider(),
         ListTile(
@@ -1125,7 +1173,8 @@ class _PartnerRequiredScreen extends StatelessWidget {
       body: _PartnerRequiredTab(
         icon: icon,
         title: title,
-        message: 'هذه الميزة تتطلب علاقة مفعلة. أضف الشريك ثم أكملا إعداد البداية.',
+        message:
+            'هذه الميزة تتطلب علاقة مفعلة. أضف الشريك ثم أكملا إعداد البداية.',
         onAddPartner: () => Navigator.of(context).pop(),
       ),
     );
@@ -1185,10 +1234,8 @@ class _MoreHubTab extends StatelessWidget {
       _MoreItem(
         'الإعدادات',
         Icons.settings_outlined,
-        () => _SettingsScreen(
-          repository: repository,
-          hasActivePartnership: true,
-        ),
+        () =>
+            _SettingsScreen(repository: repository, hasActivePartnership: true),
       ),
     ];
 
@@ -1200,9 +1247,9 @@ class _MoreHubTab extends StatelessWidget {
             leading: Icon(item.icon),
             title: Text(item.title),
             trailing: const Icon(Icons.chevron_left_rounded),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => item.builder()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => item.builder())),
           ),
         const Divider(),
         ListTile(
@@ -1630,7 +1677,8 @@ class _NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<_NotificationsScreen> {
-  late Future<List<NotificationItem>> _future = widget.repository.notifications();
+  late Future<List<NotificationItem>> _future = widget.repository
+      .notifications();
 
   @override
   Widget build(BuildContext context) {
@@ -1772,9 +1820,9 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       canReceiveRequests: _requests,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم حفظ الملف الشخصي')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('تم حفظ الملف الشخصي')));
     setState(() {
       _ready = false;
       _future = widget.repository.me();
@@ -1852,9 +1900,9 @@ class _SettingsScreenState extends State<_SettingsScreen> {
       themeColor: _themeColor.text,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم حفظ الإعدادات')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('تم حفظ الإعدادات')));
   }
 }
 
@@ -2191,16 +2239,16 @@ class _AlbumsScreenState extends State<_AlbumsScreen> {
 
 class _RoomScreen extends StatefulWidget {
   const _RoomScreen.music({required this.repository})
-      : title = 'الموسيقى',
-        icon = Icons.music_note_rounded,
-        load = repositoryMusicRoom,
-        add = repositoryAddMusicItem;
+    : title = 'الموسيقى',
+      icon = Icons.music_note_rounded,
+      load = repositoryMusicRoom,
+      add = repositoryAddMusicItem;
 
   const _RoomScreen.watch({required this.repository})
-      : title = 'السينما',
-        icon = Icons.movie_outlined,
-        load = repositoryWatchRoom,
-        add = repositoryAddWatchItem;
+    : title = 'السينما',
+      icon = Icons.movie_outlined,
+      load = repositoryWatchRoom,
+      add = repositoryAddWatchItem;
 
   final SpaceRepository repository;
   final String title;
@@ -2483,11 +2531,17 @@ class _PostComposer extends StatelessWidget {
   const _PostComposer({
     required this.controller,
     required this.busy,
+    required this.uploading,
+    required this.attachmentCount,
+    required this.onAttach,
     required this.onSubmit,
   });
 
   final TextEditingController controller;
   final bool busy;
+  final bool uploading;
+  final int attachmentCount;
+  final VoidCallback onAttach;
   final VoidCallback onSubmit;
 
   @override
@@ -2505,8 +2559,23 @@ class _PostComposer extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: busy || uploading ? null : onAttach,
+          icon: uploading
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.attach_file_rounded),
+          label: Text(
+            attachmentCount == 0
+                ? 'Ø¥Ø±ÙØ§Ù‚ Ù…Ù„Ù'
+                : 'Ø§Ù„Ù…Ø±ÙÙ‚Ø§Øª: $attachmentCount',
+          ),
+        ),
+        const SizedBox(height: 10),
         FilledButton.icon(
-          onPressed: busy ? null : onSubmit,
+          onPressed: busy || uploading ? null : onSubmit,
           icon: const Icon(Icons.add_rounded),
           label: const Text('حفظ الذكرى'),
         ),
@@ -2526,7 +2595,9 @@ class _PostTile extends StatelessWidget {
       child: ListTile(
         leading: const Icon(Icons.favorite_border_rounded),
         title: Text(post.title ?? post.body),
-        subtitle: post.title == null ? Text(_date(post.createdAt)) : Text(post.body),
+        subtitle: post.title == null
+            ? Text(_date(post.createdAt))
+            : Text(post.body),
       ),
     );
   }
@@ -2623,6 +2694,21 @@ class _ErrorState extends StatelessWidget {
 String _date(DateTime value) {
   final local = value.toLocal();
   return '${local.year}-${_two(local.month)}-${_two(local.day)}';
+}
+
+String _mimeTypeFromName(String fileName) {
+  final lower = fileName.toLowerCase();
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.mp4')) return 'video/mp4';
+  if (lower.endsWith('.mov')) return 'video/quicktime';
+  if (lower.endsWith('.mp3')) return 'audio/mpeg';
+  if (lower.endsWith('.m4a')) return 'audio/mp4';
+  if (lower.endsWith('.wav')) return 'audio/wav';
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  return 'application/octet-stream';
 }
 
 String _two(int value) => value.toString().padLeft(2, '0');

@@ -14,5 +14,14 @@ export const config = {
   jwtRefreshSecret: required('JWT_REFRESH_SECRET', 'dev-refresh-secret'),
   jwtAccessTtlSeconds: Number(process.env.JWT_ACCESS_TTL_SECONDS ?? 900),
   jwtRefreshTtlDays: Number(process.env.JWT_REFRESH_TTL_DAYS ?? 30),
-  bcryptCost: Number(process.env.BCRYPT_COST ?? 12)
+  bcryptCost: Number(process.env.BCRYPT_COST ?? 12),
+  storage: {
+    r2AccountId: process.env.R2_ACCOUNT_ID,
+    r2AccessKeyId: process.env.R2_ACCESS_KEY_ID,
+    r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    r2Bucket: process.env.R2_BUCKET,
+    r2PublicBaseUrl: process.env.R2_PUBLIC_BASE_URL,
+    signedUrlTtlSeconds: Number(process.env.STORAGE_SIGNED_URL_TTL_SECONDS ?? 900),
+    maxUploadBytes: Number(process.env.STORAGE_MAX_UPLOAD_BYTES ?? 104_857_600)
+  }
 };
