@@ -1,18 +1,19 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "RAILPACK",
-    "buildCommand": "cd backend && npm ci && npx prisma generate && npm run build",
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile",
     "watchPatterns": [
+      "Dockerfile",
       "backend/**",
       "railway.json"
     ]
   },
   "deploy": {
     "preDeployCommand": [
-      "cd backend && npx prisma migrate deploy"
+      "cd /app/backend && npx prisma migrate deploy"
     ],
-    "startCommand": "cd backend && npm run start",
+    "startCommand": "cd /app/backend && npm run start",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",
