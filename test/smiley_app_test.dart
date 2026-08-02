@@ -160,6 +160,12 @@ class FakeAuthRepository implements AuthRepository {
   Future<void> logoutAll() async {}
 
   @override
+  Future<void> revokeSession(String id) async {}
+
+  @override
+  Future<List<LoginSessionModel>> sessions() async => [];
+
+  @override
   Future<void> requestPasswordReset(String identifier) async {}
 
   @override

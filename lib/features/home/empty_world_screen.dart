@@ -161,6 +161,7 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
         ),
         _ => _MoreHubTabV2(
           repository: widget.spaceRepository,
+          authRepository: widget.authRepository,
           hasActivePartnership: false,
           onSignOut: _signOut,
         ),
@@ -175,6 +176,7 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
         ),
         4 => _MoreHubTabV2(
           repository: widget.spaceRepository,
+          authRepository: widget.authRepository,
           hasActivePartnership: false,
           onSignOut: _signOut,
         ),
@@ -194,6 +196,7 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
       3 => _CalendarTab(repository: widget.spaceRepository),
       _ => _MoreHubTabV2(
         repository: widget.spaceRepository,
+        authRepository: widget.authRepository,
         hasActivePartnership: true,
         onSignOut: _signOut,
       ),
@@ -1027,11 +1030,13 @@ class _MoreItem {
 class _MoreHubTabV2 extends StatelessWidget {
   const _MoreHubTabV2({
     required this.repository,
+    required this.authRepository,
     required this.hasActivePartnership,
     required this.onSignOut,
   });
 
   final SpaceRepository repository;
+  final AuthRepository authRepository;
   final bool hasActivePartnership;
   final VoidCallback onSignOut;
 
@@ -1153,6 +1158,7 @@ class _MoreHubTabV2 extends StatelessWidget {
         Icons.settings_outlined,
         () => _SettingsScreen(
           repository: repository,
+          authRepository: authRepository,
           hasActivePartnership: hasActivePartnership,
         ),
       ),
@@ -1855,9 +1861,11 @@ class _SettingsScreen extends StatefulWidget {
   const _SettingsScreen({
     required this.repository,
     required this.hasActivePartnership,
+    this.authRepository,
   });
 
   final SpaceRepository repository;
+  final AuthRepository? authRepository;
   final bool hasActivePartnership;
 
   @override
@@ -1910,6 +1918,19 @@ class _SettingsScreenState extends State<_SettingsScreen> {
             icon: const Icon(Icons.save_outlined),
             label: const Text('حفظ الإعدادات'),
           ),
+          if (widget.authRepository != null) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      _SessionsScreen(repository: widget.authRepository!),
+                ),
+              ),
+              icon: const Icon(Icons.devices_outlined),
+              label: const Text('الأجهزة والجلسات'),
+            ),
+          ],
         ],
       ),
     );
@@ -1924,6 +1945,92 @@ class _SettingsScreenState extends State<_SettingsScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('تم حفظ الإعدادات')));
+  }
+}
+
+class _SessionsScreen extends StatefulWidget {
+  const _SessionsScreen({required this.repository});
+
+  final AuthRepository repository;
+
+  @override
+  State<_SessionsScreen> createState() => _SessionsScreenState();
+}
+
+class _SessionsScreenState extends State<_SessionsScreen> {
+  late Future<List<LoginSessionModel>> _future = widget.repository.sessions();
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الأجهزة والجلسات')),
+      body: FutureBuilder<List<LoginSessionModel>>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final items = snapshot.requireData;
+          if (items.isEmpty) {
+            return const Center(child: Text('لا توجد جلسات مسجلة.'));
+          }
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              const _SectionHeader(
+                icon: Icons.devices_outlined,
+                title: 'الأجهزة والجلسات',
+                subtitle:
+                    'راجع الأجهزة المسجلة وألغِ أي جلسة لا تريد استمرارها.',
+              ),
+              const SizedBox(height: 16),
+              for (final item in items)
+                Card(
+                  child: ListTile(
+                    leading: Icon(
+                      item.active
+                          ? Icons.devices_outlined
+                          : Icons.block_outlined,
+                    ),
+                    title: Text(
+                      item.deviceName?.isNotEmpty == true
+                          ? item.deviceName!
+                          : item.platform ?? 'جهاز',
+                    ),
+                    subtitle: Text(
+                      item.current
+                          ? 'الجلسة الحالية'
+                          : item.active
+                          ? 'آخر تحديث ${_date(item.updatedAt)}'
+                          : 'ملغاة',
+                    ),
+                    trailing: item.active
+                        ? IconButton(
+                            tooltip: 'إلغاء الجلسة',
+                            onPressed: _busy
+                                ? null
+                                : () => _revokeSession(item.id),
+                            icon: const Icon(Icons.logout_rounded),
+                          )
+                        : null,
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _revokeSession(String id) async {
+    setState(() => _busy = true);
+    try {
+      await widget.repository.revokeSession(id);
+      setState(() => _future = widget.repository.sessions());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 
