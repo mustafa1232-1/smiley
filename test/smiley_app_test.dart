@@ -486,6 +486,32 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<void> report({required String reason, String? details}) async {}
 
   @override
+  Future<RelationshipSummaryModel> relationshipSummary({
+    String period = 'month',
+    DateTime? referenceDate,
+  }) async {
+    return RelationshipSummaryModel(
+      period: period,
+      title: 'ملخص العلاقة',
+      start: DateTime(2026, 8),
+      end: DateTime(2026, 9),
+      counts: const RelationshipSummaryCounts(
+        messages: 0,
+        photos: 0,
+        videos: 0,
+        treeLeaves: 0,
+        songs: 0,
+        watchSessions: 0,
+        places: 0,
+        completedGoals: 0,
+      ),
+      topMoods: const [],
+      highlights: const [],
+      timeline: const [],
+    );
+  }
+
+  @override
   Future<ChatMessage> sendMessage(
     String body, {
     List<String> assetIds = const [],

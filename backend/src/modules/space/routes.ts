@@ -79,6 +79,11 @@ const settingsSchema = z.object({
   themeColor: z.string().trim().min(4).max(32).optional()
 });
 
+const relationshipSummaryQuerySchema = z.object({
+  period: z.enum(['week', 'month', 'year', 'anniversary']).default('month'),
+  referenceDate: z.coerce.date().optional()
+});
+
 const wishSchema = z.object({
   title: z.string().trim().min(1).max(160)
 });
@@ -445,6 +450,39 @@ spaceRouter.get('/space', requireAuth, async (request, response) => {
     latestPosts: latestPosts.map(serializePost),
     nextEvent,
     unreadNotifications
+  });
+});
+
+spaceRouter.get('/relationship-summary', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = relationshipSummaryQuerySchema.parse(request.query);
+  const partnership = await requireActivePartnership(userId);
+  const range = relationshipSummaryRange(input.period, input.referenceDate ?? new Date(), partnership.startedAt);
+  const conversation = await prisma.conversation.findFirst({
+    where: { partnershipId: partnership.id }
+  });
+  if (conversation) {
+    await publishDueScheduledMessages(partnership, conversation.id);
+  }
+
+  const [counts, topMoods, highlightedPosts, importantOccasion, timeline] = await Promise.all([
+    relationshipSummaryCounts(partnership.id, conversation?.id, range.start, range.end),
+    relationshipSummaryMoods(partnership.id, range.start, range.end),
+    relationshipSummaryHighlights(partnership.id, range.start, range.end),
+    relationshipSummaryOccasion(partnership.id, range.start, range.end),
+    relationshipSummaryTimeline(partnership.id, range.start, range.end)
+  ]);
+
+  response.json({
+    period: input.period,
+    start: range.start,
+    end: range.end,
+    title: relationshipSummaryTitle(input.period, range.start, range.end),
+    counts,
+    topMoods,
+    highlights: highlightedPosts,
+    importantOccasion,
+    timeline
   });
 });
 
@@ -1870,6 +1908,230 @@ async function publishDueScheduledMessages(
       payload: { messageId: message.id, scheduledMessageId: scheduled.id }
     });
   }
+}
+
+function relationshipSummaryRange(period: string, reference: Date, startedAt: Date | null) {
+  const ref = startOfUtcDay(reference);
+  if (period === 'week') {
+    const day = ref.getUTCDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const start = addUtcDays(ref, mondayOffset);
+    return { start, end: addUtcDays(start, 7) };
+  }
+  if (period === 'year') {
+    const start = new Date(Date.UTC(ref.getUTCFullYear(), 0, 1));
+    return { start, end: new Date(Date.UTC(ref.getUTCFullYear() + 1, 0, 1)) };
+  }
+  if (period === 'anniversary' && startedAt) {
+    const start = new Date(Date.UTC(ref.getUTCFullYear(), startedAt.getUTCMonth(), startedAt.getUTCDate()));
+    const adjustedStart = start > ref
+      ? new Date(Date.UTC(ref.getUTCFullYear() - 1, startedAt.getUTCMonth(), startedAt.getUTCDate()))
+      : start;
+    return {
+      start: adjustedStart,
+      end: new Date(Date.UTC(adjustedStart.getUTCFullYear() + 1, startedAt.getUTCMonth(), startedAt.getUTCDate()))
+    };
+  }
+  const start = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), 1));
+  return { start, end: new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth() + 1, 1)) };
+}
+
+function relationshipSummaryTitle(period: string, start: Date, end: Date) {
+  if (period === 'week') return 'ملخص الأسبوع';
+  if (period === 'year') return `ملخص ${start.getUTCFullYear()}`;
+  if (period === 'anniversary') return 'ملخص الذكرى السنوية';
+  return `ملخص ${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+async function relationshipSummaryCounts(
+  partnershipId: string,
+  conversationId: string | undefined,
+  start: Date,
+  end: Date
+) {
+  const dateRange = { gte: start, lt: end };
+  const [
+    messages,
+    photos,
+    videos,
+    treeLeaves,
+    songs,
+    watchItems,
+    places,
+    completedGoals
+  ] = await Promise.all([
+    conversationId
+      ? prisma.message.count({
+          where: { conversationId, deletedAt: null, serverTimestamp: dateRange }
+        })
+      : 0,
+    prisma.mediaAsset.count({
+      where: { partnershipId, deletedAt: null, mimeType: { startsWith: 'image/' }, createdAt: dateRange }
+    }),
+    prisma.mediaAsset.count({
+      where: { partnershipId, deletedAt: null, mimeType: { startsWith: 'video/' }, createdAt: dateRange }
+    }),
+    prisma.treeLeaf.count({
+      where: { createdAt: dateRange, treeDay: { partnershipId } }
+    }),
+    prisma.musicQueueItem.count({
+      where: { musicRoom: { partnershipId } }
+    }),
+    prisma.watchItem.count({
+      where: { watchRoom: { partnershipId } }
+    }),
+    prisma.place.count({
+      where: { partnershipId, createdAt: dateRange }
+    }),
+    prisma.goal.count({
+      where: { partnershipId, completedAt: dateRange }
+    })
+  ]);
+
+  return {
+    messages,
+    photos,
+    videos,
+    treeLeaves,
+    songs,
+    watchSessions: watchItems,
+    places,
+    completedGoals
+  };
+}
+
+async function relationshipSummaryMoods(partnershipId: string, start: Date, end: Date) {
+  const grouped = await prisma.mood.groupBy({
+    by: ['kind', 'emoji'],
+    where: { partnershipId, createdAt: { gte: start, lt: end } },
+    _count: { _all: true },
+    orderBy: { _count: { kind: 'desc' } },
+    take: 5
+  });
+
+  return grouped.map((item) => ({
+    kind: item.kind,
+    emoji: item.emoji,
+    count: item._count._all
+  }));
+}
+
+async function relationshipSummaryHighlights(partnershipId: string, start: Date, end: Date) {
+  const posts = await prisma.post.findMany({
+    where: { partnershipId, deletedAt: null, createdAt: { gte: start, lt: end } },
+    include: { _count: { select: { reactions: true, comments: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 20
+  });
+
+  return posts
+    .sort((a, b) =>
+      (b._count.reactions + b._count.comments) - (a._count.reactions + a._count.comments)
+    )
+    .slice(0, 5)
+    .map((post) => ({
+      id: post.id,
+      title: post.title,
+      body: post.body,
+      createdAt: post.createdAt,
+      reactions: post._count.reactions,
+      comments: post._count.comments
+    }));
+}
+
+async function relationshipSummaryOccasion(partnershipId: string, start: Date, end: Date) {
+  const occasion = await prisma.occasion.findFirst({
+    where: { partnershipId, date: { gte: start, lt: end } },
+    orderBy: { date: 'asc' }
+  });
+  if (occasion) {
+    return {
+      id: occasion.id,
+      title: occasion.title,
+      date: occasion.date,
+      type: 'occasion'
+    };
+  }
+
+  const event = await prisma.calendarEvent.findFirst({
+    where: { partnershipId, startsAt: { gte: start, lt: end } },
+    orderBy: { startsAt: 'asc' }
+  });
+  return event
+    ? {
+        id: event.id,
+        title: event.title,
+        date: event.startsAt,
+        type: 'calendar_event'
+      }
+    : null;
+}
+
+async function relationshipSummaryTimeline(partnershipId: string, start: Date, end: Date) {
+  const [posts, events, moods, leaves, goals, places, capsules] = await Promise.all([
+    prisma.post.findMany({
+      where: { partnershipId, deletedAt: null, createdAt: { gte: start, lt: end } },
+      select: { id: true, title: true, body: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    }),
+    prisma.calendarEvent.findMany({
+      where: { partnershipId, startsAt: { gte: start, lt: end } },
+      select: { id: true, title: true, startsAt: true },
+      orderBy: { startsAt: 'desc' },
+      take: 10
+    }),
+    prisma.mood.findMany({
+      where: { partnershipId, createdAt: { gte: start, lt: end } },
+      select: { id: true, kind: true, emoji: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    }),
+    prisma.treeLeaf.findMany({
+      where: { createdAt: { gte: start, lt: end }, treeDay: { partnershipId } },
+      select: { id: true, title: true, body: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    }),
+    prisma.goal.findMany({
+      where: { partnershipId, completedAt: { gte: start, lt: end } },
+      select: { id: true, title: true, completedAt: true },
+      orderBy: { completedAt: 'desc' },
+      take: 10
+    }),
+    prisma.place.findMany({
+      where: { partnershipId, createdAt: { gte: start, lt: end } },
+      select: { id: true, title: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    }),
+    prisma.timeCapsule.findMany({
+      where: { partnershipId, createdAt: { gte: start, lt: end } },
+      select: { id: true, title: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    })
+  ]);
+
+  return [
+    ...posts.map((item) => timelineItem('post', item.id, item.title ?? item.body ?? 'ذكرى', item.createdAt)),
+    ...events.map((item) => timelineItem('calendar_event', item.id, item.title, item.startsAt)),
+    ...moods.map((item) => timelineItem('mood', item.id, `${item.emoji ?? ''} ${item.kind}`.trim(), item.createdAt)),
+    ...leaves.map((item) => timelineItem('tree_leaf', item.id, item.title ?? item.body ?? 'ورقة شجرة', item.createdAt)),
+    ...goals.map((item) => timelineItem('goal_completed', item.id, item.title, item.completedAt ?? start)),
+    ...places.map((item) => timelineItem('place', item.id, item.title, item.createdAt)),
+    ...capsules.map((item) => timelineItem('time_capsule', item.id, item.title, item.createdAt))
+  ]
+    .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+    .slice(0, 30);
+}
+
+function timelineItem(type: string, id: string, title: string, occurredAt: Date) {
+  return { type, id, title, occurredAt };
+}
+
+function addUtcDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * 86_400_000);
 }
 
 function daysBetween(start: Date, end: Date) {

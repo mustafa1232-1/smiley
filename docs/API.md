@@ -177,6 +177,10 @@ Updates active world settings.
 
 Returns the active world summary: members, world name, days together, latest mood, latest posts, next event, and unread notification count.
 
+### `GET /relationship-summary?period=month`
+
+Returns a neutral relationship summary for `week`, `month`, `year`, or `anniversary`, computed from real relationship data. The response includes counts for messages, media, tree leaves, music/watch items, places, completed goals, frequent moods, highlights, important occasion, and a timeline.
+
 ### `GET /posts`
 
 Lists recent shared posts. Each post response includes `assetIds` for attached media.

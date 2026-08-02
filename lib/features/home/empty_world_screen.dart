@@ -1375,6 +1375,15 @@ class _MoreHubTabV2 extends StatelessWidget {
         ),
       ),
       _MoreItem(
+        'ملخصات العلاقة',
+        Icons.insights_rounded,
+        () => guarded(
+          'ملخصات العلاقة',
+          Icons.insights_rounded,
+          () => _RelationshipSummaryScreen(repository: repository),
+        ),
+      ),
+      _MoreItem(
         'الشجرة اليومية',
         Icons.park_outlined,
         () => guarded(
@@ -1469,6 +1478,210 @@ class _PartnerRequiredScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RelationshipSummaryScreen extends StatefulWidget {
+  const _RelationshipSummaryScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_RelationshipSummaryScreen> createState() =>
+      _RelationshipSummaryScreenState();
+}
+
+class _RelationshipSummaryScreenState
+    extends State<_RelationshipSummaryScreen> {
+  String _period = 'month';
+  late Future<RelationshipSummaryModel> _future = _load();
+
+  Future<RelationshipSummaryModel> _load() {
+    return widget.repository.relationshipSummary(period: _period);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('ملخصات العلاقة')),
+      body: FutureBuilder<RelationshipSummaryModel>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final summary = snapshot.requireData;
+          final counts = summary.counts;
+          return RefreshIndicator(
+            onRefresh: () async => setState(() => _future = _load()),
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SectionHeader(
+                        icon: Icons.insights_rounded,
+                        title: summary.title,
+                        subtitle:
+                            '${_date(summary.start)} - ${_date(summary.end)}',
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    DropdownButton<String>(
+                      value: _period,
+                      items: const [
+                        DropdownMenuItem(value: 'week', child: Text('أسبوع')),
+                        DropdownMenuItem(value: 'month', child: Text('شهر')),
+                        DropdownMenuItem(value: 'year', child: Text('سنة')),
+                        DropdownMenuItem(
+                          value: 'anniversary',
+                          child: Text('ذكرى'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() {
+                          _period = value;
+                          _future = _load();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                GridView.count(
+                  crossAxisCount: 2,
+                  childAspectRatio: 2.6,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  children: [
+                    _SummaryMetric('الرسائل', counts.messages),
+                    _SummaryMetric('الصور', counts.photos),
+                    _SummaryMetric('الفيديوهات', counts.videos),
+                    _SummaryMetric('أوراق الشجرة', counts.treeLeaves),
+                    _SummaryMetric('الأغاني', counts.songs),
+                    _SummaryMetric('المشاهدة', counts.watchSessions),
+                    _SummaryMetric('الأماكن', counts.places),
+                    _SummaryMetric('الأهداف المكتملة', counts.completedGoals),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'المزاجات الأكثر تكراراً',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                if (summary.topMoods.isEmpty)
+                  const _EmptyLine(
+                    text: 'لا توجد مزاجات في هذه الفترة.',
+                    color: Colors.grey,
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final mood in summary.topMoods)
+                        Chip(
+                          avatar: Text(mood.emoji ?? '•'),
+                          label: Text('${mood.kind} (${mood.count})'),
+                        ),
+                    ],
+                  ),
+                const SizedBox(height: 18),
+                if (summary.importantOccasion != null)
+                  _InfoTile(
+                    icon: Icons.event_available_outlined,
+                    title: 'المناسبة الأهم',
+                    subtitle:
+                        '${summary.importantOccasion!.title} - ${_date(summary.importantOccasion!.occurredAt)}',
+                  ),
+                if (summary.highlights.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  Text(
+                    'ذكريات بارزة',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  for (final highlight in summary.highlights)
+                    _InfoTile(
+                      icon: Icons.auto_awesome_rounded,
+                      title: highlight.title ?? 'ذكرى',
+                      subtitle:
+                          '${highlight.body ?? ''}  تفاعل: ${highlight.reactions + highlight.comments}',
+                    ),
+                ],
+                const SizedBox(height: 18),
+                Text(
+                  'الخط الزمني',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                if (summary.timeline.isEmpty)
+                  const _EmptyLine(
+                    text: 'لا توجد أحداث في هذه الفترة.',
+                    color: Colors.grey,
+                  )
+                else
+                  for (final item in summary.timeline)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.timeline_rounded),
+                      title: Text(item.title),
+                      subtitle: Text(
+                        '${_summaryTypeLabel(item.type)} - ${_date(item.occurredAt)}',
+                      ),
+                    ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SummaryMetric extends StatelessWidget {
+  const _SummaryMetric(this.label, this.value);
+
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              value.toString(),
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _summaryTypeLabel(String type) {
+  return switch (type) {
+    'post' => 'ذكرى',
+    'calendar_event' => 'تقويم',
+    'mood' => 'مزاج',
+    'tree_leaf' => 'ورقة',
+    'goal_completed' => 'هدف',
+    'place' => 'مكان',
+    'time_capsule' => 'كبسولة',
+    'occasion' => 'مناسبة',
+    _ => type,
+  };
 }
 
 // ignore: unused_element

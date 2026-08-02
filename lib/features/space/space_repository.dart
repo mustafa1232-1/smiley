@@ -16,6 +16,10 @@ abstract interface class SpaceRepository {
   Future<void> confirmEmailVerification(String code);
   Future<void> updateSettings({String? worldName, String? themeColor});
   Future<SpaceSummary> summary();
+  Future<RelationshipSummaryModel> relationshipSummary({
+    String period,
+    DateTime? referenceDate,
+  });
   Future<List<SpacePost>> posts();
   Future<SpacePost> createPost({
     String? title,
@@ -149,6 +153,20 @@ class HttpSpaceRepository implements SpaceRepository {
   Future<SpaceSummary> summary() async {
     final json = await _api.getJson('/space');
     return SpaceSummary.fromJson(json);
+  }
+
+  @override
+  Future<RelationshipSummaryModel> relationshipSummary({
+    String period = 'month',
+    DateTime? referenceDate,
+  }) async {
+    final params = <String>[
+      'period=$period',
+      if (referenceDate != null)
+        'referenceDate=${Uri.encodeComponent(referenceDate.toUtc().toIso8601String())}',
+    ].join('&');
+    final json = await _api.getJson('/relationship-summary?$params');
+    return RelationshipSummaryModel.fromJson(json);
   }
 
   @override
@@ -592,6 +610,169 @@ class SpaceMember {
       id: json['id'] as String,
       username: json['username'] as String,
       displayName: json['displayName'] as String? ?? 'مستخدم',
+    );
+  }
+}
+
+class RelationshipSummaryModel {
+  const RelationshipSummaryModel({
+    required this.period,
+    required this.title,
+    required this.start,
+    required this.end,
+    required this.counts,
+    required this.topMoods,
+    required this.highlights,
+    required this.timeline,
+    this.importantOccasion,
+  });
+
+  final String period;
+  final String title;
+  final DateTime start;
+  final DateTime end;
+  final RelationshipSummaryCounts counts;
+  final List<RelationshipMoodCount> topMoods;
+  final List<RelationshipHighlight> highlights;
+  final RelationshipTimelineItem? importantOccasion;
+  final List<RelationshipTimelineItem> timeline;
+
+  factory RelationshipSummaryModel.fromJson(Map<String, dynamic> json) {
+    return RelationshipSummaryModel(
+      period: json['period'] as String? ?? 'month',
+      title: json['title'] as String? ?? 'ملخص العلاقة',
+      start: DateTime.parse(json['start'] as String).toLocal(),
+      end: DateTime.parse(json['end'] as String).toLocal(),
+      counts: RelationshipSummaryCounts.fromJson(
+        json['counts'] as Map<String, dynamic>? ?? const {},
+      ),
+      topMoods: (json['topMoods'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>()
+          .map(RelationshipMoodCount.fromJson)
+          .toList(),
+      highlights: (json['highlights'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>()
+          .map(RelationshipHighlight.fromJson)
+          .toList(),
+      importantOccasion: json['importantOccasion'] is Map<String, dynamic>
+          ? RelationshipTimelineItem.fromJson(
+              json['importantOccasion'] as Map<String, dynamic>,
+            )
+          : null,
+      timeline: (json['timeline'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>()
+          .map(RelationshipTimelineItem.fromJson)
+          .toList(),
+    );
+  }
+}
+
+class RelationshipSummaryCounts {
+  const RelationshipSummaryCounts({
+    required this.messages,
+    required this.photos,
+    required this.videos,
+    required this.treeLeaves,
+    required this.songs,
+    required this.watchSessions,
+    required this.places,
+    required this.completedGoals,
+  });
+
+  final int messages;
+  final int photos;
+  final int videos;
+  final int treeLeaves;
+  final int songs;
+  final int watchSessions;
+  final int places;
+  final int completedGoals;
+
+  factory RelationshipSummaryCounts.fromJson(Map<String, dynamic> json) {
+    int value(String key) => int.parse((json[key] ?? 0).toString());
+    return RelationshipSummaryCounts(
+      messages: value('messages'),
+      photos: value('photos'),
+      videos: value('videos'),
+      treeLeaves: value('treeLeaves'),
+      songs: value('songs'),
+      watchSessions: value('watchSessions'),
+      places: value('places'),
+      completedGoals: value('completedGoals'),
+    );
+  }
+}
+
+class RelationshipMoodCount {
+  const RelationshipMoodCount({
+    required this.kind,
+    required this.count,
+    this.emoji,
+  });
+
+  final String kind;
+  final int count;
+  final String? emoji;
+
+  factory RelationshipMoodCount.fromJson(Map<String, dynamic> json) {
+    return RelationshipMoodCount(
+      kind: json['kind'] as String? ?? '',
+      emoji: json['emoji'] as String?,
+      count: int.parse((json['count'] ?? 0).toString()),
+    );
+  }
+}
+
+class RelationshipHighlight {
+  const RelationshipHighlight({
+    required this.id,
+    required this.createdAt,
+    required this.reactions,
+    required this.comments,
+    this.title,
+    this.body,
+  });
+
+  final String id;
+  final String? title;
+  final String? body;
+  final DateTime createdAt;
+  final int reactions;
+  final int comments;
+
+  factory RelationshipHighlight.fromJson(Map<String, dynamic> json) {
+    return RelationshipHighlight(
+      id: json['id'] as String,
+      title: json['title'] as String?,
+      body: json['body'] as String?,
+      createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
+      reactions: int.parse((json['reactions'] ?? 0).toString()),
+      comments: int.parse((json['comments'] ?? 0).toString()),
+    );
+  }
+}
+
+class RelationshipTimelineItem {
+  const RelationshipTimelineItem({
+    required this.type,
+    required this.id,
+    required this.title,
+    required this.occurredAt,
+  });
+
+  final String type;
+  final String id;
+  final String title;
+  final DateTime occurredAt;
+
+  factory RelationshipTimelineItem.fromJson(Map<String, dynamic> json) {
+    return RelationshipTimelineItem(
+      type: json['type'] as String? ?? '',
+      id: json['id'] as String,
+      title: json['title'] as String? ?? '',
+      occurredAt: DateTime.parse(
+        (json['occurredAt'] ?? json['date']) as String,
+      ).toLocal(),
     );
   }
 }

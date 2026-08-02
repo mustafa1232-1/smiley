@@ -152,6 +152,14 @@ paths:
       responses:
         "200":
           description: World summary
+  /relationship-summary:
+    get:
+      summary: Get neutral relationship summary
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Relationship summary
   /me:
     get:
       summary: Get authenticated profile
