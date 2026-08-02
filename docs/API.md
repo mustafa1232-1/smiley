@@ -34,7 +34,18 @@ Creates a user and returns an auth session.
 
 ### `POST /auth/password-reset/request`
 
-Always returns `202` to avoid account enumeration.
+Creates a short-lived password reset token when the account exists and always returns `202` to avoid account enumeration. The token is only included in the response when `PASSWORD_RESET_DEBUG_TOKEN=true` for local development.
+
+### `POST /auth/password-reset/confirm`
+
+Consumes a reset token, updates the password, and revokes active sessions.
+
+```json
+{
+  "token": "reset-token",
+  "password": "new-strong-password"
+}
+```
 
 ### `POST /auth/refresh`
 

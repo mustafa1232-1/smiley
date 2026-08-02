@@ -34,6 +34,8 @@ class _AuthScreenState extends State<AuthScreen>
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _resetId = TextEditingController();
+  final _resetToken = TextEditingController();
+  final _resetPassword = TextEditingController();
   bool _acceptedTerms = false;
   bool _busy = false;
   String? _message;
@@ -48,6 +50,8 @@ class _AuthScreenState extends State<AuthScreen>
     _email.dispose();
     _password.dispose();
     _resetId.dispose();
+    _resetToken.dispose();
+    _resetPassword.dispose();
     super.dispose();
   }
 
@@ -116,6 +120,33 @@ class _AuthScreenState extends State<AuthScreen>
     }
   }
 
+  Future<void> _confirmReset() async {
+    if (_resetToken.text.trim().isEmpty || _resetPassword.text.length < 10) {
+      setState(() => _message = 'أدخل رمز الاستعادة وكلمة مرور جديدة قوية.');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await widget.repository.confirmPasswordReset(
+        token: _resetToken.text.trim(),
+        password: _resetPassword.text,
+      );
+      _resetToken.clear();
+      _resetPassword.clear();
+      setState(
+        () => _message = 'تم تحديث كلمة المرور. يمكنك تسجيل الدخول الآن.',
+      );
+    } on ApiException catch (error) {
+      setState(() => _message = error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _run(Future<AuthSession> Function() action) async {
     setState(() {
       _busy = true;
@@ -168,7 +199,7 @@ class _AuthScreenState extends State<AuthScreen>
                   ),
                   const SizedBox(height: 20),
                   SizedBox(
-                    height: 430,
+                    height: 560,
                     child: TabBarView(
                       controller: _tabController,
                       children: [
@@ -192,8 +223,11 @@ class _AuthScreenState extends State<AuthScreen>
                         ),
                         _ResetForm(
                           identifier: _resetId,
+                          token: _resetToken,
+                          password: _resetPassword,
                           busy: _busy,
                           onSubmit: _submitReset,
+                          onConfirm: _confirmReset,
                         ),
                       ],
                     ),
@@ -340,13 +374,19 @@ class _RegisterForm extends StatelessWidget {
 class _ResetForm extends StatelessWidget {
   const _ResetForm({
     required this.identifier,
+    required this.token,
+    required this.password,
     required this.busy,
     required this.onSubmit,
+    required this.onConfirm,
   });
 
   final TextEditingController identifier;
+  final TextEditingController token;
+  final TextEditingController password;
   final bool busy;
   final VoidCallback onSubmit;
+  final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
@@ -365,6 +405,29 @@ class _ResetForm extends StatelessWidget {
           onPressed: busy ? null : onSubmit,
           icon: const Icon(Icons.send_rounded),
           label: const Text('إرسال تعليمات الاستعادة'),
+        ),
+        const SizedBox(height: 20),
+        TextField(
+          controller: token,
+          decoration: const InputDecoration(
+            labelText: 'رمز الاستعادة',
+            prefixIcon: Icon(Icons.pin_outlined),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: password,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: 'كلمة المرور الجديدة',
+            prefixIcon: Icon(Icons.lock_reset_rounded),
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: busy ? null : onConfirm,
+          icon: const Icon(Icons.check_rounded),
+          label: const Text('تحديث كلمة المرور'),
         ),
       ],
     );

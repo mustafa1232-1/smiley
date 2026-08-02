@@ -8,6 +8,10 @@ abstract interface class AuthRepository {
   });
   Future<AuthSession> register(RegisterRequest request);
   Future<void> requestPasswordReset(String identifier);
+  Future<void> confirmPasswordReset({
+    required String token,
+    required String password,
+  });
   Future<AuthSession> refresh(String refreshToken);
   Future<void> logout(String refreshToken);
   Future<void> logoutAll();
@@ -42,6 +46,17 @@ class HttpAuthRepository implements AuthRepository {
   Future<void> requestPasswordReset(String identifier) async {
     await _api.postJson('/auth/password-reset/request', {
       'identifier': identifier,
+    });
+  }
+
+  @override
+  Future<void> confirmPasswordReset({
+    required String token,
+    required String password,
+  }) async {
+    await _api.postJson('/auth/password-reset/confirm', {
+      'token': token,
+      'password': password,
     });
   }
 

@@ -1,7 +1,7 @@
 import { Router, type Request } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 
@@ -31,6 +31,15 @@ const loginSchema = z.object({
 
 const refreshSchema = z.object({
   refreshToken: z.string().trim().min(1)
+});
+
+const passwordResetRequestSchema = z.object({
+  identifier: z.string().trim().min(1).max(255)
+});
+
+const passwordResetConfirmSchema = z.object({
+  token: z.string().trim().min(20).max(500),
+  password: z.string().min(10).max(200)
 });
 
 const sessionParamSchema = z.string().uuid();
@@ -113,8 +122,83 @@ authRouter.post('/auth/login', async (request, response) => {
   response.json(session);
 });
 
-authRouter.post('/auth/password-reset/request', async (_request, response) => {
-  response.status(202).json({ status: 'accepted' });
+authRouter.post('/auth/password-reset/request', async (request, response) => {
+  const input = passwordResetRequestSchema.parse(request.body);
+  const identifier = input.identifier.toLowerCase();
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [{ emailNormalized: identifier }, { usernameNormalized: identifier }],
+      deletedAt: null
+    }
+  });
+
+  let resetToken: string | undefined;
+  if (user) {
+    resetToken = randomBytes(32).toString('base64url');
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: await bcrypt.hash(resetToken, config.bcryptCost),
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000)
+      }
+    });
+    request.log?.info({ userId: user.id }, 'password reset token created');
+  }
+
+  response.status(202).json({
+    status: 'accepted',
+    ...(config.exposePasswordResetToken && resetToken ? { resetToken } : {})
+  });
+});
+
+authRouter.post('/auth/password-reset/confirm', async (request, response) => {
+  const input = passwordResetConfirmSchema.parse(request.body);
+  const candidates = await prisma.passwordResetToken.findMany({
+    where: {
+      usedAt: null,
+      expiresAt: { gt: new Date() }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 100
+  });
+
+  let matched: (typeof candidates)[number] | undefined;
+  for (const candidate of candidates) {
+    if (await bcrypt.compare(input.token, candidate.tokenHash)) {
+      matched = candidate;
+      break;
+    }
+  }
+
+  if (!matched) {
+    throw new AppError(400, 'invalid_reset_token', 'رمز استعادة كلمة المرور غير صالح');
+  }
+
+  const passwordHash = await bcrypt.hash(input.password, config.bcryptCost);
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.user.update({
+      where: { id: matched.userId },
+      data: { passwordHash }
+    });
+    await tx.passwordResetToken.update({
+      where: { id: matched.id },
+      data: { usedAt: new Date() }
+    });
+    await tx.passwordResetToken.updateMany({
+      where: { userId: matched.userId, usedAt: null, id: { not: matched.id } },
+      data: { usedAt: new Date() }
+    });
+    await tx.refreshToken.updateMany({
+      where: { userId: matched.userId, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+    await tx.userSession.updateMany({
+      where: { userId: matched.userId, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+  });
+
+  response.status(204).send();
 });
 
 authRouter.post('/auth/refresh', async (request, response) => {

@@ -23,6 +23,12 @@ paths:
       responses:
         "202":
           description: Accepted
+  /auth/password-reset/confirm:
+    post:
+      summary: Confirm password reset
+      responses:
+        "204":
+          description: Password updated
   /auth/refresh:
     post:
       summary: Rotate refresh token
