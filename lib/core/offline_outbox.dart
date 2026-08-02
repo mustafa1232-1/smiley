@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 abstract interface class OfflineOutbox {
   Future<List<QueuedMessage>> messages();
   Future<List<QueuedPost>> posts();
-  Future<void> enqueueMessage(String body);
+  Future<void> enqueueMessage(String body, {List<String> assetIds});
   Future<void> enqueuePost({required String body, List<String> assetIds});
   Future<void> removeMessage(String id);
   Future<void> removePost(String id);
@@ -30,12 +30,16 @@ class SharedPreferencesOfflineOutbox implements OfflineOutbox {
   }
 
   @override
-  Future<void> enqueueMessage(String body) async {
+  Future<void> enqueueMessage(
+    String body, {
+    List<String> assetIds = const [],
+  }) async {
     final items = await messages();
     items.add(
       QueuedMessage(
         id: _id(),
         body: body.trim(),
+        assetIds: assetIds,
         createdAt: DateTime.now().toUtc(),
       ),
     );
@@ -93,23 +97,33 @@ class QueuedMessage {
   const QueuedMessage({
     required this.id,
     required this.body,
+    required this.assetIds,
     required this.createdAt,
   });
 
   final String id;
   final String body;
+  final List<String> assetIds;
   final DateTime createdAt;
 
   factory QueuedMessage.fromJson(Map<String, dynamic> json) {
     return QueuedMessage(
       id: json['id'] as String,
       body: json['body'] as String? ?? '',
+      assetIds: (json['assetIds'] as List<dynamic>? ?? [])
+          .map((item) => item.toString())
+          .toList(),
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'id': id, 'body': body, 'createdAt': createdAt.toIso8601String()};
+    return {
+      'id': id,
+      'body': body,
+      'assetIds': assetIds,
+      'createdAt': createdAt.toIso8601String(),
+    };
   }
 }
 

@@ -153,11 +153,15 @@ class MemoryOfflineOutbox implements OfflineOutbox {
   final List<QueuedPost> _posts = [];
 
   @override
-  Future<void> enqueueMessage(String body) async {
+  Future<void> enqueueMessage(
+    String body, {
+    List<String> assetIds = const [],
+  }) async {
     _messages.add(
       QueuedMessage(
         id: 'message-${_messages.length}',
         body: body,
+        assetIds: assetIds,
         createdAt: DateTime(2026, 8, 3),
       ),
     );
@@ -470,10 +474,14 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<void> report({required String reason, String? details}) async {}
 
   @override
-  Future<ChatMessage> sendMessage(String body) async {
+  Future<ChatMessage> sendMessage(
+    String body, {
+    List<String> assetIds = const [],
+  }) async {
     return ChatMessage(
       id: 'message',
       body: body,
+      assetIds: assetIds,
       serverTimestamp: DateTime(2026, 8, 3),
     );
   }

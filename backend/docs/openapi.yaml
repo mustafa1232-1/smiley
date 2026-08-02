@@ -219,7 +219,7 @@ paths:
         "200":
           description: Messages
     post:
-      summary: Send idempotent text message
+      summary: Send idempotent text or media message
       security:
         - bearerAuth: []
       responses:

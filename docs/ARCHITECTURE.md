@@ -39,7 +39,7 @@
 
 1. Core account, date gate, profile, partner discovery, partnership requests, relationship onboarding.
 2. Home, feed, moods, calendar, occasions, counters, basic notifications.
-3. Media messages, receipts, offline queue, full push notifications.
+3. Media posts/messages, receipts, offline queue, full push notifications.
 4. Rich Smiley world visualizations, summaries, and games.
 5. Audio upload, allowed YouTube integration, and playback sync.
 6. Uploaded videos, allowed YouTube playback, and external countdowns.

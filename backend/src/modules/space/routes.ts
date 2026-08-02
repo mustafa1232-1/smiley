@@ -48,7 +48,8 @@ const occasionInputSchema = z.object({
 
 const messageSchema = z.object({
   clientMessageId: z.string().trim().min(1).max(80),
-  body: z.string().trim().min(1).max(4000)
+  body: z.string().trim().max(4000).optional(),
+  assetIds: z.array(z.string().uuid()).max(10).optional()
 });
 
 const messageReceiptSchema = z.object({
@@ -532,6 +533,7 @@ spaceRouter.get('/messages', requireAuth, async (request, response) => {
   const messages = await prisma.message.findMany({
     where: { conversationId: conversation.id, deletedAt: null },
     include: {
+      attachments: true,
       receipts: { where: { userId } },
       sender: { select: { username: true, profile: { select: { displayName: true } } } }
     },
@@ -546,6 +548,16 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
   const userId = request.user!.sub;
   const input = messageSchema.parse(request.body);
   const partnership = await requireActivePartnership(userId);
+  const body = input.body?.trim() ?? '';
+  const assetIds = [...new Set(input.assetIds ?? [])];
+
+  if (!body && assetIds.length === 0) {
+    throw new AppError(422, 'message_empty', 'اكتب رسالة أو أضف مرفقاً');
+  }
+
+  if (assetIds.length > 0) {
+    await assertMediaAssetAccess(userId, partnership.id, assetIds);
+  }
 
   const message = await prisma.$transaction(async (tx) => {
     const conversation = await ensureConversation(
@@ -562,6 +574,7 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
         }
       },
       include: {
+        attachments: true,
         sender: { select: { username: true, profile: { select: { displayName: true } } } }
       }
     });
@@ -572,10 +585,14 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
         conversationId: conversation.id,
         senderId: userId,
         clientMessageId: input.clientMessageId,
-        kind: 'text',
-        body: input.body
+        kind: assetIds.length > 0 ? 'file' : 'text',
+        body: body || null,
+        attachments: assetIds.length
+          ? { create: assetIds.map((assetId) => ({ assetId, kind: 'media' })) }
+          : undefined
       },
       include: {
+        attachments: true,
         sender: { select: { username: true, profile: { select: { displayName: true } } } }
       }
     });
@@ -584,7 +601,7 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
   await notifyPartner(partnership, userId, {
     type: 'message.created',
     title: 'رسالة جديدة',
-    body: input.body.slice(0, 120),
+    body: body ? body.slice(0, 120) : 'مرفق جديد',
     payload: { messageId: message.id }
   });
 
@@ -1613,6 +1630,7 @@ function serializeMessage(message: {
   clientMessageId: string;
   body: string | null;
   serverTimestamp: Date;
+  attachments?: Array<{ assetId: string | null }>;
   receipts?: Array<{
     deliveredAt: Date | null;
     readAt: Date | null;
@@ -1627,6 +1645,9 @@ function serializeMessage(message: {
     clientMessageId: message.clientMessageId,
     body: message.body,
     serverTimestamp: message.serverTimestamp,
+    assetIds: (message.attachments ?? [])
+      .map((item) => item.assetId)
+      .filter((assetId): assetId is string => Boolean(assetId)),
     deliveredAt: message.receipts?.[0]?.deliveredAt ?? null,
     readAt: message.receipts?.[0]?.readAt ?? null,
     sender: message.sender

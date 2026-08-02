@@ -772,7 +772,9 @@ class _ChatTab extends StatefulWidget {
 class _ChatTabState extends State<_ChatTab> {
   late Future<List<ChatMessage>> _messages = _loadMessages();
   final _message = TextEditingController();
+  final List<MediaAssetModel> _attachments = [];
   bool _sending = false;
+  bool _uploading = false;
 
   @override
   void dispose() {
@@ -809,7 +811,22 @@ class _ChatTabState extends State<_ChatTab> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(item.body),
+                            if (item.body.isNotEmpty) Text(item.body),
+                            if (item.assetIds.isNotEmpty) ...[
+                              if (item.body.isNotEmpty)
+                                const SizedBox(height: 6),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.attach_file_rounded,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text('مرفقات: ${item.assetIds.length}'),
+                                ],
+                              ),
+                            ],
                             if (item.pending) ...[
                               const SizedBox(height: 4),
                               Text(
@@ -833,12 +850,27 @@ class _ChatTabState extends State<_ChatTab> {
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
+                IconButton.outlined(
+                  tooltip: 'إرفاق ملف',
+                  onPressed: (_sending || _uploading) ? null : _attachMedia,
+                  icon: _uploading
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Badge.count(
+                          count: _attachments.length,
+                          isLabelVisible: _attachments.isNotEmpty,
+                          child: const Icon(Icons.attach_file_rounded),
+                        ),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: _message,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: 'اكتب رسالة',
-                      prefixIcon: Icon(Icons.chat_bubble_outline_rounded),
+                      prefixIcon: const Icon(Icons.chat_bubble_outline_rounded),
                     ),
                     onSubmitted: (_) => _send(),
                   ),
@@ -846,7 +878,7 @@ class _ChatTabState extends State<_ChatTab> {
                 const SizedBox(width: 8),
                 IconButton.filled(
                   tooltip: 'إرسال',
-                  onPressed: _sending ? null : _send,
+                  onPressed: (_sending || _uploading) ? null : _send,
                   icon: const Icon(Icons.send_rounded),
                 ),
               ],
@@ -858,16 +890,20 @@ class _ChatTabState extends State<_ChatTab> {
   }
 
   Future<void> _send() async {
-    if (_message.text.trim().isEmpty) return;
+    final body = _message.text;
+    final assetIds = _attachments.map((asset) => asset.id).toList();
+    if (body.trim().isEmpty && assetIds.isEmpty) return;
     setState(() => _sending = true);
     try {
-      await widget.repository.sendMessage(_message.text);
+      await widget.repository.sendMessage(body, assetIds: assetIds);
       _message.clear();
+      _attachments.clear();
       setState(() => _messages = _loadMessages());
     } on ApiException catch (error) {
       if (error.code != 'network_error') rethrow;
-      await widget.offlineOutbox.enqueueMessage(_message.text);
+      await widget.offlineOutbox.enqueueMessage(body, assetIds: assetIds);
       _message.clear();
+      _attachments.clear();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم حفظ الرسالة محلياً للمزامنة.')),
@@ -900,6 +936,7 @@ class _ChatTabState extends State<_ChatTab> {
         (item) => ChatMessage(
           id: item.id,
           body: item.body,
+          assetIds: item.assetIds,
           serverTimestamp: item.createdAt,
           pending: true,
         ),
@@ -911,12 +948,39 @@ class _ChatTabState extends State<_ChatTab> {
     final pending = await widget.offlineOutbox.messages();
     for (final message in pending) {
       try {
-        await widget.repository.sendMessage(message.body);
+        await widget.repository.sendMessage(
+          message.body,
+          assetIds: message.assetIds,
+        );
         await widget.offlineOutbox.removeMessage(message.id);
       } on ApiException catch (error) {
         if (error.code == 'network_error') return;
         await widget.offlineOutbox.removeMessage(message.id);
       }
+    }
+  }
+
+  Future<void> _attachMedia() async {
+    final result = await FilePicker.platform.pickFiles(withData: true);
+    final file = result?.files.single;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null) return;
+
+    setState(() => _uploading = true);
+    try {
+      final asset = await widget.repository.uploadMedia(
+        fileName: file.name,
+        mimeType: _mimeTypeFromName(file.name),
+        bytes: bytes,
+      );
+      setState(() => _attachments.add(asset));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
     }
   }
 }

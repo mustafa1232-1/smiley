@@ -184,16 +184,17 @@ Creates a mood update.
 
 ### `GET /messages`
 
-Lists the shared conversation messages, including the current user's `deliveredAt` and `readAt` receipt timestamps when present.
+Lists the shared conversation messages, including `assetIds` for message attachments and the current user's `deliveredAt` and `readAt` receipt timestamps when present.
 
 ### `POST /messages`
 
-Creates an idempotent text message using `clientMessageId`.
+Creates an idempotent text or media message using `clientMessageId`. The request must include a non-empty `body`, at least one uploaded media `assetIds` entry, or both.
 
 ```json
 {
   "clientMessageId": "m-1",
-  "body": "مرحبا"
+  "body": "مرحبا",
+  "assetIds": ["2a57e5a4-77f4-49b4-9c31-808c614e19c2"]
 }
 ```
 

@@ -31,7 +31,7 @@ abstract interface class SpaceRepository {
     String? note,
   });
   Future<List<ChatMessage>> messages();
-  Future<ChatMessage> sendMessage(String body);
+  Future<ChatMessage> sendMessage(String body, {List<String> assetIds});
   Future<void> readAllMessages();
   Future<List<CalendarItem>> calendarEvents();
   Future<CalendarItem> createCalendarEvent({
@@ -205,10 +205,15 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<ChatMessage> sendMessage(String body) async {
+  Future<ChatMessage> sendMessage(
+    String body, {
+    List<String> assetIds = const [],
+  }) async {
+    final trimmed = body.trim();
     final json = await _api.postJson('/messages', {
       'clientMessageId': 'm-${DateTime.now().microsecondsSinceEpoch}',
-      'body': body.trim(),
+      if (trimmed.isNotEmpty) 'body': trimmed,
+      if (assetIds.isNotEmpty) 'assetIds': assetIds,
     });
     return ChatMessage.fromJson(json['message'] as Map<String, dynamic>);
   }
@@ -659,6 +664,7 @@ class ChatMessage {
     required this.id,
     required this.body,
     required this.serverTimestamp,
+    this.assetIds = const [],
     this.senderUsername,
     this.deliveredAt,
     this.readAt,
@@ -668,6 +674,7 @@ class ChatMessage {
   final String id;
   final String body;
   final DateTime serverTimestamp;
+  final List<String> assetIds;
   final String? senderUsername;
   final DateTime? deliveredAt;
   final DateTime? readAt;
@@ -675,10 +682,14 @@ class ChatMessage {
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final sender = json['sender'] as Map<String, dynamic>?;
+    final assetIds = (json['assetIds'] as List<dynamic>? ?? [])
+        .map((item) => item.toString())
+        .toList();
     return ChatMessage(
       id: json['id'] as String,
       body: json['body'] as String? ?? '',
       serverTimestamp: DateTime.parse(json['serverTimestamp'] as String),
+      assetIds: assetIds,
       senderUsername: sender?['username'] as String?,
       deliveredAt: _optionalDate(json['deliveredAt']),
       readAt: _optionalDate(json['readAt']),

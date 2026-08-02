@@ -10,11 +10,12 @@ void main() {
   test('offline outbox stores and removes messages', () async {
     const outbox = SharedPreferencesOfflineOutbox();
 
-    await outbox.enqueueMessage('hello');
+    await outbox.enqueueMessage('hello', assetIds: ['asset']);
     final messages = await outbox.messages();
 
     expect(messages, hasLength(1));
     expect(messages.single.body, 'hello');
+    expect(messages.single.assetIds, ['asset']);
 
     await outbox.removeMessage(messages.single.id);
     expect(await outbox.messages(), isEmpty);
