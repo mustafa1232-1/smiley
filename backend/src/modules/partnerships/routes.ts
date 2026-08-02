@@ -93,15 +93,20 @@ partnershipsRouter.post('/partnership-requests', requireAuth, async (request, re
     requestId: result.requestRecord.id
   });
   if (result.notification) {
-    void sendPushToUser(receiver.id, {
-      notificationId: result.notification.id,
-      type: 'partnership.requested',
-      title: result.notification.title,
-      body: result.notification.body,
-      payload: { requestId: result.requestRecord.id }
-    }).catch((error) => {
-      console.error(JSON.stringify({ level: 'error', message: 'push_send_failed', error }));
-    });
+    void shouldSendPush(receiver.id, 'partnership.requested')
+      .then((allowed) => {
+        if (!allowed) return;
+        return sendPushToUser(receiver.id, {
+          notificationId: result.notification!.id,
+          type: 'partnership.requested',
+          title: result.notification!.title,
+          body: result.notification!.body,
+          payload: { requestId: result.requestRecord.id }
+        });
+      })
+      .catch((error) => {
+        console.error(JSON.stringify({ level: 'error', message: 'push_send_failed', error }));
+      });
   }
 });
 
@@ -394,6 +399,33 @@ function serializePartnership(partnership: NonNullable<PartnershipPayload>) {
 
 function startOfUtcDay(date: Date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+async function shouldSendPush(userId: string, type: string) {
+  const preference = await prisma.notificationPreference.findUnique({
+    where: { userId_type: { userId, type } }
+  });
+  if (!preference) return true;
+  if (!preference.enabled) return false;
+  if (preference.quietFrom && preference.quietTo) {
+    return !isNowInsideQuietHours(preference.quietFrom, preference.quietTo);
+  }
+  return true;
+}
+
+function isNowInsideQuietHours(quietFrom: string, quietTo: string) {
+  const now = new Date();
+  const current = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const from = minutesFromClock(quietFrom);
+  const to = minutesFromClock(quietTo);
+  if (from === to) return false;
+  if (from < to) return current >= from && current < to;
+  return current >= from || current < to;
+}
+
+function minutesFromClock(value: string) {
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + minutes;
 }
 
 function routeParam(value: string | string[]) {

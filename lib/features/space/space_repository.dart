@@ -42,6 +42,13 @@ abstract interface class SpaceRepository {
   Future<void> createOccasion({required String title, required DateTime date});
   Future<List<NotificationItem>> notifications();
   Future<void> readAllNotifications();
+  Future<List<NotificationPreferenceModel>> notificationPreferences();
+  Future<NotificationPreferenceModel> updateNotificationPreference({
+    required String type,
+    required bool enabled,
+    String? quietFrom,
+    String? quietTo,
+  });
   Future<List<WishItem>> wishes();
   Future<void> createWish(String title);
   Future<void> toggleWish(String id);
@@ -255,6 +262,30 @@ class HttpSpaceRepository implements SpaceRepository {
   @override
   Future<void> readAllNotifications() async {
     await _api.postJson('/notifications/read-all', {});
+  }
+
+  @override
+  Future<List<NotificationPreferenceModel>> notificationPreferences() async {
+    final json = await _api.getJson('/notifications/preferences');
+    return _items(json).map(NotificationPreferenceModel.fromJson).toList();
+  }
+
+  @override
+  Future<NotificationPreferenceModel> updateNotificationPreference({
+    required String type,
+    required bool enabled,
+    String? quietFrom,
+    String? quietTo,
+  }) async {
+    final json = await _api.patchJson('/notifications/preferences', {
+      'type': type,
+      'enabled': enabled,
+      'quietFrom': quietFrom,
+      'quietTo': quietTo,
+    });
+    return NotificationPreferenceModel.fromJson(
+      json['preference'] as Map<String, dynamic>,
+    );
   }
 
   @override
@@ -685,6 +716,29 @@ class NotificationItem {
       id: json['id'] as String,
       title: json['title'] as String,
       body: json['body'] as String?,
+    );
+  }
+}
+
+class NotificationPreferenceModel {
+  const NotificationPreferenceModel({
+    required this.type,
+    required this.enabled,
+    this.quietFrom,
+    this.quietTo,
+  });
+
+  final String type;
+  final bool enabled;
+  final String? quietFrom;
+  final String? quietTo;
+
+  factory NotificationPreferenceModel.fromJson(Map<String, dynamic> json) {
+    return NotificationPreferenceModel(
+      type: json['type'] as String,
+      enabled: json['enabled'] as bool? ?? true,
+      quietFrom: json['quietFrom'] as String?,
+      quietTo: json['quietTo'] as String?,
     );
   }
 }

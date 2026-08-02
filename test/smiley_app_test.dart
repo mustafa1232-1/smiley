@@ -368,6 +368,25 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<List<NotificationItem>> notifications() async => [];
 
   @override
+  Future<List<NotificationPreferenceModel>> notificationPreferences() async =>
+      [];
+
+  @override
+  Future<NotificationPreferenceModel> updateNotificationPreference({
+    required String type,
+    required bool enabled,
+    String? quietFrom,
+    String? quietTo,
+  }) async {
+    return NotificationPreferenceModel(
+      type: type,
+      enabled: enabled,
+      quietFrom: quietFrom,
+      quietTo: quietTo,
+    );
+  }
+
+  @override
   Future<List<OccasionItem>> occasions() async => [];
 
   @override

@@ -295,6 +295,21 @@ paths:
       responses:
         "204":
           description: Updated
+  /notifications/preferences:
+    get:
+      summary: List notification preferences
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Preferences
+    patch:
+      summary: Update notification preference
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated preference
   /notifications/push-tokens:
     post:
       summary: Register device push token

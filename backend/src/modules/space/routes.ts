@@ -119,6 +119,28 @@ const uploadCompleteSchema = z.object({
   checksum: z.string().trim().max(160).optional()
 });
 
+const defaultNotificationTypes = [
+  'message.created',
+  'partnership.requested',
+  'post.created',
+  'mood.updated',
+  'calendar.event.created',
+  'occasion.created',
+  'wish.created',
+  'goal.created',
+  'shared_list.created',
+  'game.updated',
+  'music.queue.updated',
+  'watch.playback.updated'
+];
+
+const notificationPreferenceSchema = z.object({
+  type: z.string().trim().min(1).max(80),
+  enabled: z.boolean(),
+  quietFrom: z.string().trim().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  quietTo: z.string().trim().regex(/^\d{2}:\d{2}$/).nullable().optional()
+});
+
 const pushTokenSchema = z.object({
   token: z.string().trim().min(20).max(4096),
   platform: z.string().trim().min(2).max(20)
@@ -665,6 +687,57 @@ spaceRouter.post('/notifications/read-all', requireAuth, async (request, respons
     data: { readAt: new Date() }
   });
   response.status(204).send();
+});
+
+spaceRouter.get('/notifications/preferences', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const saved = await prisma.notificationPreference.findMany({
+    where: { userId },
+    orderBy: { type: 'asc' }
+  });
+  const byType = new Map(saved.map((item) => [item.type, item]));
+  const types = [...new Set([...defaultNotificationTypes, ...saved.map((item) => item.type)])];
+  response.json({
+    items: types.map((type) =>
+      serializeNotificationPreference(
+        byType.get(type) ?? {
+          id: null,
+          userId,
+          type,
+          enabled: true,
+          quietFrom: null,
+          quietTo: null,
+          updatedAt: null
+        }
+      )
+    )
+  });
+});
+
+spaceRouter.patch('/notifications/preferences', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = notificationPreferenceSchema.parse(request.body);
+  const item = await prisma.notificationPreference.upsert({
+    where: {
+      userId_type: {
+        userId,
+        type: input.type
+      }
+    },
+    update: {
+      enabled: input.enabled,
+      quietFrom: input.quietFrom ?? null,
+      quietTo: input.quietTo ?? null
+    },
+    create: {
+      userId,
+      type: input.type,
+      enabled: input.enabled,
+      quietFrom: input.quietFrom ?? null,
+      quietTo: input.quietTo ?? null
+    }
+  });
+  response.json({ preference: serializeNotificationPreference(item) });
 });
 
 spaceRouter.post('/notifications/push-tokens', requireAuth, async (request, response) => {
@@ -1287,15 +1360,66 @@ async function notifyPartner(
   });
   emitToUser(userId, 'notification.created', actorId, { notification });
   emitToPartnership(input.type, actorId, partnership.id, input.payload ?? {});
-  void sendPushToUser(userId, {
-    notificationId: notification.id,
-    type: input.type,
-    title: input.title,
-    body: input.body,
-    payload: input.payload
-  }).catch((error) => {
-    console.error(JSON.stringify({ level: 'error', message: 'push_send_failed', error }));
+  void shouldSendPush(userId, input.type)
+    .then((allowed) => {
+      if (!allowed) return;
+      return sendPushToUser(userId, {
+        notificationId: notification.id,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+        payload: input.payload
+      });
+    })
+    .catch((error) => {
+      console.error(JSON.stringify({ level: 'error', message: 'push_send_failed', error }));
+    });
+}
+
+async function shouldSendPush(userId: string, type: string) {
+  const preference = await prisma.notificationPreference.findUnique({
+    where: { userId_type: { userId, type } }
   });
+  if (!preference) return true;
+  if (!preference.enabled) return false;
+  if (preference.quietFrom && preference.quietTo) {
+    return !isNowInsideQuietHours(preference.quietFrom, preference.quietTo);
+  }
+  return true;
+}
+
+function isNowInsideQuietHours(quietFrom: string, quietTo: string) {
+  const now = new Date();
+  const current = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const from = minutesFromClock(quietFrom);
+  const to = minutesFromClock(quietTo);
+  if (from === to) return false;
+  if (from < to) return current >= from && current < to;
+  return current >= from || current < to;
+}
+
+function minutesFromClock(value: string) {
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function serializeNotificationPreference(preference: {
+  id: string | null;
+  userId: string;
+  type: string;
+  enabled: boolean;
+  quietFrom: string | null;
+  quietTo: string | null;
+  updatedAt: Date | null;
+}) {
+  return {
+    id: preference.id,
+    type: preference.type,
+    enabled: preference.enabled,
+    quietFrom: preference.quietFrom,
+    quietTo: preference.quietTo,
+    updatedAt: preference.updatedAt
+  };
 }
 
 async function markMessageReceipt(

@@ -245,6 +245,23 @@ Lists recent notifications for the current user.
 
 Marks unread notifications as read.
 
+### `GET /notifications/preferences`
+
+Lists notification preferences. Defaults are returned even before the user customizes them.
+
+### `PATCH /notifications/preferences`
+
+Updates one notification preference. Quiet hours are stored as `HH:mm` and applied to external push delivery.
+
+```json
+{
+  "type": "message.created",
+  "enabled": true,
+  "quietFrom": "22:00",
+  "quietTo": "08:00"
+}
+```
+
 ### `POST /notifications/push-tokens`
 
 Registers or refreshes the current device push token. The backend stores the token encrypted and sends FCM notifications when Firebase variables are configured.

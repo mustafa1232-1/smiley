@@ -1718,6 +1718,17 @@ class _NotificationsScreenState extends State<_NotificationsScreen> {
             onPressed: _readAll,
             icon: const Icon(Icons.done_all_rounded),
           ),
+          IconButton(
+            tooltip: 'إعدادات الإشعارات',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _NotificationPreferencesScreen(
+                  repository: widget.repository,
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.tune_rounded),
+          ),
         ],
       ),
       body: FutureBuilder<List<NotificationItem>>(
@@ -2028,6 +2039,108 @@ class _SessionsScreenState extends State<_SessionsScreen> {
     try {
       await widget.repository.revokeSession(id);
       setState(() => _future = widget.repository.sessions());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+}
+
+class _NotificationPreferencesScreen extends StatefulWidget {
+  const _NotificationPreferencesScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_NotificationPreferencesScreen> createState() =>
+      _NotificationPreferencesScreenState();
+}
+
+class _NotificationPreferencesScreenState
+    extends State<_NotificationPreferencesScreen> {
+  late Future<List<NotificationPreferenceModel>> _future = widget.repository
+      .notificationPreferences();
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('إعدادات الإشعارات')),
+      body: FutureBuilder<List<NotificationPreferenceModel>>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final items = snapshot.requireData;
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              const _SectionHeader(
+                icon: Icons.tune_rounded,
+                title: 'إعدادات الإشعارات',
+                subtitle: 'تحكم في التنبيهات الخارجية وفترة الهدوء.',
+              ),
+              const SizedBox(height: 16),
+              for (final item in items)
+                Card(
+                  child: SwitchListTile(
+                    secondary: const Icon(Icons.notifications_active_outlined),
+                    title: Text(_notificationTypeLabel(item.type)),
+                    subtitle: Text(
+                      item.quietFrom == null || item.quietTo == null
+                          ? 'بدون فترة هدوء'
+                          : 'هدوء ${item.quietFrom} - ${item.quietTo}',
+                    ),
+                    value: item.enabled,
+                    onChanged: _busy
+                        ? null
+                        : (value) => _updatePreference(item, value),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _setNightQuietHours,
+                icon: const Icon(Icons.bedtime_outlined),
+                label: const Text('تفعيل الهدوء الليلي 22:00 - 08:00'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _updatePreference(
+    NotificationPreferenceModel item,
+    bool enabled,
+  ) async {
+    setState(() => _busy = true);
+    try {
+      await widget.repository.updateNotificationPreference(
+        type: item.type,
+        enabled: enabled,
+        quietFrom: item.quietFrom,
+        quietTo: item.quietTo,
+      );
+      setState(() => _future = widget.repository.notificationPreferences());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setNightQuietHours() async {
+    final items = await _future;
+    setState(() => _busy = true);
+    try {
+      for (final item in items) {
+        await widget.repository.updateNotificationPreference(
+          type: item.type,
+          enabled: item.enabled,
+          quietFrom: '22:00',
+          quietTo: '08:00',
+        );
+      }
+      setState(() => _future = widget.repository.notificationPreferences());
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -2952,6 +3065,24 @@ String _mimeTypeFromName(String fileName) {
   if (lower.endsWith('.wav')) return 'audio/wav';
   if (lower.endsWith('.pdf')) return 'application/pdf';
   return 'application/octet-stream';
+}
+
+String _notificationTypeLabel(String type) {
+  return switch (type) {
+    'message.created' => 'الرسائل',
+    'partnership.requested' => 'طلبات الارتباط',
+    'post.created' => 'الذكريات والمنشورات',
+    'mood.updated' => 'المزاج',
+    'calendar.event.created' => 'التقويم',
+    'occasion.created' => 'المناسبات',
+    'wish.created' => 'الأمنيات',
+    'goal.created' => 'الأهداف',
+    'shared_list.created' => 'القوائم المشتركة',
+    'game.updated' => 'الألعاب',
+    'music.queue.updated' => 'الموسيقى',
+    'watch.playback.updated' => 'السينما',
+    _ => type,
+  };
 }
 
 String _two(int value) => value.toString().padLeft(2, '0');
