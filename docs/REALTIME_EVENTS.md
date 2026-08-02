@@ -22,6 +22,7 @@ Runtime:
 - Authenticated sockets join `user:{userId}` and every active/pending partnership room they are allowed to see.
 - The Flutter client connects after login and refreshes relationship state on partnership and notification events.
 - Typing events are accepted as `typing.started` and `typing.stopped` with `{ "partnershipId": "uuid" }`.
+- Message receipt endpoints emit `message.delivered` and `message.read` with the message id, user id, and timestamp.
 
 Event types:
 

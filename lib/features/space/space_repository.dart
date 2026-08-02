@@ -32,6 +32,7 @@ abstract interface class SpaceRepository {
   });
   Future<List<ChatMessage>> messages();
   Future<ChatMessage> sendMessage(String body);
+  Future<void> readAllMessages();
   Future<List<CalendarItem>> calendarEvents();
   Future<CalendarItem> createCalendarEvent({
     required String title,
@@ -197,6 +198,11 @@ class HttpSpaceRepository implements SpaceRepository {
       'body': body.trim(),
     });
     return ChatMessage.fromJson(json['message'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> readAllMessages() async {
+    await _api.postJson('/messages/read-all', {});
   }
 
   @override
@@ -593,17 +599,27 @@ class ChatMessage {
     required this.id,
     required this.body,
     required this.serverTimestamp,
+    this.senderUsername,
+    this.deliveredAt,
+    this.readAt,
   });
 
   final String id;
   final String body;
   final DateTime serverTimestamp;
+  final String? senderUsername;
+  final DateTime? deliveredAt;
+  final DateTime? readAt;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    final sender = json['sender'] as Map<String, dynamic>?;
     return ChatMessage(
       id: json['id'] as String,
       body: json['body'] as String? ?? '',
       serverTimestamp: DateTime.parse(json['serverTimestamp'] as String),
+      senderUsername: sender?['username'] as String?,
+      deliveredAt: _optionalDate(json['deliveredAt']),
+      readAt: _optionalDate(json['readAt']),
     );
   }
 }
@@ -940,4 +956,9 @@ class TimeCapsuleItem {
       opened: json['openedAt'] != null,
     );
   }
+}
+
+DateTime? _optionalDate(Object? value) {
+  if (value == null) return null;
+  return DateTime.parse(value as String);
 }

@@ -51,6 +51,10 @@ const messageSchema = z.object({
   body: z.string().trim().min(1).max(4000)
 });
 
+const messageReceiptSchema = z.object({
+  messageId: z.string().uuid()
+});
+
 const profileSchema = z.object({
   displayName: z.string().trim().min(1).max(80),
   bio: z.string().trim().max(240).optional(),
@@ -484,7 +488,8 @@ spaceRouter.post('/occasions', requireAuth, async (request, response) => {
 });
 
 spaceRouter.get('/messages', requireAuth, async (request, response) => {
-  const partnership = await requireActivePartnership(request.user!.sub);
+  const userId = request.user!.sub;
+  const partnership = await requireActivePartnership(userId);
   const conversation = await prisma.conversation.findFirst({
     where: { partnershipId: partnership.id }
   });
@@ -497,6 +502,7 @@ spaceRouter.get('/messages', requireAuth, async (request, response) => {
   const messages = await prisma.message.findMany({
     where: { conversationId: conversation.id, deletedAt: null },
     include: {
+      receipts: { where: { userId } },
       sender: { select: { username: true, profile: { select: { displayName: true } } } }
     },
     orderBy: { serverTimestamp: 'desc' },
@@ -553,6 +559,87 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
   });
 
   response.status(201).json({ message: serializeMessage(message) });
+});
+
+spaceRouter.post('/messages/:id/delivered', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const partnership = await requireActivePartnership(userId);
+  const input = messageReceiptSchema.parse({ messageId: routeParam(request.params.id) });
+  const receipt = await markMessageReceipt(
+    userId,
+    partnership.id,
+    input.messageId,
+    'delivered'
+  );
+  emitToPartnership('message.delivered', userId, partnership.id, {
+    messageId: receipt.messageId,
+    userId,
+    deliveredAt: receipt.deliveredAt
+  });
+  response.json({ receipt });
+});
+
+spaceRouter.post('/messages/:id/read', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const partnership = await requireActivePartnership(userId);
+  const input = messageReceiptSchema.parse({ messageId: routeParam(request.params.id) });
+  const receipt = await markMessageReceipt(
+    userId,
+    partnership.id,
+    input.messageId,
+    'read'
+  );
+  emitToPartnership('message.read', userId, partnership.id, {
+    messageId: receipt.messageId,
+    userId,
+    readAt: receipt.readAt
+  });
+  response.json({ receipt });
+});
+
+spaceRouter.post('/messages/read-all', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const partnership = await requireActivePartnership(userId);
+  const conversation = await prisma.conversation.findFirst({
+    where: { partnershipId: partnership.id }
+  });
+
+  if (!conversation) {
+    response.status(204).send();
+    return;
+  }
+
+  const unread = await prisma.message.findMany({
+    where: {
+      conversationId: conversation.id,
+      senderId: { not: userId },
+      deletedAt: null,
+      receipts: { none: { userId, readAt: { not: null } } }
+    },
+    select: { id: true }
+  });
+  if (unread.length === 0) {
+    response.status(204).send();
+    return;
+  }
+
+  const now = new Date();
+  await prisma.$transaction(
+    unread.map((message) =>
+      prisma.messageReceipt.upsert({
+        where: { messageId_userId: { messageId: message.id, userId } },
+        update: { deliveredAt: now, readAt: now },
+        create: { messageId: message.id, userId, deliveredAt: now, readAt: now }
+      })
+    )
+  );
+
+  emitToPartnership('message.read', userId, partnership.id, {
+    messageIds: unread.map((message) => message.id),
+    userId,
+    readAt: now
+  });
+  response.status(204).send();
 });
 
 spaceRouter.get('/notifications', requireAuth, async (request, response) => {
@@ -1127,6 +1214,47 @@ async function notifyPartner(
   });
 }
 
+async function markMessageReceipt(
+  userId: string,
+  partnershipId: string,
+  messageId: string,
+  mode: 'delivered' | 'read'
+) {
+  const message = await prisma.message.findFirst({
+    where: {
+      id: messageId,
+      deletedAt: null,
+      conversation: { partnershipId }
+    }
+  });
+  if (!message) {
+    throw new AppError(404, 'message_not_found', 'Ø§Ù„Ø±Ø³Ø§Ù„Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©');
+  }
+  if (message.senderId === userId) {
+    throw new AppError(409, 'own_message_receipt', 'Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ­Ø¯ÙŠØ« Ø¥ÙŠØµØ§Ù„ Ø±Ø³Ø§Ù„ØªÙƒ');
+  }
+
+  const now = new Date();
+  return prisma.messageReceipt.upsert({
+    where: {
+      messageId_userId: {
+        messageId,
+        userId
+      }
+    },
+    update:
+      mode === 'read'
+        ? { deliveredAt: now, readAt: now }
+        : { deliveredAt: now },
+    create: {
+      messageId,
+      userId,
+      deliveredAt: now,
+      readAt: mode === 'read' ? now : undefined
+    }
+  });
+}
+
 function serializePost(post: {
   id: string;
   title: string | null;
@@ -1162,6 +1290,10 @@ function serializeMessage(message: {
   clientMessageId: string;
   body: string | null;
   serverTimestamp: Date;
+  receipts?: Array<{
+    deliveredAt: Date | null;
+    readAt: Date | null;
+  }>;
   sender?: {
     username: string;
     profile: { displayName: string } | null;
@@ -1172,6 +1304,8 @@ function serializeMessage(message: {
     clientMessageId: message.clientMessageId,
     body: message.body,
     serverTimestamp: message.serverTimestamp,
+    deliveredAt: message.receipts?.[0]?.deliveredAt ?? null,
+    readAt: message.receipts?.[0]?.readAt ?? null,
     sender: message.sender
       ? {
           username: message.sender.username,

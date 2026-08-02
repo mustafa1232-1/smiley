@@ -182,7 +182,7 @@ Creates a mood update.
 
 ### `GET /messages`
 
-Lists the shared conversation messages.
+Lists the shared conversation messages, including the current user's `deliveredAt` and `readAt` receipt timestamps when present.
 
 ### `POST /messages`
 
@@ -194,6 +194,18 @@ Creates an idempotent text message using `clientMessageId`.
   "body": "مرحبا"
 }
 ```
+
+### `POST /messages/:id/delivered`
+
+Marks a partner message as delivered for the current user and emits `message.delivered`.
+
+### `POST /messages/:id/read`
+
+Marks a partner message as read for the current user and emits `message.read`.
+
+### `POST /messages/read-all`
+
+Marks all unread partner messages in the active conversation as read.
 
 ### `GET /calendar-events`
 

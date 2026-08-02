@@ -707,7 +707,7 @@ class _ChatTab extends StatefulWidget {
 }
 
 class _ChatTabState extends State<_ChatTab> {
-  late Future<List<ChatMessage>> _messages = widget.repository.messages();
+  late Future<List<ChatMessage>> _messages = _loadMessages();
   final _message = TextEditingController();
   bool _sending = false;
 
@@ -787,10 +787,22 @@ class _ChatTabState extends State<_ChatTab> {
     try {
       await widget.repository.sendMessage(_message.text);
       _message.clear();
-      setState(() => _messages = widget.repository.messages());
+      setState(() => _messages = _loadMessages());
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<List<ChatMessage>> _loadMessages() async {
+    final items = await widget.repository.messages();
+    if (items.isNotEmpty) {
+      try {
+        await widget.repository.readAllMessages();
+      } on ApiException {
+        // Reading receipts should not block the conversation view.
+      }
+    }
+    return items;
   }
 }
 

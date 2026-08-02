@@ -225,6 +225,30 @@ paths:
       responses:
         "201":
           description: Created
+  /messages/read-all:
+    post:
+      summary: Mark all partner messages as read
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Updated
+  /messages/{id}/delivered:
+    post:
+      summary: Mark message as delivered
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Receipt
+  /messages/{id}/read:
+    post:
+      summary: Mark message as read
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Receipt
   /calendar-events:
     get:
       summary: List calendar events

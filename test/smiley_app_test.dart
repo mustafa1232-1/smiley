@@ -364,6 +364,9 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<void> readAllNotifications() async {}
 
   @override
+  Future<void> readAllMessages() async {}
+
+  @override
   Future<void> report({required String reason, String? details}) async {}
 
   @override
