@@ -1,8 +1,10 @@
 import { Router } from 'express';
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
+import { config } from '../../config.js';
 import {
   ensureConversation,
   getCurrentPartnership,
@@ -61,6 +63,10 @@ const profileSchema = z.object({
   bio: z.string().trim().max(240).optional(),
   searchable: z.boolean().optional(),
   canReceivePartnershipRequests: z.boolean().optional()
+});
+
+const emailVerificationSchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/)
 });
 
 const settingsSchema = z.object({
@@ -176,6 +182,7 @@ spaceRouter.get('/me', requireAuth, async (request, response) => {
       id: true,
       username: true,
       email: true,
+      emailVerifiedAt: true,
       createdAt: true,
       profile: true
     }
@@ -186,6 +193,7 @@ spaceRouter.get('/me', requireAuth, async (request, response) => {
       id: user.id,
       username: user.username,
       email: user.email,
+      emailVerifiedAt: user.emailVerifiedAt,
       createdAt: user.createdAt,
       displayName: user.profile?.displayName ?? 'مستخدم',
       avatarUrl: user.profile?.avatarUrl,
@@ -210,6 +218,75 @@ spaceRouter.patch('/me', requireAuth, async (request, response) => {
   });
 
   response.json({ profile });
+});
+
+spaceRouter.post('/me/email-verification/request', requireAuth, async (request, response) => {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: request.user!.sub },
+    select: { id: true, email: true, emailVerifiedAt: true }
+  });
+  if (!user.email) {
+    throw new AppError(409, 'email_missing', 'لا يوجد بريد إلكتروني للتحقق');
+  }
+  if (user.emailVerifiedAt) {
+    response.status(202).json({ status: 'already_verified' });
+    return;
+  }
+
+  const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+  await prisma.verificationCode.create({
+    data: {
+      userId: user.id,
+      channel: 'email',
+      codeHash: await bcrypt.hash(code, config.bcryptCost),
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000)
+    }
+  });
+
+  request.log?.info({ userId: user.id, channel: 'email' }, 'email verification code created');
+  response.status(202).json({
+    status: 'accepted',
+    ...(config.exposeAuthDebugTokens ? { code } : {})
+  });
+});
+
+spaceRouter.post('/me/email-verification/confirm', requireAuth, async (request, response) => {
+  const input = emailVerificationSchema.parse(request.body);
+  const codes = await prisma.verificationCode.findMany({
+    where: {
+      userId: request.user!.sub,
+      channel: 'email',
+      usedAt: null,
+      expiresAt: { gt: new Date() }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 5
+  });
+
+  let matched: (typeof codes)[number] | undefined;
+  for (const code of codes) {
+    if (await bcrypt.compare(input.code, code.codeHash)) {
+      matched = code;
+      break;
+    }
+  }
+
+  if (!matched) {
+    throw new AppError(400, 'invalid_verification_code', 'رمز التحقق غير صالح');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.verificationCode.update({
+      where: { id: matched.id },
+      data: { usedAt: new Date() }
+    });
+    await tx.user.update({
+      where: { id: request.user!.sub },
+      data: { emailVerifiedAt: new Date() }
+    });
+  });
+
+  response.status(204).send();
 });
 
 spaceRouter.patch('/partnerships/current/settings', requireAuth, async (request, response) => {

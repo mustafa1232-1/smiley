@@ -16,6 +16,9 @@ export const config = {
   jwtRefreshTtlDays: Number(process.env.JWT_REFRESH_TTL_DAYS ?? 30),
   bcryptCost: Number(process.env.BCRYPT_COST ?? 12),
   exposePasswordResetToken: process.env.PASSWORD_RESET_DEBUG_TOKEN === 'true',
+  exposeAuthDebugTokens:
+    process.env.AUTH_DEBUG_TOKENS === 'true' ||
+    process.env.PASSWORD_RESET_DEBUG_TOKEN === 'true',
   storage: {
     r2AccountId: process.env.R2_ACCOUNT_ID,
     r2AccessKeyId: process.env.R2_ACCESS_KEY_ID,

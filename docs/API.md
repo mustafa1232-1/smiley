@@ -148,6 +148,20 @@ Returns the authenticated user's profile.
 
 Updates display name, bio, search visibility, and partnership request availability.
 
+### `POST /me/email-verification/request`
+
+Creates a short-lived 6-digit email verification code for the authenticated user. The code is only included in the response when `AUTH_DEBUG_TOKENS=true` for local development.
+
+### `POST /me/email-verification/confirm`
+
+Consumes a valid 6-digit code and marks the user's email as verified.
+
+```json
+{
+  "code": "123456"
+}
+```
+
 ### `PATCH /partnerships/current/settings`
 
 Updates active world settings.

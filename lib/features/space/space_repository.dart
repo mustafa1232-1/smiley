@@ -12,6 +12,8 @@ abstract interface class SpaceRepository {
     required bool searchable,
     required bool canReceiveRequests,
   });
+  Future<void> requestEmailVerification();
+  Future<void> confirmEmailVerification(String code);
   Future<void> updateSettings({String? worldName, String? themeColor});
   Future<SpaceSummary> summary();
   Future<List<SpacePost>> posts();
@@ -113,6 +115,18 @@ class HttpSpaceRepository implements SpaceRepository {
       if (bio != null) 'bio': bio.trim(),
       'searchable': searchable,
       'canReceivePartnershipRequests': canReceiveRequests,
+    });
+  }
+
+  @override
+  Future<void> requestEmailVerification() async {
+    await _api.postJson('/me/email-verification/request', {});
+  }
+
+  @override
+  Future<void> confirmEmailVerification(String code) async {
+    await _api.postJson('/me/email-verification/confirm', {
+      'code': code.trim(),
     });
   }
 
@@ -764,22 +778,26 @@ class UserProfile {
     required this.searchable,
     required this.canReceiveRequests,
     this.email,
+    this.emailVerifiedAt,
     this.bio,
   });
 
   final String id;
   final String username;
   final String? email;
+  final DateTime? emailVerifiedAt;
   final String displayName;
   final String? bio;
   final bool searchable;
   final bool canReceiveRequests;
+  bool get emailVerified => emailVerifiedAt != null;
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       id: json['id'] as String,
       username: json['username'] as String,
       email: json['email'] as String?,
+      emailVerifiedAt: _optionalDate(json['emailVerifiedAt']),
       displayName: json['displayName'] as String? ?? 'مستخدم',
       bio: json['bio'] as String?,
       searchable: json['searchable'] as bool? ?? true,

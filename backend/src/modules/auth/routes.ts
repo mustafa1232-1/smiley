@@ -147,7 +147,7 @@ authRouter.post('/auth/password-reset/request', async (request, response) => {
 
   response.status(202).json({
     status: 'accepted',
-    ...(config.exposePasswordResetToken && resetToken ? { resetToken } : {})
+    ...(config.exposeAuthDebugTokens && resetToken ? { resetToken } : {})
   });
 });
 

@@ -1954,6 +1954,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   late Future<UserProfile> _future = widget.repository.me();
   final _displayName = TextEditingController();
   final _bio = TextEditingController();
+  final _emailCode = TextEditingController();
   bool _searchable = true;
   bool _requests = true;
   bool _ready = false;
@@ -1962,6 +1963,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   void dispose() {
     _displayName.dispose();
     _bio.dispose();
+    _emailCode.dispose();
     super.dispose();
   }
 
@@ -1991,6 +1993,49 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                 title: profile.username,
                 subtitle: profile.email ?? 'حساب Smiley',
               ),
+              if (profile.email != null) ...[
+                const SizedBox(height: 12),
+                _InfoTile(
+                  icon: profile.emailVerified
+                      ? Icons.verified_rounded
+                      : Icons.mark_email_unread_outlined,
+                  title: profile.emailVerified
+                      ? 'البريد موثق'
+                      : 'البريد غير موثق',
+                  subtitle: profile.email!,
+                ),
+                if (!profile.emailVerified) ...[
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _emailCode,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: const InputDecoration(
+                      labelText: 'رمز تحقق البريد',
+                      prefixIcon: Icon(Icons.pin_outlined),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _requestEmailVerification,
+                          icon: const Icon(Icons.send_outlined),
+                          label: const Text('إرسال الرمز'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _confirmEmailVerification,
+                          icon: const Icon(Icons.check_rounded),
+                          label: const Text('تأكيد'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
               const SizedBox(height: 16),
               TextField(
                 controller: _displayName,
@@ -2024,6 +2069,33 @@ class _ProfileScreenState extends State<_ProfileScreen> {
         },
       ),
     );
+  }
+
+  Future<void> _requestEmailVerification() async {
+    await widget.repository.requestEmailVerification();
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('تم إرسال رمز التحقق.')));
+  }
+
+  Future<void> _confirmEmailVerification() async {
+    if (_emailCode.text.trim().length != 6) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('أدخل رمزاً من 6 أرقام.')));
+      return;
+    }
+    await widget.repository.confirmEmailVerification(_emailCode.text);
+    _emailCode.clear();
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('تم توثيق البريد.')));
+    setState(() {
+      _ready = false;
+      _future = widget.repository.me();
+    });
   }
 
   Future<void> _save() async {
