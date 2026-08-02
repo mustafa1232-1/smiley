@@ -657,7 +657,7 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   Future<void> _attachMedia() async {
-    final result = await FilePicker.platform.pickFiles(withData: true);
+    final result = await FilePicker.pickFiles(withData: true);
     final file = result?.files.single;
     final bytes = file?.bytes;
     if (file == null || bytes == null) return;
@@ -961,7 +961,7 @@ class _ChatTabState extends State<_ChatTab> {
   }
 
   Future<void> _attachMedia() async {
-    final result = await FilePicker.platform.pickFiles(withData: true);
+    final result = await FilePicker.pickFiles(withData: true);
     final file = result?.files.single;
     final bytes = file?.bytes;
     if (file == null || bytes == null) return;
