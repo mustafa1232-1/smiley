@@ -1,0 +1,838 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PartnershipRequestStatus {
+  pending
+  accepted
+  rejected
+  cancelled
+}
+
+enum PartnershipStatus {
+  pending_onboarding
+  active
+  ended
+}
+
+enum MemberRole {
+  partner
+}
+
+enum MessageKind {
+  text
+  image
+  video
+  audio
+  file
+  system
+}
+
+enum UploadStatus {
+  pending
+  ready
+  failed
+  deleted
+}
+
+model User {
+  id                 String               @id @default(uuid()) @db.Uuid
+  email              String?              @unique
+  emailNormalized    String?              @unique
+  phone              String?              @unique
+  phoneNormalized    String?              @unique
+  username           String               @unique
+  usernameNormalized String               @unique
+  passwordHash       String
+  emailVerifiedAt    DateTime?
+  phoneVerifiedAt    DateTime?
+  blockedAt          DateTime?
+  deletedAt          DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  profile            UserProfile?
+  usernameHistory    UsernameHistory[]
+  devices            UserDevice[]
+  sessions           UserSession[]
+  refreshTokens      RefreshToken[]
+  verificationCodes  VerificationCode[]
+  passwordResetTokens PasswordResetToken[]
+  requestedPartnerships PartnershipRequest[] @relation("requested_partnerships")
+  receivedPartnerships  PartnershipRequest[] @relation("received_partnerships")
+  partnershipMembers PartnershipMember[]
+  moods              Mood[]
+  moodHistory        MoodHistory[]
+  sentMessages       Message[]
+  posts              Post[]
+  notifications      Notification[]
+  pushTokens         PushToken[]
+  uploads            Upload[]
+  auditLogs          AuditLog[]
+
+  @@index([usernameNormalized])
+  @@index([emailNormalized])
+  @@index([deletedAt])
+}
+
+model UserProfile {
+  id                               String   @id @default(uuid()) @db.Uuid
+  userId                           String   @unique @db.Uuid
+  displayName                      String
+  avatarUrl                        String?
+  birthDate                        DateTime?
+  gender                           String?
+  timezone                         String
+  language                         String
+  bio                              String?
+  favorites                        Json?
+  searchable                       Boolean  @default(true)
+  canReceivePartnershipRequests    Boolean  @default(true)
+  createdAt                        DateTime @default(now())
+  updatedAt                        DateTime @updatedAt
+  user                             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UsernameHistory {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @db.Uuid
+  username           String
+  usernameNormalized String
+  createdAt          DateTime @default(now())
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model UserDevice {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  platform   String
+  deviceName String?
+  lastSeenAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions   UserSession[]
+
+  @@index([userId, revokedAt])
+}
+
+model UserSession {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  deviceId  String?   @db.Uuid
+  ipHash    String?
+  userAgent String?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device    UserDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, revokedAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String
+  revokedAt DateTime?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+}
+
+model VerificationCode {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  channel   String
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PartnershipRequest {
+  id          String                   @id @default(uuid()) @db.Uuid
+  requesterId String                  @db.Uuid
+  receiverId  String                  @db.Uuid
+  status      PartnershipRequestStatus @default(pending)
+  decidedAt   DateTime?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  requester   User                    @relation("requested_partnerships", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver    User                    @relation("received_partnerships", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, receiverId, status])
+  @@index([receiverId, status, createdAt])
+}
+
+model Partnership {
+  id          String              @id @default(uuid()) @db.Uuid
+  status      PartnershipStatus   @default(pending_onboarding)
+  startedAt   DateTime?
+  endedAt     DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  members     PartnershipMember[]
+  settings    PartnershipSettings?
+  onboarding  RelationshipOnboarding?
+  dates       RelationshipDate[]
+  occasions   Occasion[]
+  moods       Mood[]
+  conversations Conversation[]
+  posts       Post[]
+  memories    Memory[]
+  albums      Album[]
+  calendarEvents CalendarEvent[]
+  treeDays    TreeDay[]
+  wishes      Wish[]
+  goals       Goal[]
+  places      Place[]
+  musicRooms  MusicRoom[]
+  watchRooms  WatchRoom[]
+  sharedLists SharedList[]
+  notifications Notification[]
+  reports     Report[]
+  auditLogs   AuditLog[]
+
+  @@index([status])
+}
+
+model PartnershipMember {
+  id             String       @id @default(uuid()) @db.Uuid
+  partnershipId  String       @db.Uuid
+  userId         String       @db.Uuid
+  role           MemberRole   @default(partner)
+  joinedAt       DateTime     @default(now())
+  leftAt         DateTime?
+  partnership    Partnership  @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([partnershipId, userId])
+  @@index([userId, leftAt])
+}
+
+model PartnershipSettings {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @unique @db.Uuid
+  worldName      String?
+  coverUrl       String?
+  themeColor     String?
+  timezone       String?
+  privacy        Json?
+  notifications  Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+}
+
+model RelationshipOnboarding {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @unique @db.Uuid
+  answers        Json?
+  completedAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+}
+
+model RelationshipDate {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  title          String
+  date           DateTime
+  kind           String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+
+  @@index([partnershipId, date])
+}
+
+model Occasion {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  title          String
+  description    String?
+  date           DateTime
+  recurrence     String?
+  countryCode    String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  reminders      OccasionReminder[]
+
+  @@index([partnershipId, date])
+}
+
+model OccasionReminder {
+  id          String   @id @default(uuid()) @db.Uuid
+  occasionId  String   @db.Uuid
+  remindAt    DateTime
+  sentAt      DateTime?
+  occasion    Occasion @relation(fields: [occasionId], references: [id], onDelete: Cascade)
+
+  @@index([remindAt, sentAt])
+}
+
+model Mood {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  userId         String      @db.Uuid
+  kind           String
+  emoji          String?
+  note           String?
+  visibleUntil   DateTime?
+  privacy        String      @default("partner")
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([partnershipId, userId, createdAt])
+}
+
+model MoodHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  moodId    String?  @db.Uuid
+  snapshot  Json
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Conversation {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  members        ConversationMember[]
+  messages       Message[]
+
+  @@index([partnershipId])
+}
+
+model ConversationMember {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @db.Uuid
+  userId         String       @db.Uuid
+  lastReadAt     DateTime?
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+}
+
+model Message {
+  id              String       @id @default(uuid()) @db.Uuid
+  conversationId  String       @db.Uuid
+  senderId        String       @db.Uuid
+  clientMessageId String
+  kind            MessageKind  @default(text)
+  body            String?
+  serverTimestamp DateTime     @default(now())
+  editedAt        DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender          User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  attachments     MessageAttachment[]
+  reactions       MessageReaction[]
+  receipts        MessageReceipt[]
+  pins            MessagePin[]
+
+  @@unique([conversationId, clientMessageId])
+  @@index([conversationId, serverTimestamp])
+}
+
+model MessageAttachment {
+  id        String   @id @default(uuid()) @db.Uuid
+  messageId String   @db.Uuid
+  assetId   String?  @db.Uuid
+  kind      String
+  url       String?
+  metadata  Json?
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid()) @db.Uuid
+  messageId String   @db.Uuid
+  userId    String   @db.Uuid
+  value     String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, value])
+}
+
+model MessageReceipt {
+  id          String   @id @default(uuid()) @db.Uuid
+  messageId   String   @db.Uuid
+  userId      String   @db.Uuid
+  deliveredAt DateTime?
+  readAt      DateTime?
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+}
+
+model MessagePin {
+  id        String   @id @default(uuid()) @db.Uuid
+  messageId String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+model ScheduledMessage {
+  id             String   @id @default(uuid()) @db.Uuid
+  conversationId String   @db.Uuid
+  senderId       String   @db.Uuid
+  body           String
+  sendAt         DateTime
+  sentAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([sendAt, sentAt])
+}
+
+model TimeCapsule {
+  id             String   @id @default(uuid()) @db.Uuid
+  partnershipId  String   @db.Uuid
+  creatorId      String   @db.Uuid
+  title          String
+  body           String?
+  opensAt        DateTime
+  openedAt       DateTime?
+  createdAt      DateTime @default(now())
+}
+
+model Post {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  authorId       String      @db.Uuid
+  title          String?
+  body           String?
+  memoryDate     DateTime?
+  category       String?
+  deletedAt      DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  author         User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  media          PostMedia[]
+  reactions      PostReaction[]
+  comments       PostComment[]
+
+  @@index([partnershipId, createdAt])
+  @@index([partnershipId, memoryDate])
+}
+
+model PostMedia {
+  id      String @id @default(uuid()) @db.Uuid
+  postId  String @db.Uuid
+  assetId String @db.Uuid
+  post    Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model PostReaction {
+  id        String   @id @default(uuid()) @db.Uuid
+  postId    String   @db.Uuid
+  userId    String   @db.Uuid
+  value     String
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model PostComment {
+  id        String   @id @default(uuid()) @db.Uuid
+  postId    String   @db.Uuid
+  authorId  String   @db.Uuid
+  body      String
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model Memory {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  title          String
+  body           String?
+  happenedAt     DateTime
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  media          MemoryMedia[]
+}
+
+model MemoryMedia {
+  id       String @id @default(uuid()) @db.Uuid
+  memoryId String @db.Uuid
+  assetId  String @db.Uuid
+  memory   Memory @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+}
+
+model Album {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  title          String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  items          AlbumItem[]
+}
+
+model AlbumItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  albumId   String   @db.Uuid
+  assetId   String   @db.Uuid
+  caption   String?
+  createdAt DateTime @default(now())
+  album     Album    @relation(fields: [albumId], references: [id], onDelete: Cascade)
+}
+
+model CalendarEvent {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  title          String
+  startsAt       DateTime
+  endsAt         DateTime?
+  sourceType     String?
+  sourceId       String?     @db.Uuid
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+
+  @@index([partnershipId, startsAt])
+}
+
+model TreeDay {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  date           DateTime
+  createdAt      DateTime    @default(now())
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  leaves         TreeLeaf[]
+
+  @@unique([partnershipId, date])
+}
+
+model TreeLeaf {
+  id        String   @id @default(uuid()) @db.Uuid
+  treeDayId String   @db.Uuid
+  title     String?
+  body      String?
+  createdAt DateTime @default(now())
+  treeDay   TreeDay  @relation(fields: [treeDayId], references: [id], onDelete: Cascade)
+  contributions TreeLeafContribution[]
+}
+
+model TreeLeafContribution {
+  id         String   @id @default(uuid()) @db.Uuid
+  treeLeafId String   @db.Uuid
+  userId     String   @db.Uuid
+  body       String
+  createdAt  DateTime @default(now())
+  treeLeaf   TreeLeaf @relation(fields: [treeLeafId], references: [id], onDelete: Cascade)
+}
+
+model Wish {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  creatorId      String      @db.Uuid
+  title          String
+  completedAt    DateTime?
+  createdAt      DateTime    @default(now())
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+}
+
+model Goal {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  title          String
+  dueAt          DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  steps          GoalStep[]
+}
+
+model GoalStep {
+  id          String   @id @default(uuid()) @db.Uuid
+  goalId      String   @db.Uuid
+  title       String
+  completedAt DateTime?
+  goal        Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+}
+
+model Place {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  title          String
+  latitude       Decimal?
+  longitude      Decimal?
+  createdAt      DateTime    @default(now())
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  visits         PlaceVisit[]
+}
+
+model PlaceVisit {
+  id        String   @id @default(uuid()) @db.Uuid
+  placeId   String   @db.Uuid
+  visitedAt DateTime
+  place     Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+}
+
+model MusicRoom {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  status         String      @default("idle")
+  createdAt      DateTime    @default(now())
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  members        MusicRoomMember[]
+  queueItems     MusicQueueItem[]
+  playbackEvents MusicPlaybackEvent[]
+}
+
+model MusicRoomMember {
+  id          String    @id @default(uuid()) @db.Uuid
+  musicRoomId String    @db.Uuid
+  userId      String    @db.Uuid
+  joinedAt    DateTime  @default(now())
+  leftAt      DateTime?
+  musicRoom   MusicRoom @relation(fields: [musicRoomId], references: [id], onDelete: Cascade)
+}
+
+model MusicQueueItem {
+  id          String    @id @default(uuid()) @db.Uuid
+  musicRoomId String    @db.Uuid
+  title       String
+  source      String
+  sourceUrl   String?
+  position    Int
+  musicRoom   MusicRoom @relation(fields: [musicRoomId], references: [id], onDelete: Cascade)
+}
+
+model MusicPlaybackEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  musicRoomId String    @db.Uuid
+  actorId     String    @db.Uuid
+  eventType   String
+  positionMs  Int?
+  createdAt   DateTime  @default(now())
+  musicRoom   MusicRoom @relation(fields: [musicRoomId], references: [id], onDelete: Cascade)
+}
+
+model WatchRoom {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  status         String      @default("idle")
+  createdAt      DateTime    @default(now())
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  members        WatchRoomMember[]
+  items          WatchItem[]
+  playbackEvents WatchPlaybackEvent[]
+  progress       WatchProgress[]
+}
+
+model WatchRoomMember {
+  id          String    @id @default(uuid()) @db.Uuid
+  watchRoomId String    @db.Uuid
+  userId      String    @db.Uuid
+  joinedAt    DateTime  @default(now())
+  leftAt      DateTime?
+  watchRoom   WatchRoom @relation(fields: [watchRoomId], references: [id], onDelete: Cascade)
+}
+
+model WatchItem {
+  id          String    @id @default(uuid()) @db.Uuid
+  watchRoomId String    @db.Uuid
+  title       String
+  source      String
+  sourceUrl   String?
+  watchRoom   WatchRoom @relation(fields: [watchRoomId], references: [id], onDelete: Cascade)
+}
+
+model WatchPlaybackEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  watchRoomId String    @db.Uuid
+  actorId     String    @db.Uuid
+  eventType   String
+  positionMs  Int?
+  createdAt   DateTime  @default(now())
+  watchRoom   WatchRoom @relation(fields: [watchRoomId], references: [id], onDelete: Cascade)
+}
+
+model WatchProgress {
+  id          String    @id @default(uuid()) @db.Uuid
+  watchRoomId String    @db.Uuid
+  userId      String    @db.Uuid
+  positionMs  Int
+  updatedAt   DateTime  @updatedAt
+  watchRoom   WatchRoom @relation(fields: [watchRoomId], references: [id], onDelete: Cascade)
+}
+
+model SharedList {
+  id             String      @id @default(uuid()) @db.Uuid
+  partnershipId  String      @db.Uuid
+  title          String
+  kind           String
+  createdAt      DateTime    @default(now())
+  partnership    Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  items          SharedListItem[]
+}
+
+model SharedListItem {
+  id           String     @id @default(uuid()) @db.Uuid
+  sharedListId String     @db.Uuid
+  title        String
+  completedAt  DateTime?
+  sharedList   SharedList @relation(fields: [sharedListId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @db.Uuid
+  partnershipId  String?      @db.Uuid
+  type           String
+  title          String
+  body           String?
+  payload        Json?
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partnership    Partnership? @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+model NotificationPreference {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  type      String
+  enabled   Boolean  @default(true)
+  quietFrom String?
+  quietTo   String?
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, type])
+}
+
+model PushToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  platform  String
+  tokenHash String   @unique
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Upload {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @db.Uuid
+  status    UploadStatus @default(pending)
+  objectKey String
+  mimeType  String
+  sizeBytes BigInt
+  createdAt DateTime     @default(now())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MediaAsset {
+  id           String   @id @default(uuid()) @db.Uuid
+  ownerUserId  String   @db.Uuid
+  partnershipId String? @db.Uuid
+  objectKey    String   @unique
+  mimeType     String
+  sizeBytes    BigInt
+  checksum     String?
+  createdAt    DateTime @default(now())
+  deletedAt    DateTime?
+}
+
+model StorageUsage {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String?  @db.Uuid
+  partnershipId  String?  @db.Uuid
+  usedBytes      BigInt   @default(0)
+  updatedAt      DateTime @updatedAt
+}
+
+model Report {
+  id             String       @id @default(uuid()) @db.Uuid
+  reporterId     String       @db.Uuid
+  reportedUserId String?      @db.Uuid
+  partnershipId  String?      @db.Uuid
+  reason         String
+  details        String?
+  status         String       @default("open")
+  createdAt      DateTime     @default(now())
+  partnership    Partnership? @relation(fields: [partnershipId], references: [id], onDelete: SetNull)
+}
+
+model Block {
+  id        String   @id @default(uuid()) @db.Uuid
+  blockerId String   @db.Uuid
+  blockedId String   @db.Uuid
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
+model AuditLog {
+  id             String       @id @default(uuid()) @db.Uuid
+  actorId        String?      @db.Uuid
+  partnershipId  String?      @db.Uuid
+  action         String
+  targetType     String?
+  targetId       String?      @db.Uuid
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+  actor          User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  partnership    Partnership? @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+
+  @@index([actorId, createdAt])
+  @@index([partnershipId, createdAt])
+}
+
+model FeatureFlag {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  enabled   Boolean  @default(false)
+  rules     Json?
+  updatedAt DateTime @updatedAt
+}
+
+model AppSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}

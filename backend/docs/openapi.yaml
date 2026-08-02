@@ -1,0 +1,54 @@
+openapi: 3.1.0
+info:
+  title: Smiley API
+  version: 0.1.0
+servers:
+  - url: http://localhost:3000/api/v1
+paths:
+  /auth/register:
+    post:
+      summary: Register a user
+      responses:
+        "201":
+          description: Created
+  /auth/login:
+    post:
+      summary: Login
+      responses:
+        "200":
+          description: Auth session
+  /auth/password-reset/request:
+    post:
+      summary: Request password reset
+      responses:
+        "202":
+          description: Accepted
+  /users/search:
+    get:
+      summary: Search users by username
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Search results
+  /partnership-requests:
+    post:
+      summary: Create a partnership request
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+    get:
+      summary: List pending partnership requests
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Requests
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

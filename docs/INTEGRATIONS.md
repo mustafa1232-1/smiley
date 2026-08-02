@@ -1,0 +1,50 @@
+# Integrations
+
+## Firebase Cloud Messaging
+
+Required variables:
+
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_PRIVATE_KEY`
+
+Keep private keys outside source control. Use separate Firebase projects for staging and production.
+
+## Apple Notifications
+
+Required variables:
+
+- `APNS_KEY_ID`
+- `APNS_TEAM_ID`
+- `APNS_BUNDLE_ID`
+
+APNs can be routed through FCM or implemented directly later.
+
+## Cloudflare R2
+
+Required variables:
+
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET`
+- `R2_PUBLIC_BASE_URL`
+
+Private media must be served through signed URLs. Do not expose raw private object keys to unrelated users.
+
+## Railway
+
+Set the same backend environment variables in Railway:
+
+- `DATABASE_URL`
+- `REDIS_URL`
+- JWT secrets and TTLs
+- CORS origin
+- Storage variables
+- Notification variables
+
+Run Prisma migrations as a release step before exposing a production deployment.
+
+## Backups
+
+Use managed PostgreSQL backups in the deployment provider. Keep a tested restore process for staging before enabling production deletion flows.
