@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+const _requestTimeout = Duration(seconds: 20);
+
 class ApiClient {
   ApiClient({
     required this.baseUrl,
@@ -14,7 +16,9 @@ class ApiClient {
   final http.Client _client;
 
   Future<Map<String, dynamic>> getJson(String path) async {
-    final response = await _client.get(_uri(path), headers: await _headers());
+    final response = await _send(() async {
+      return _client.get(_uri(path), headers: await _headers());
+    });
     return _decode(response);
   }
 
@@ -22,12 +26,25 @@ class ApiClient {
     String path,
     Map<String, dynamic> body,
   ) async {
-    final response = await _client.post(
-      _uri(path),
-      headers: await _headers(),
-      body: jsonEncode(body),
-    );
+    final response = await _send(() async {
+      return _client.post(
+        _uri(path),
+        headers: await _headers(),
+        body: jsonEncode(body),
+      );
+    });
     return _decode(response);
+  }
+
+  Future<http.Response> _send(Future<http.Response> Function() action) async {
+    try {
+      return await action().timeout(_requestTimeout);
+    } catch (_) {
+      throw const ApiException(
+        code: 'network_error',
+        message: 'تعذر الاتصال بالخادم. تأكد من الإنترنت ثم حاول مرة أخرى.',
+      );
+    }
   }
 
   Uri _uri(String path) {
@@ -56,7 +73,8 @@ class ApiClient {
     }
 
     final code = decoded['code']?.toString() ?? 'request_failed';
-    final message = decoded['message']?.toString() ?? 'تعذر إكمال الطلب';
+    final message =
+        decoded['message']?.toString() ?? 'تعذر إكمال الطلب. حاول مرة أخرى.';
     throw ApiException(code: code, message: message);
   }
 }

@@ -14,7 +14,7 @@ import 'features/space/space_repository.dart';
 void main() {
   const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:3000/api/v1',
+    defaultValue: 'https://smiley-smiley.up.railway.app/api/v1',
   );
 
   final tokenStore = SecureAuthTokenStore();

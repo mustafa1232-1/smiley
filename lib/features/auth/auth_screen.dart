@@ -61,6 +61,12 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Future<void> _submitRegister() async {
+    final validationMessage = _validateRegister();
+    if (validationMessage != null) {
+      setState(() => _message = validationMessage);
+      return;
+    }
+
     await _run(() {
       return widget.repository.register(
         RegisterRequest(
@@ -68,13 +74,29 @@ class _AuthScreenState extends State<AuthScreen>
           username: _username.text.trim(),
           email: _email.text.trim(),
           password: _password.text,
-          birthDate: DateTime(2000),
+          birthDate: DateTime.utc(2000),
           timezone: DateTime.now().timeZoneName,
           language: 'ar',
           acceptedTerms: _acceptedTerms,
         ),
       );
     });
+  }
+
+  String? _validateRegister() {
+    if (_displayName.text.trim().isEmpty ||
+        _username.text.trim().isEmpty ||
+        _email.text.trim().isEmpty ||
+        _password.text.isEmpty) {
+      return 'أكمل بيانات الحساب أولاً.';
+    }
+    if (_password.text.length < 10) {
+      return 'كلمة المرور يجب أن تكون 10 أحرف على الأقل.';
+    }
+    if (!_acceptedTerms) {
+      return 'يجب الموافقة على الشروط وسياسة الخصوصية.';
+    }
+    return null;
   }
 
   Future<void> _submitReset() async {

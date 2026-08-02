@@ -51,7 +51,7 @@ class RegisterRequest {
     'username': username,
     'email': email,
     'password': password,
-    'birthDate': birthDate.toIso8601String(),
+    'birthDate': birthDate.toUtc().toIso8601String(),
     'timezone': timezone,
     'language': language,
     'acceptedTerms': acceptedTerms,
