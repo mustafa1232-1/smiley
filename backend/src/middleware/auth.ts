@@ -7,6 +7,7 @@ import { AppError } from '../lib/errors.js';
 export type AccessTokenPayload = {
   sub: string;
   username: string;
+  sid?: string;
 };
 
 declare global {

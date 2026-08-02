@@ -43,6 +43,22 @@ paths:
       responses:
         "204":
           description: Logged out everywhere
+  /auth/sessions:
+    get:
+      summary: List login sessions
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Sessions
+  /auth/sessions/{id}:
+    delete:
+      summary: Revoke login session
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Revoked
   /users/search:
     get:
       summary: Search users by username

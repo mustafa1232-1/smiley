@@ -58,6 +58,14 @@ Revokes the provided refresh token and returns `204`.
 
 Requires bearer auth. Revokes all active refresh tokens for the current user.
 
+### `GET /auth/sessions`
+
+Requires bearer auth. Lists recent login sessions and device metadata. The current access-token session is marked with `current: true`.
+
+### `DELETE /auth/sessions/:id`
+
+Requires bearer auth. Revokes the selected session and all refresh tokens linked to it.
+
 ## Users
 
 ### `GET /users/search?username=value`

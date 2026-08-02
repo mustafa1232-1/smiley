@@ -1,6 +1,7 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 
@@ -31,6 +32,8 @@ const loginSchema = z.object({
 const refreshSchema = z.object({
   refreshToken: z.string().trim().min(1)
 });
+
+const sessionParamSchema = z.string().uuid();
 
 authRouter.post('/auth/register', async (request, response) => {
   const input = registerSchema.parse(request.body);
@@ -73,7 +76,13 @@ authRouter.post('/auth/register', async (request, response) => {
       include: { profile: true }
     });
 
-    return issueSession(user.id, user.username, user.profile?.displayName ?? input.displayName, tx);
+    return issueSession(
+      user.id,
+      user.username,
+      user.profile?.displayName ?? input.displayName,
+      tx,
+      sessionMeta(request)
+    );
   });
 
   response.status(201).json(session);
@@ -98,7 +107,8 @@ authRouter.post('/auth/login', async (request, response) => {
     user.id,
     user.username,
     user.profile?.displayName ?? 'مستخدم',
-    prisma
+    prisma,
+    sessionMeta(request)
   );
   response.json(session);
 });
@@ -140,7 +150,9 @@ authRouter.post('/auth/refresh', async (request, response) => {
         user.id,
         user.username,
         user.profile?.displayName ?? 'مستخدم',
-        tx
+        tx,
+        sessionMeta(request),
+        token.sessionId ?? payload.sid
       );
     }
 
@@ -172,6 +184,12 @@ authRouter.post('/auth/logout', async (request, response) => {
             where: { id: token.id },
             data: { revokedAt: new Date() }
           });
+          if (token.sessionId) {
+            await prisma.userSession.updateMany({
+              where: { id: token.sessionId, userId: payload.sub, revokedAt: null },
+              data: { revokedAt: new Date() }
+            });
+          }
           break;
         }
       }
@@ -188,6 +206,56 @@ authRouter.post('/auth/logout-all', requireAuth, async (request, response) => {
     },
     data: { revokedAt: new Date() }
   });
+  await prisma.userSession.updateMany({
+    where: {
+      userId: request.user!.sub,
+      revokedAt: null
+    },
+    data: { revokedAt: new Date() }
+  });
+  response.status(204).send();
+});
+
+authRouter.get('/auth/sessions', requireAuth, async (request, response) => {
+  const items = await prisma.userSession.findMany({
+    where: { userId: request.user!.sub },
+    include: { device: true },
+    orderBy: { updatedAt: 'desc' },
+    take: 50
+  });
+
+  response.json({
+    items: items.map((item) => ({
+      id: item.id,
+      current: item.id === request.user!.sid,
+      revokedAt: item.revokedAt,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      userAgent: item.userAgent,
+      device: item.device
+        ? {
+            id: item.device.id,
+            platform: item.device.platform,
+            deviceName: item.device.deviceName,
+            lastSeenAt: item.device.lastSeenAt
+          }
+        : null
+    }))
+  });
+});
+
+authRouter.delete('/auth/sessions/:id', requireAuth, async (request, response) => {
+  const sessionId = sessionParamSchema.parse(request.params.id);
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.userSession.updateMany({
+      where: { id: sessionId, userId: request.user!.sub, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+    await tx.refreshToken.updateMany({
+      where: { sessionId, userId: request.user!.sub, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+  });
   response.status(204).send();
 });
 
@@ -195,12 +263,15 @@ async function issueSession(
   userId: string,
   username: string,
   displayName: string,
-  tx: Pick<typeof prisma, 'refreshToken'>
+  tx: Prisma.TransactionClient | typeof prisma,
+  meta: SessionMeta = { platform: 'unknown' },
+  sessionId?: string
 ) {
-  const accessToken = jwt.sign({ sub: userId, username }, config.jwtAccessSecret, {
+  const activeSessionId = await ensureSession(userId, tx, meta, sessionId);
+  const accessToken = jwt.sign({ sub: userId, username, sid: activeSessionId }, config.jwtAccessSecret, {
     expiresIn: config.jwtAccessTtlSeconds
   });
-  const refreshToken = jwt.sign({ sub: userId }, config.jwtRefreshSecret, {
+  const refreshToken = jwt.sign({ sub: userId, sid: activeSessionId }, config.jwtRefreshSecret, {
     expiresIn: `${config.jwtRefreshTtlDays}d`
   });
   const tokenHash = await bcrypt.hash(refreshToken, config.bcryptCost);
@@ -208,6 +279,7 @@ async function issueSession(
   await tx.refreshToken.create({
     data: {
       userId,
+      sessionId: activeSessionId,
       tokenHash,
       expiresAt: new Date(Date.now() + config.jwtRefreshTtlDays * 24 * 60 * 60 * 1000)
     }
@@ -220,8 +292,69 @@ async function issueSession(
   };
 }
 
+type SessionMeta = {
+  platform: string;
+  deviceName?: string;
+  userAgent?: string;
+  ipHash?: string;
+};
+
+async function ensureSession(
+  userId: string,
+  tx: Prisma.TransactionClient | typeof prisma,
+  meta: SessionMeta,
+  sessionId?: string
+) {
+  if (sessionId) {
+    const existing = await tx.userSession.findFirst({
+      where: { id: sessionId, userId, revokedAt: null }
+    });
+    if (existing) {
+      await tx.userSession.update({
+        where: { id: existing.id },
+        data: {
+          ipHash: meta.ipHash,
+          userAgent: meta.userAgent
+        }
+      });
+      return existing.id;
+    }
+  }
+
+  const device = await tx.userDevice.create({
+    data: {
+      userId,
+      platform: meta.platform,
+      deviceName: meta.deviceName,
+      lastSeenAt: new Date()
+    }
+  });
+  const session = await tx.userSession.create({
+    data: {
+      userId,
+      deviceId: device.id,
+      ipHash: meta.ipHash,
+      userAgent: meta.userAgent
+    }
+  });
+  return session.id;
+}
+
+function sessionMeta(request: Request): SessionMeta {
+  const userAgent = request.header('user-agent')?.slice(0, 500);
+  const platform = request.header('x-device-platform')?.slice(0, 20) ?? 'unknown';
+  const deviceName = request.header('x-device-name')?.slice(0, 120);
+  return {
+    platform,
+    deviceName,
+    userAgent,
+    ipHash: request.ip ? createHash('sha256').update(request.ip).digest('hex') : undefined
+  };
+}
+
 type RefreshTokenPayload = {
   sub: string;
+  sid?: string;
 };
 
 function verifyRefreshToken(token: string) {
