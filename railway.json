@@ -10,10 +10,7 @@
     ]
   },
   "deploy": {
-    "preDeployCommand": [
-      "cd /app/backend && npx prisma migrate deploy"
-    ],
-    "startCommand": "cd /app/backend && npm run start",
+    "startCommand": "cd /app/backend && npx prisma migrate deploy && npm run start",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",
