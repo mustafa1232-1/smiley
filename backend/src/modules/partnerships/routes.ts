@@ -9,6 +9,7 @@ import {
 } from '../../lib/access.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
+import { sendPushToUser } from '../../lib/push.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { emitToUser } from '../../realtime/server.js';
 
@@ -47,7 +48,7 @@ partnershipsRouter.post('/partnership-requests', requireAuth, async (request, re
     throw new AppError(409, 'requests_disabled', 'لا يمكن استقبال الطلبات حالياً');
   }
 
-  const requestRecord = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await assertNoLivePartnership(tx, [requesterId, receiver.id]);
 
     const duplicate = await tx.partnershipRequest.findFirst({
@@ -59,7 +60,7 @@ partnershipsRouter.post('/partnership-requests', requireAuth, async (request, re
         status: 'pending'
       }
     });
-    if (duplicate) return duplicate;
+    if (duplicate) return { requestRecord: duplicate, notification: null };
 
     const created = await tx.partnershipRequest.create({
       data: {
@@ -69,7 +70,7 @@ partnershipsRouter.post('/partnership-requests', requireAuth, async (request, re
       }
     });
 
-    await tx.notification.create({
+    const notification = await tx.notification.create({
       data: {
         userId: receiver.id,
         type: 'partnership.requested',
@@ -79,18 +80,29 @@ partnershipsRouter.post('/partnership-requests', requireAuth, async (request, re
       }
     });
 
-    return created;
+    return { requestRecord: created, notification };
   });
 
-  response.status(201).json({ id: requestRecord.id, status: requestRecord.status });
+  response.status(201).json({ id: result.requestRecord.id, status: result.requestRecord.status });
   emitToUser(receiver.id, 'partnership.requested', requesterId, {
-    requestId: requestRecord.id,
+    requestId: result.requestRecord.id,
     username: input.username
   });
   emitToUser(receiver.id, 'notification.created', requesterId, {
     type: 'partnership.requested',
-    requestId: requestRecord.id
+    requestId: result.requestRecord.id
   });
+  if (result.notification) {
+    void sendPushToUser(receiver.id, {
+      notificationId: result.notification.id,
+      type: 'partnership.requested',
+      title: result.notification.title,
+      body: result.notification.body,
+      payload: { requestId: result.requestRecord.id }
+    }).catch((error) => {
+      console.error(JSON.stringify({ level: 'error', message: 'push_send_failed', error }));
+    });
+  }
 });
 
 partnershipsRouter.get('/partnership-requests', requireAuth, async (request, response) => {

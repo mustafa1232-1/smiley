@@ -7,6 +7,9 @@ Required variables:
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY`
+- `PUSH_TOKEN_ENCRYPTION_KEY`
+
+The backend uses Firebase Cloud Messaging HTTP v1. Device tokens are stored encrypted with `PUSH_TOKEN_ENCRYPTION_KEY`; keep it stable across deploys or existing device tokens cannot be decrypted.
 
 Keep private keys outside source control. Use separate Firebase projects for staging and production.
 

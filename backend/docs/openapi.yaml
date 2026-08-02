@@ -255,6 +255,21 @@ paths:
       responses:
         "204":
           description: Updated
+  /notifications/push-tokens:
+    post:
+      summary: Register device push token
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Registered
+    delete:
+      summary: Revoke device push token
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Revoked
   /wishes:
     get:
       summary: List wishes

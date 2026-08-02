@@ -11,6 +11,7 @@ import {
 } from '../../lib/access.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
+import { encryptPushToken, hashPushToken, sendPushToUser } from '../../lib/push.js';
 import { createPutUploadUrl } from '../../lib/storage.js';
 import { requireAuth } from '../../middleware/auth.js';
 import type { RealtimeEventType } from '../../realtime/events.js';
@@ -104,6 +105,11 @@ const uploadPresignSchema = z.object({
 
 const uploadCompleteSchema = z.object({
   checksum: z.string().trim().max(160).optional()
+});
+
+const pushTokenSchema = z.object({
+  token: z.string().trim().min(20).max(4096),
+  platform: z.string().trim().min(2).max(20)
 });
 
 const roomItemSchema = z.object({
@@ -562,6 +568,51 @@ spaceRouter.post('/notifications/read-all', requireAuth, async (request, respons
   await prisma.notification.updateMany({
     where: { userId: request.user!.sub, readAt: null },
     data: { readAt: new Date() }
+  });
+  response.status(204).send();
+});
+
+spaceRouter.post('/notifications/push-tokens', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = pushTokenSchema.parse(request.body);
+  const tokenHash = hashPushToken(input.token);
+  const item = await prisma.pushToken.upsert({
+    where: { tokenHash },
+    update: {
+      userId,
+      platform: input.platform,
+      tokenCiphertext: encryptPushToken(input.token),
+      revokedAt: null,
+      failureCount: 0,
+      lastSeenAt: new Date()
+    },
+    create: {
+      userId,
+      platform: input.platform,
+      tokenHash,
+      tokenCiphertext: encryptPushToken(input.token),
+      lastSeenAt: new Date()
+    }
+  });
+  response.status(201).json({
+    token: {
+      id: item.id,
+      platform: item.platform,
+      lastSeenAt: item.lastSeenAt,
+      createdAt: item.createdAt
+    }
+  });
+});
+
+spaceRouter.delete('/notifications/push-tokens', requireAuth, async (request, response) => {
+  const input = pushTokenSchema.pick({ token: true }).parse(request.body);
+  await prisma.pushToken.updateMany({
+    where: {
+      userId: request.user!.sub,
+      tokenHash: hashPushToken(input.token),
+      revokedAt: null
+    },
+    data: { revokedAt: new Date() }
   });
   response.status(204).send();
 });
@@ -1065,6 +1116,15 @@ async function notifyPartner(
   });
   emitToUser(userId, 'notification.created', actorId, { notification });
   emitToPartnership(input.type, actorId, partnership.id, input.payload ?? {});
+  void sendPushToUser(userId, {
+    notificationId: notification.id,
+    type: input.type,
+    title: input.title,
+    body: input.body,
+    payload: input.payload
+  }).catch((error) => {
+    console.error(JSON.stringify({ level: 'error', message: 'push_send_failed', error }));
+  });
 }
 
 function serializePost(post: {

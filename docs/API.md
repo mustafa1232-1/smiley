@@ -225,6 +225,21 @@ Lists recent notifications for the current user.
 
 Marks unread notifications as read.
 
+### `POST /notifications/push-tokens`
+
+Registers or refreshes the current device push token. The backend stores the token encrypted and sends FCM notifications when Firebase variables are configured.
+
+```json
+{
+  "platform": "android",
+  "token": "device-push-token"
+}
+```
+
+### `DELETE /notifications/push-tokens`
+
+Revokes a device push token for the current user.
+
 ### `GET /wishes`
 
 Lists shared wishes.

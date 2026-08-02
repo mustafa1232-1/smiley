@@ -23,5 +23,12 @@ export const config = {
     r2PublicBaseUrl: process.env.R2_PUBLIC_BASE_URL,
     signedUrlTtlSeconds: Number(process.env.STORAGE_SIGNED_URL_TTL_SECONDS ?? 900),
     maxUploadBytes: Number(process.env.STORAGE_MAX_UPLOAD_BYTES ?? 104_857_600)
+  },
+  push: {
+    firebaseProjectId: process.env.FIREBASE_PROJECT_ID,
+    firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    firebasePrivateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    tokenEncryptionKey:
+      process.env.PUSH_TOKEN_ENCRYPTION_KEY ?? required('JWT_REFRESH_SECRET', 'dev-refresh-secret')
   }
 };
