@@ -50,6 +50,13 @@ class ApiClient {
     return _decode(response);
   }
 
+  Future<Map<String, dynamic>> deleteJson(String path) async {
+    final response = await _send(() async {
+      return _client.delete(_uri(path), headers: await _headers());
+    });
+    return _decode(response);
+  }
+
   Future<http.Response> _send(Future<http.Response> Function() action) async {
     try {
       return await action().timeout(_requestTimeout);

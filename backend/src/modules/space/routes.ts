@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import {
   ensureConversation,
+  getCurrentPartnership,
   otherPartnerId,
   requireActivePartnership
 } from '../../lib/access.js';
@@ -29,6 +30,13 @@ const eventSchema = z.object({
   title: z.string().trim().min(1).max(120),
   startsAt: z.coerce.date(),
   endsAt: z.coerce.date().optional()
+});
+
+const occasionInputSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500).optional(),
+  date: z.coerce.date(),
+  recurrence: z.string().trim().max(40).optional()
 });
 
 const messageSchema = z.object({
@@ -81,6 +89,22 @@ const roomItemSchema = z.object({
   title: z.string().trim().min(1).max(160),
   source: z.string().trim().min(1).max(60).default('manual'),
   sourceUrl: z.string().trim().url().optional()
+});
+
+const treeLeafSchema = z.object({
+  title: z.string().trim().max(120).optional(),
+  body: z.string().trim().min(1).max(2000)
+});
+
+const timeCapsuleSchema = z.object({
+  title: z.string().trim().min(1).max(160),
+  body: z.string().trim().max(4000).optional(),
+  opensAt: z.coerce.date()
+});
+
+const reportSchema = z.object({
+  reason: z.string().trim().min(1).max(120),
+  details: z.string().trim().max(2000).optional()
 });
 
 spaceRouter.get('/me', requireAuth, async (request, response) => {
@@ -314,6 +338,40 @@ spaceRouter.post('/calendar-events', requireAuth, async (request, response) => {
   });
 
   response.status(201).json({ event });
+});
+
+spaceRouter.get('/occasions', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const items = await prisma.occasion.findMany({
+    where: { partnershipId: partnership.id },
+    orderBy: { date: 'asc' },
+    take: 100
+  });
+  response.json({ items });
+});
+
+spaceRouter.post('/occasions', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = occasionInputSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const occasion = await prisma.occasion.create({
+    data: {
+      partnershipId: partnership.id,
+      title: input.title,
+      description: input.description,
+      date: input.date,
+      recurrence: input.recurrence
+    }
+  });
+
+  await notifyPartner(partnership, userId, {
+    type: 'occasion.created',
+    title: 'مناسبة جديدة',
+    body: input.title,
+    payload: { occasionId: occasion.id }
+  });
+
+  response.status(201).json({ occasion });
 });
 
 spaceRouter.get('/messages', requireAuth, async (request, response) => {
@@ -686,6 +744,179 @@ spaceRouter.post('/watch-room/items', requireAuth, async (request, response) => 
   response.status(201).json({ item });
 });
 
+spaceRouter.get('/tree/today', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const date = startOfUtcDay(new Date());
+  const day = await prisma.treeDay.upsert({
+    where: {
+      partnershipId_date: {
+        partnershipId: partnership.id,
+        date
+      }
+    },
+    update: {},
+    create: {
+      partnershipId: partnership.id,
+      date
+    },
+    include: {
+      leaves: {
+        include: { contributions: true },
+        orderBy: { createdAt: 'desc' }
+      }
+    }
+  });
+  response.json({ day });
+});
+
+spaceRouter.post('/tree/leaves', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = treeLeafSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const date = startOfUtcDay(new Date());
+  const day = await prisma.treeDay.upsert({
+    where: {
+      partnershipId_date: {
+        partnershipId: partnership.id,
+        date
+      }
+    },
+    update: {},
+    create: {
+      partnershipId: partnership.id,
+      date
+    }
+  });
+  const leaf = await prisma.treeLeaf.create({
+    data: {
+      treeDayId: day.id,
+      title: input.title,
+      body: input.body,
+      contributions: {
+        create: {
+          userId,
+          body: input.body
+        }
+      }
+    },
+    include: { contributions: true }
+  });
+  await notifyPartner(partnership, userId, {
+    type: 'tree.leaf.created',
+    title: 'ورقة جديدة في الشجرة',
+    body: input.title ?? input.body.slice(0, 120),
+    payload: { leafId: leaf.id }
+  });
+  response.status(201).json({ leaf });
+});
+
+spaceRouter.get('/time-capsules', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const items = await prisma.timeCapsule.findMany({
+    where: { partnershipId: partnership.id },
+    orderBy: { opensAt: 'asc' },
+    take: 100
+  });
+  response.json({ items });
+});
+
+spaceRouter.post('/time-capsules', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = timeCapsuleSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const capsule = await prisma.timeCapsule.create({
+    data: {
+      partnershipId: partnership.id,
+      creatorId: userId,
+      title: input.title,
+      body: input.body,
+      opensAt: input.opensAt
+    }
+  });
+  await notifyPartner(partnership, userId, {
+    type: 'time_capsule.created',
+    title: 'كبسولة وقت جديدة',
+    body: input.title,
+    payload: { capsuleId: capsule.id }
+  });
+  response.status(201).json({ capsule });
+});
+
+spaceRouter.get('/account/export', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const [user, memberships, notifications] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        createdAt: true,
+        profile: true
+      }
+    }),
+    prisma.partnershipMember.findMany({
+      where: { userId },
+      include: {
+        partnership: {
+          include: {
+            settings: true,
+            dates: true,
+            occasions: true,
+            posts: { where: { deletedAt: null } },
+            moods: true,
+            calendarEvents: true,
+            wishes: true,
+            goals: { include: { steps: true } },
+            sharedLists: { include: { items: true } },
+            places: true,
+            treeDays: { include: { leaves: { include: { contributions: true } } } }
+          }
+        }
+      }
+    }),
+    prisma.notification.findMany({ where: { userId }, take: 500 })
+  ]);
+
+  response.json({
+    exportedAt: new Date().toISOString(),
+    user,
+    partnerships: memberships.map((membership) => membership.partnership),
+    notifications
+  });
+});
+
+spaceRouter.post('/reports', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = reportSchema.parse(request.body);
+  const partnership = await getOptionalActivePartnership(userId);
+  const report = await prisma.report.create({
+    data: {
+      reporterId: userId,
+      partnershipId: partnership?.id,
+      reason: input.reason,
+      details: input.details
+    }
+  });
+  response.status(201).json({ report });
+});
+
+spaceRouter.delete('/me', requireAuth, async (request, response) => {
+  await prisma.user.update({
+    where: { id: request.user!.sub },
+    data: {
+      deletedAt: new Date(),
+      refreshTokens: {
+        updateMany: {
+          where: { revokedAt: null },
+          data: { revokedAt: new Date() }
+        }
+      }
+    }
+  });
+  response.status(204).send();
+});
+
 type NotificationInput = {
   type: string;
   title: string;
@@ -771,6 +1002,10 @@ function daysBetween(start: Date, end: Date) {
   return Math.max(0, Math.floor((endDay - startDay) / 86_400_000) + 1);
 }
 
+function startOfUtcDay(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
 function routeParam(value: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -799,4 +1034,9 @@ async function ensureWatchRoom(partnershipId: string) {
     data: { partnershipId },
     include: { items: { orderBy: { title: 'asc' } } }
   });
+}
+
+async function getOptionalActivePartnership(userId: string) {
+  const partnership = await getCurrentPartnership(userId);
+  return partnership?.status === 'active' ? partnership : null;
 }

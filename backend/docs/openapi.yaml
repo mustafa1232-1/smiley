@@ -109,6 +109,13 @@ paths:
       responses:
         "200":
           description: Updated profile
+    delete:
+      summary: Soft-delete account
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Deleted
   /partnerships/current/settings:
     patch:
       summary: Update active partnership settings
@@ -172,6 +179,21 @@ paths:
           description: Events
     post:
       summary: Create calendar event
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /occasions:
+    get:
+      summary: List occasions
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Occasions
+    post:
+      summary: Create occasion
       security:
         - bearerAuth: []
       responses:
@@ -335,6 +357,53 @@ paths:
   /watch-room/items:
     post:
       summary: Add watch item
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /tree/today:
+    get:
+      summary: Get today's tree day
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Tree day
+  /tree/leaves:
+    post:
+      summary: Create tree leaf
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /time-capsules:
+    get:
+      summary: List time capsules
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Time capsules
+    post:
+      summary: Create time capsule
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /account/export:
+    get:
+      summary: Export account data
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Export
+  /reports:
+    post:
+      summary: Create report
       security:
         - bearerAuth: []
       responses:

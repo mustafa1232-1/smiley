@@ -66,6 +66,31 @@ void main() {
     expect(await gateStore.isUnlocked(), isTrue);
     expect(find.text('الدخول'), findsOneWidget);
   });
+  testWidgets('tabs show distinct empty states before adding partner', (tester) async {
+    final gateStore = MemoryGateStore()..unlocked = true;
+    final tokenStore = MemoryAuthTokenStore();
+    await tokenStore.saveTokens(accessToken: 'access', refreshToken: 'refresh');
+
+    await tester.pumpWidget(
+      SmileyApp(
+        gateStore: gateStore,
+        tokenStore: tokenStore,
+        authRepository: FakeAuthRepository(),
+        partnershipRepository: FakePartnershipRepository(),
+        spaceRepository: FakeSpaceRepository(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.byIcon(Icons.public_rounded), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.chat_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.text('المحادثة'), findsWidgets);
+    expect(find.byIcon(Icons.chat_bubble_outline_rounded), findsOneWidget);
+  });
 }
 
 class MemoryGateStore implements GateStore {
@@ -205,6 +230,12 @@ class FakeSpaceRepository implements SpaceRepository {
   }
 
   @override
+  Future<void> createOccasion({
+    required String title,
+    required DateTime date,
+  }) async {}
+
+  @override
   Future<void> createGoal({
     required String title,
     List<String> steps = const [],
@@ -242,6 +273,22 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<void> createWish(String title) async {}
 
   @override
+  Future<void> createTimeCapsule({
+    required String title,
+    String? body,
+    required DateTime opensAt,
+  }) async {}
+
+  @override
+  Future<void> createTreeLeaf({String? title, required String body}) async {}
+
+  @override
+  Future<void> deleteAccount() async {}
+
+  @override
+  Future<Map<String, dynamic>> exportAccount() async => {};
+
+  @override
   Future<List<GoalItem>> goals() async => [];
 
   @override
@@ -267,6 +314,9 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<List<NotificationItem>> notifications() async => [];
 
   @override
+  Future<List<OccasionItem>> occasions() async => [];
+
+  @override
   Future<List<PlaceItem>> places() async => [];
 
   @override
@@ -274,6 +324,9 @@ class FakeSpaceRepository implements SpaceRepository {
 
   @override
   Future<void> readAllNotifications() async {}
+
+  @override
+  Future<void> report({required String reason, String? details}) async {}
 
   @override
   Future<ChatMessage> sendMessage(String body) async {
@@ -310,6 +363,18 @@ class FakeSpaceRepository implements SpaceRepository {
 
   @override
   Future<void> toggleWish(String id) async {}
+
+  @override
+  Future<TreeDayModel> todayTree() async {
+    return TreeDayModel(
+      id: 'tree',
+      date: DateTime(2026, 8, 3),
+      leaves: const [],
+    );
+  }
+
+  @override
+  Future<List<TimeCapsuleItem>> timeCapsules() async => [];
 
   @override
   Future<void> updateProfile({

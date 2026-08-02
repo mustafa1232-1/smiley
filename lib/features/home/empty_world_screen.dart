@@ -105,20 +105,55 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
   Widget _pageFor(_WorldState state) {
     final current = state.current;
     if (current == null) {
-      return _NoPartnerTab(
-        requests: state.requests,
-        onAddPartner: _openPartnerSearch,
-        onAccept: _acceptRequest,
-        onReject: _rejectRequest,
-        onCancel: _cancelRequest,
-      );
+      return switch (_index) {
+        0 => _NoPartnerTab(
+            requests: state.requests,
+            onAddPartner: _openPartnerSearch,
+            onAccept: _acceptRequest,
+            onReject: _rejectRequest,
+            onCancel: _cancelRequest,
+          ),
+        1 => _PartnerRequiredTab(
+            icon: Icons.chat_bubble_outline_rounded,
+            title: 'المحادثة',
+            onAddPartner: _openPartnerSearch,
+          ),
+        2 => _PartnerRequiredTab(
+            icon: Icons.favorite_border_rounded,
+            title: 'عالم Smiley',
+            onAddPartner: _openPartnerSearch,
+          ),
+        3 => _PartnerRequiredTab(
+            icon: Icons.calendar_month_rounded,
+            title: 'التقويم',
+            onAddPartner: _openPartnerSearch,
+          ),
+        _ => _MoreHubTabV2(
+            repository: widget.spaceRepository,
+            hasActivePartnership: false,
+            onSignOut: _signOut,
+          ),
+      };
     }
 
     if (current.needsOnboarding) {
-      return _OnboardingTab(
-        partnership: current,
-        onComplete: _completeOnboarding,
-      );
+      return switch (_index) {
+        0 => _OnboardingTab(
+            partnership: current,
+            onComplete: _completeOnboarding,
+          ),
+        4 => _MoreHubTabV2(
+            repository: widget.spaceRepository,
+            hasActivePartnership: false,
+            onSignOut: _signOut,
+          ),
+        _ => _PartnerRequiredTab(
+            icon: Icons.auto_awesome_rounded,
+            title: 'إعداد العلاقة',
+            message: 'أكمل إعداد البداية أولاً لتفعيل هذا التبويب.',
+            onAddPartner: _reload,
+          ),
+      };
     }
 
     return switch (_index) {
@@ -126,7 +161,11 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
       1 => _ChatTab(repository: widget.spaceRepository),
       2 => _WorldTab(repository: widget.spaceRepository),
       3 => _CalendarTab(repository: widget.spaceRepository),
-      _ => _MoreHubTab(repository: widget.spaceRepository, onSignOut: _signOut),
+      _ => _MoreHubTabV2(
+          repository: widget.spaceRepository,
+          hasActivePartnership: true,
+          onSignOut: _signOut,
+        ),
     };
   }
 
@@ -253,6 +292,62 @@ class _NoPartnerTab extends StatelessWidget {
                 ),
               ),
         ],
+      ),
+    );
+  }
+}
+
+class _PartnerRequiredTab extends StatelessWidget {
+  const _PartnerRequiredTab({
+    required this.icon,
+    required this.title,
+    required this.onAddPartner,
+    this.message = 'هذا التبويب يبدأ بعد إضافة الشريك وقبول الطلب.',
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final VoidCallback onAddPartner;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Icon(icon, size: 48, color: theme.colorScheme.primary),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: onAddPartner,
+                icon: const Icon(Icons.person_add_alt_1_rounded),
+                label: const Text('إضافة شريك'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -833,6 +928,175 @@ class _MoreItem {
   final Widget Function() builder;
 }
 
+class _MoreHubTabV2 extends StatelessWidget {
+  const _MoreHubTabV2({
+    required this.repository,
+    required this.hasActivePartnership,
+    required this.onSignOut,
+  });
+
+  final SpaceRepository repository;
+  final bool hasActivePartnership;
+  final VoidCallback onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget guarded(String title, IconData icon, Widget Function() page) {
+      if (hasActivePartnership) return page();
+      return _PartnerRequiredScreen(title: title, icon: icon);
+    }
+
+    final items = [
+      _MoreItem(
+        'الموسيقى',
+        Icons.music_note_rounded,
+        () => guarded(
+          'الموسيقى',
+          Icons.music_note_rounded,
+          () => _RoomScreen.music(repository: repository),
+        ),
+      ),
+      _MoreItem(
+        'السينما',
+        Icons.movie_outlined,
+        () => guarded(
+          'السينما',
+          Icons.movie_outlined,
+          () => _RoomScreen.watch(repository: repository),
+        ),
+      ),
+      _MoreItem(
+        'الألبومات',
+        Icons.photo_library_outlined,
+        () => guarded(
+          'الألبومات',
+          Icons.photo_library_outlined,
+          () => _AlbumsScreen(repository: repository),
+        ),
+      ),
+      _MoreItem(
+        'الأمنيات والأهداف',
+        Icons.flag_outlined,
+        () => guarded(
+          'الأمنيات والأهداف',
+          Icons.flag_outlined,
+          () => _WishesGoalsScreen(repository: repository),
+        ),
+      ),
+      _MoreItem(
+        'خريطة الذكريات',
+        Icons.map_outlined,
+        () => guarded(
+          'خريطة الذكريات',
+          Icons.map_outlined,
+          () => _PlacesScreen(repository: repository),
+        ),
+      ),
+      _MoreItem(
+        'القوائم المشتركة',
+        Icons.checklist_rounded,
+        () => guarded(
+          'القوائم المشتركة',
+          Icons.checklist_rounded,
+          () => _SharedListsScreen(repository: repository),
+        ),
+      ),
+      _MoreItem(
+        'المناسبات',
+        Icons.event_available_outlined,
+        () => guarded(
+          'المناسبات',
+          Icons.event_available_outlined,
+          () => _OccasionsScreen(repository: repository),
+        ),
+      ),
+      _MoreItem(
+        'الشجرة اليومية',
+        Icons.park_outlined,
+        () => guarded(
+          'الشجرة اليومية',
+          Icons.park_outlined,
+          () => _TreeScreen(repository: repository),
+        ),
+      ),
+      _MoreItem(
+        'كبسولات الوقت',
+        Icons.lock_clock_outlined,
+        () => guarded(
+          'كبسولات الوقت',
+          Icons.lock_clock_outlined,
+          () => _TimeCapsulesScreen(repository: repository),
+        ),
+      ),
+      _MoreItem(
+        'الأمان والدعم',
+        Icons.shield_outlined,
+        () => _SafetyScreen(repository: repository),
+      ),
+      _MoreItem(
+        'الإشعارات',
+        Icons.notifications_none_rounded,
+        () => _NotificationsScreen(repository: repository),
+      ),
+      _MoreItem(
+        'الملف الشخصي',
+        Icons.person_outline_rounded,
+        () => _ProfileScreen(repository: repository),
+      ),
+      _MoreItem(
+        'الإعدادات',
+        Icons.settings_outlined,
+        () => _SettingsScreen(
+          repository: repository,
+          hasActivePartnership: hasActivePartnership,
+        ),
+      ),
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        for (final item in items)
+          ListTile(
+            leading: Icon(item.icon),
+            title: Text(item.title),
+            trailing: const Icon(Icons.chevron_left_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => item.builder()),
+            ),
+          ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.logout_rounded),
+          title: const Text('تسجيل الخروج'),
+          onTap: onSignOut,
+        ),
+      ],
+    );
+  }
+}
+
+class _PartnerRequiredScreen extends StatelessWidget {
+  const _PartnerRequiredScreen({required this.title, required this.icon});
+
+  final String title;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: _PartnerRequiredTab(
+        icon: icon,
+        title: title,
+        message: 'هذه الميزة تتطلب علاقة مفعلة. أضف الشريك ثم أكملا إعداد البداية.',
+        onAddPartner: () => Navigator.of(context).pop(),
+      ),
+    );
+  }
+}
+
+// ignore: unused_element
 class _MoreHubTab extends StatelessWidget {
   const _MoreHubTab({required this.repository, required this.onSignOut});
 
@@ -885,7 +1149,10 @@ class _MoreHubTab extends StatelessWidget {
       _MoreItem(
         'الإعدادات',
         Icons.settings_outlined,
-        () => _SettingsScreen(repository: repository),
+        () => _SettingsScreen(
+          repository: repository,
+          hasActivePartnership: true,
+        ),
       ),
     ];
 
@@ -909,6 +1176,411 @@ class _MoreHubTab extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _OccasionsScreen extends StatefulWidget {
+  const _OccasionsScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_OccasionsScreen> createState() => _OccasionsScreenState();
+}
+
+class _OccasionsScreenState extends State<_OccasionsScreen> {
+  late Future<List<OccasionItem>> _future = widget.repository.occasions();
+  final _title = TextEditingController();
+  DateTime _dateValue = DateTime.now();
+
+  @override
+  void dispose() {
+    _title.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('المناسبات')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const _SectionHeader(
+            icon: Icons.event_available_outlined,
+            title: 'المناسبات',
+            subtitle: 'احفظوا التواريخ المهمة لتظهر في عالمكما.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(labelText: 'عنوان المناسبة'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.today_rounded),
+            title: Text(_date(_dateValue)),
+            trailing: IconButton(
+              tooltip: 'اختيار تاريخ',
+              icon: const Icon(Icons.calendar_month_rounded),
+              onPressed: _pickDate,
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: _create,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('إضافة مناسبة'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<List<OccasionItem>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              final items = snapshot.requireData;
+              if (items.isEmpty) return const Text('لا توجد مناسبات بعد.');
+              return Column(
+                children: [
+                  for (final item in items)
+                    ListTile(
+                      leading: const Icon(Icons.event_available_outlined),
+                      title: Text(item.title),
+                      subtitle: Text(_date(item.date)),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final value = await showDatePicker(
+      context: context,
+      initialDate: _dateValue,
+      firstDate: DateTime(1970),
+      lastDate: DateTime(2100),
+    );
+    if (value != null) setState(() => _dateValue = value);
+  }
+
+  Future<void> _create() async {
+    if (_title.text.trim().isEmpty) return;
+    await widget.repository.createOccasion(
+      title: _title.text,
+      date: _dateValue,
+    );
+    _title.clear();
+    setState(() => _future = widget.repository.occasions());
+  }
+}
+
+class _TreeScreen extends StatefulWidget {
+  const _TreeScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_TreeScreen> createState() => _TreeScreenState();
+}
+
+class _TreeScreenState extends State<_TreeScreen> {
+  late Future<TreeDayModel> _future = widget.repository.todayTree();
+  final _title = TextEditingController();
+  final _body = TextEditingController();
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _body.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الشجرة اليومية')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const _SectionHeader(
+            icon: Icons.park_outlined,
+            title: 'ورقة اليوم',
+            subtitle: 'اكتبوا ورقة يومية تنمو بها شجرة الذكريات.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(labelText: 'عنوان اختياري'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _body,
+            minLines: 3,
+            maxLines: 6,
+            decoration: const InputDecoration(labelText: 'نص الورقة'),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _create,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('إضافة ورقة'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<TreeDayModel>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              final leaves = snapshot.requireData.leaves;
+              if (leaves.isEmpty) return const Text('لا توجد أوراق اليوم بعد.');
+              return Column(
+                children: [
+                  for (final leaf in leaves)
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.eco_outlined),
+                        title: Text(leaf.title ?? 'ورقة'),
+                        subtitle: Text(leaf.body),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _create() async {
+    if (_body.text.trim().isEmpty) return;
+    await widget.repository.createTreeLeaf(
+      title: _title.text,
+      body: _body.text,
+    );
+    _title.clear();
+    _body.clear();
+    setState(() => _future = widget.repository.todayTree());
+  }
+}
+
+class _TimeCapsulesScreen extends StatefulWidget {
+  const _TimeCapsulesScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_TimeCapsulesScreen> createState() => _TimeCapsulesScreenState();
+}
+
+class _TimeCapsulesScreenState extends State<_TimeCapsulesScreen> {
+  late Future<List<TimeCapsuleItem>> _future = widget.repository.timeCapsules();
+  final _title = TextEditingController();
+  final _body = TextEditingController();
+  DateTime _opensAt = DateTime.now().add(const Duration(days: 30));
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _body.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('كبسولات الوقت')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const _SectionHeader(
+            icon: Icons.lock_clock_outlined,
+            title: 'كبسولة جديدة',
+            subtitle: 'رسالة محفوظة لا تفتح إلا في تاريخ تختارانه.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(labelText: 'العنوان'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _body,
+            minLines: 2,
+            maxLines: 5,
+            decoration: const InputDecoration(labelText: 'المحتوى'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.lock_open_outlined),
+            title: Text('تفتح في ${_date(_opensAt)}'),
+            trailing: IconButton(
+              tooltip: 'اختيار تاريخ',
+              icon: const Icon(Icons.calendar_month_rounded),
+              onPressed: _pickDate,
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: _create,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('حفظ كبسولة'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<List<TimeCapsuleItem>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              final items = snapshot.requireData;
+              if (items.isEmpty) return const Text('لا توجد كبسولات بعد.');
+              return Column(
+                children: [
+                  for (final item in items)
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.lock_clock_outlined),
+                        title: Text(item.title),
+                        subtitle: Text('تفتح في ${_date(item.opensAt)}'),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final value = await showDatePicker(
+      context: context,
+      initialDate: _opensAt,
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2200),
+    );
+    if (value != null) setState(() => _opensAt = value);
+  }
+
+  Future<void> _create() async {
+    if (_title.text.trim().isEmpty) return;
+    await widget.repository.createTimeCapsule(
+      title: _title.text,
+      body: _body.text,
+      opensAt: _opensAt,
+    );
+    _title.clear();
+    _body.clear();
+    setState(() => _future = widget.repository.timeCapsules());
+  }
+}
+
+class _SafetyScreen extends StatefulWidget {
+  const _SafetyScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_SafetyScreen> createState() => _SafetyScreenState();
+}
+
+class _SafetyScreenState extends State<_SafetyScreen> {
+  final _reason = TextEditingController();
+  final _details = TextEditingController();
+  String? _message;
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    _details.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الأمان والدعم')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const _SectionHeader(
+            icon: Icons.shield_outlined,
+            title: 'الأمان والدعم',
+            subtitle: 'تصدير بياناتك، إرسال بلاغ، أو حذف الحساب.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _reason,
+            decoration: const InputDecoration(labelText: 'سبب البلاغ'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _details,
+            minLines: 2,
+            maxLines: 5,
+            decoration: const InputDecoration(labelText: 'تفاصيل اختيارية'),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _report,
+            icon: const Icon(Icons.report_outlined),
+            label: const Text('إرسال بلاغ'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _export,
+            icon: const Icon(Icons.download_outlined),
+            label: const Text('تصدير بيانات الحساب'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _delete,
+            icon: const Icon(Icons.delete_outline_rounded),
+            label: const Text('حذف الحساب'),
+          ),
+          if (_message != null) ...[
+            const SizedBox(height: 12),
+            Text(_message!, textAlign: TextAlign.center),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _report() async {
+    if (_reason.text.trim().isEmpty) return;
+    await widget.repository.report(
+      reason: _reason.text,
+      details: _details.text,
+    );
+    setState(() => _message = 'تم إرسال البلاغ.');
+  }
+
+  Future<void> _export() async {
+    final data = await widget.repository.exportAccount();
+    setState(() => _message = 'تم تجهيز التصدير: ${data.keys.length} أقسام.');
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف الحساب'),
+        content: const Text('سيتم تعطيل الحساب وإبطال الجلسات.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await widget.repository.deleteAccount();
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 }
 
@@ -1075,9 +1747,13 @@ class _ProfileScreenState extends State<_ProfileScreen> {
 }
 
 class _SettingsScreen extends StatefulWidget {
-  const _SettingsScreen({required this.repository});
+  const _SettingsScreen({
+    required this.repository,
+    required this.hasActivePartnership,
+  });
 
   final SpaceRepository repository;
+  final bool hasActivePartnership;
 
   @override
   State<_SettingsScreen> createState() => _SettingsScreenState();
@@ -1101,12 +1777,19 @@ class _SettingsScreenState extends State<_SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const _SectionHeader(
+          _SectionHeader(
             icon: Icons.settings_outlined,
             title: 'إعدادات العالم',
             subtitle: 'تغيير الاسم واللون الأساسي للعلاقة.',
           ),
           const SizedBox(height: 16),
+          if (!widget.hasActivePartnership) ...[
+            const _EmptyLine(
+              text: 'أضف الشريك وأكمل إعداد البداية لتعديل إعدادات العالم.',
+              color: Colors.grey,
+            ),
+            const SizedBox(height: 8),
+          ],
           TextField(
             controller: _worldName,
             decoration: const InputDecoration(labelText: 'اسم العالم'),
@@ -1118,7 +1801,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: _save,
+            onPressed: widget.hasActivePartnership ? _save : null,
             icon: const Icon(Icons.save_outlined),
             label: const Text('حفظ الإعدادات'),
           ),

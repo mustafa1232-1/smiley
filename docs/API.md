@@ -178,6 +178,21 @@ Creates a manual calendar event.
 }
 ```
 
+### `GET /occasions`
+
+Lists important relationship occasions.
+
+### `POST /occasions`
+
+Creates an occasion.
+
+```json
+{
+  "title": "مناسبة",
+  "date": "2026-08-03T00:00:00.000Z"
+}
+```
+
 ### `GET /notifications`
 
 Lists recent notifications for the current user.
@@ -268,6 +283,34 @@ Returns or creates the shared watch room.
 ### `POST /watch-room/items`
 
 Adds a watch item.
+
+### `GET /tree/today`
+
+Returns or creates today's memory tree day.
+
+### `POST /tree/leaves`
+
+Creates a daily tree leaf.
+
+### `GET /time-capsules`
+
+Lists time capsules for the active partnership.
+
+### `POST /time-capsules`
+
+Creates a time capsule.
+
+### `GET /account/export`
+
+Exports the authenticated user's profile and relationship data.
+
+### `POST /reports`
+
+Creates an abuse/support report.
+
+### `DELETE /me`
+
+Soft-deletes the authenticated user and revokes active refresh tokens.
 
 ## Error Shape
 

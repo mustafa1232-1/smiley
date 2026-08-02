@@ -24,6 +24,8 @@ abstract interface class SpaceRepository {
     required String title,
     required DateTime startsAt,
   });
+  Future<List<OccasionItem>> occasions();
+  Future<void> createOccasion({required String title, required DateTime date});
   Future<List<NotificationItem>> notifications();
   Future<void> readAllNotifications();
   Future<List<WishItem>> wishes();
@@ -45,6 +47,17 @@ abstract interface class SpaceRepository {
   Future<void> addMusicItem(String title);
   Future<RoomModel> watchRoom();
   Future<void> addWatchItem(String title);
+  Future<TreeDayModel> todayTree();
+  Future<void> createTreeLeaf({String? title, required String body});
+  Future<List<TimeCapsuleItem>> timeCapsules();
+  Future<void> createTimeCapsule({
+    required String title,
+    String? body,
+    required DateTime opensAt,
+  });
+  Future<Map<String, dynamic>> exportAccount();
+  Future<void> report({required String reason, String? details});
+  Future<void> deleteAccount();
 }
 
 class HttpSpaceRepository implements SpaceRepository {
@@ -149,6 +162,20 @@ class HttpSpaceRepository implements SpaceRepository {
       'startsAt': startsAt.toUtc().toIso8601String(),
     });
     return CalendarItem.fromJson(json['event'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<OccasionItem>> occasions() async {
+    final json = await _api.getJson('/occasions');
+    return _items(json).map(OccasionItem.fromJson).toList();
+  }
+
+  @override
+  Future<void> createOccasion({required String title, required DateTime date}) async {
+    await _api.postJson('/occasions', {
+      'title': title.trim(),
+      'date': date.toUtc().toIso8601String(),
+    });
   }
 
   @override
@@ -268,6 +295,57 @@ class HttpSpaceRepository implements SpaceRepository {
   @override
   Future<void> addWatchItem(String title) async {
     await _api.postJson('/watch-room/items', {'title': title.trim()});
+  }
+
+  @override
+  Future<TreeDayModel> todayTree() async {
+    final json = await _api.getJson('/tree/today');
+    return TreeDayModel.fromJson(json['day'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> createTreeLeaf({String? title, required String body}) async {
+    await _api.postJson('/tree/leaves', {
+      if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+      'body': body.trim(),
+    });
+  }
+
+  @override
+  Future<List<TimeCapsuleItem>> timeCapsules() async {
+    final json = await _api.getJson('/time-capsules');
+    return _items(json).map(TimeCapsuleItem.fromJson).toList();
+  }
+
+  @override
+  Future<void> createTimeCapsule({
+    required String title,
+    String? body,
+    required DateTime opensAt,
+  }) async {
+    await _api.postJson('/time-capsules', {
+      'title': title.trim(),
+      if (body != null && body.trim().isNotEmpty) 'body': body.trim(),
+      'opensAt': opensAt.toUtc().toIso8601String(),
+    });
+  }
+
+  @override
+  Future<Map<String, dynamic>> exportAccount() async {
+    return _api.getJson('/account/export');
+  }
+
+  @override
+  Future<void> report({required String reason, String? details}) async {
+    await _api.postJson('/reports', {
+      'reason': reason.trim(),
+      if (details != null && details.trim().isNotEmpty) 'details': details.trim(),
+    });
+  }
+
+  @override
+  Future<void> deleteAccount() async {
+    await _api.deleteJson('/me');
   }
 
   List<Map<String, dynamic>> _items(Map<String, dynamic> json) {
@@ -666,5 +744,95 @@ class RoomItem {
 
   factory RoomItem.fromJson(Map<String, dynamic> json) {
     return RoomItem(id: json['id'] as String, title: json['title'] as String);
+  }
+}
+
+class OccasionItem {
+  const OccasionItem({
+    required this.id,
+    required this.title,
+    required this.date,
+  });
+
+  final String id;
+  final String title;
+  final DateTime date;
+
+  factory OccasionItem.fromJson(Map<String, dynamic> json) {
+    return OccasionItem(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      date: DateTime.parse(json['date'] as String),
+    );
+  }
+}
+
+class TreeDayModel {
+  const TreeDayModel({
+    required this.id,
+    required this.date,
+    required this.leaves,
+  });
+
+  final String id;
+  final DateTime date;
+  final List<TreeLeafItem> leaves;
+
+  factory TreeDayModel.fromJson(Map<String, dynamic> json) {
+    final leaves = (json['leaves'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(TreeLeafItem.fromJson)
+        .toList();
+    return TreeDayModel(
+      id: json['id'] as String,
+      date: DateTime.parse(json['date'] as String),
+      leaves: leaves,
+    );
+  }
+}
+
+class TreeLeafItem {
+  const TreeLeafItem({
+    required this.id,
+    required this.body,
+    this.title,
+  });
+
+  final String id;
+  final String? title;
+  final String body;
+
+  factory TreeLeafItem.fromJson(Map<String, dynamic> json) {
+    return TreeLeafItem(
+      id: json['id'] as String,
+      title: json['title'] as String?,
+      body: json['body'] as String? ?? '',
+    );
+  }
+}
+
+class TimeCapsuleItem {
+  const TimeCapsuleItem({
+    required this.id,
+    required this.title,
+    required this.opensAt,
+    required this.opened,
+    this.body,
+  });
+
+  final String id;
+  final String title;
+  final String? body;
+  final DateTime opensAt;
+  final bool opened;
+
+  factory TimeCapsuleItem.fromJson(Map<String, dynamic> json) {
+    return TimeCapsuleItem(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      body: json['body'] as String?,
+      opensAt: DateTime.parse(json['opensAt'] as String),
+      opened: json['openedAt'] != null,
+    );
   }
 }
