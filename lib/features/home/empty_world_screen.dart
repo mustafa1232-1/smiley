@@ -552,6 +552,21 @@ class _HomeTabState extends State<_HomeTab> {
                 onAttach: _attachMedia,
                 onSubmit: _createPost,
               ),
+              FutureBuilder<List<QueuedPost>>(
+                future: widget.offlineOutbox.posts(),
+                builder: (context, snapshot) {
+                  final count = snapshot.data?.length ?? 0;
+                  if (count == 0) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: _InfoTile(
+                      icon: Icons.sync_problem_rounded,
+                      title: 'بانتظار المزامنة',
+                      subtitle: '$count منشورات محفوظة محلياً',
+                    ),
+                  );
+                },
+              ),
               const SizedBox(height: 20),
               if (summary.latestMood != null)
                 _InfoTile(
