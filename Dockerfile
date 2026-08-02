@@ -2,6 +2,10 @@ FROM node:22-bookworm-slim AS build
 
 WORKDIR /app/backend
 
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY backend/package*.json ./
 RUN npm ci
 
@@ -15,6 +19,10 @@ FROM node:22-bookworm-slim AS runtime
 
 WORKDIR /app/backend
 ENV NODE_ENV=production
+
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/backend/package*.json ./
 COPY --from=build /app/backend/node_modules ./node_modules
