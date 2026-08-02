@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../core/offline_outbox.dart';
 import '../../core/realtime_client.dart';
 import '../../core/secure_stores.dart';
 import '../auth/auth_repository.dart';
@@ -14,6 +15,7 @@ class EmptyWorldScreen extends StatefulWidget {
   const EmptyWorldScreen({
     required this.partnershipRepository,
     required this.spaceRepository,
+    required this.offlineOutbox,
     required this.authRepository,
     required this.realtimeClient,
     required this.tokenStore,
@@ -23,6 +25,7 @@ class EmptyWorldScreen extends StatefulWidget {
 
   final PartnershipRepository partnershipRepository;
   final SpaceRepository spaceRepository;
+  final OfflineOutbox offlineOutbox;
   final AuthRepository authRepository;
   final RealtimeClient realtimeClient;
   final AuthTokenStore tokenStore;
@@ -190,8 +193,14 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
     }
 
     return switch (_index) {
-      0 => _HomeTab(repository: widget.spaceRepository),
-      1 => _ChatTab(repository: widget.spaceRepository),
+      0 => _HomeTab(
+        repository: widget.spaceRepository,
+        offlineOutbox: widget.offlineOutbox,
+      ),
+      1 => _ChatTab(
+        repository: widget.spaceRepository,
+        offlineOutbox: widget.offlineOutbox,
+      ),
       2 => _WorldTab(repository: widget.spaceRepository),
       3 => _CalendarTab(repository: widget.spaceRepository),
       _ => _MoreHubTabV2(
@@ -484,16 +493,17 @@ class _OnboardingTabState extends State<_OnboardingTab> {
 }
 
 class _HomeTab extends StatefulWidget {
-  const _HomeTab({required this.repository});
+  const _HomeTab({required this.repository, required this.offlineOutbox});
 
   final SpaceRepository repository;
+  final OfflineOutbox offlineOutbox;
 
   @override
   State<_HomeTab> createState() => _HomeTabState();
 }
 
 class _HomeTabState extends State<_HomeTab> {
-  late Future<SpaceSummary> _summary = widget.repository.summary();
+  late Future<SpaceSummary> _summary = _loadSummary();
   final _post = TextEditingController();
   final List<MediaAssetModel> _attachments = [];
   bool _posting = false;
@@ -578,7 +588,12 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   void _reload() {
-    setState(() => _summary = widget.repository.summary());
+    setState(() => _summary = _loadSummary());
+  }
+
+  Future<SpaceSummary> _loadSummary() async {
+    await _syncPendingPosts();
+    return widget.repository.summary();
   }
 
   Future<void> _createPost() async {
@@ -592,8 +607,37 @@ class _HomeTabState extends State<_HomeTab> {
       _post.clear();
       _attachments.clear();
       _reload();
+    } on ApiException catch (error) {
+      if (error.code != 'network_error') rethrow;
+      await widget.offlineOutbox.enqueuePost(
+        body: _post.text.trim().isEmpty ? 'مرفق جديد' : _post.text,
+        assetIds: _attachments.map((asset) => asset.id).toList(),
+      );
+      _post.clear();
+      _attachments.clear();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ المنشور محلياً للمزامنة.')),
+      );
+      _reload();
     } finally {
       if (mounted) setState(() => _posting = false);
+    }
+  }
+
+  Future<void> _syncPendingPosts() async {
+    final pending = await widget.offlineOutbox.posts();
+    for (final post in pending) {
+      try {
+        await widget.repository.createPost(
+          body: post.body,
+          assetIds: post.assetIds,
+        );
+        await widget.offlineOutbox.removePost(post.id);
+      } on ApiException catch (error) {
+        if (error.code == 'network_error') return;
+        await widget.offlineOutbox.removePost(post.id);
+      }
     }
   }
 
@@ -701,9 +745,10 @@ class _WorldTabState extends State<_WorldTab> {
 }
 
 class _ChatTab extends StatefulWidget {
-  const _ChatTab({required this.repository});
+  const _ChatTab({required this.repository, required this.offlineOutbox});
 
   final SpaceRepository repository;
+  final OfflineOutbox offlineOutbox;
 
   @override
   State<_ChatTab> createState() => _ChatTabState();
@@ -745,7 +790,20 @@ class _ChatTabState extends State<_ChatTab> {
                     child: Card(
                       child: Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Text(item.body),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(item.body),
+                            if (item.pending) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'بانتظار المزامنة',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   );
@@ -791,13 +849,28 @@ class _ChatTabState extends State<_ChatTab> {
       await widget.repository.sendMessage(_message.text);
       _message.clear();
       setState(() => _messages = _loadMessages());
+    } on ApiException catch (error) {
+      if (error.code != 'network_error') rethrow;
+      await widget.offlineOutbox.enqueueMessage(_message.text);
+      _message.clear();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ الرسالة محلياً للمزامنة.')),
+      );
+      setState(() => _messages = _loadMessages());
     } finally {
       if (mounted) setState(() => _sending = false);
     }
   }
 
   Future<List<ChatMessage>> _loadMessages() async {
-    final items = await widget.repository.messages();
+    await _syncPendingMessages();
+    List<ChatMessage> items = const [];
+    try {
+      items = await widget.repository.messages();
+    } on ApiException catch (error) {
+      if (error.code != 'network_error') rethrow;
+    }
     if (items.isNotEmpty) {
       try {
         await widget.repository.readAllMessages();
@@ -805,7 +878,31 @@ class _ChatTabState extends State<_ChatTab> {
         // Reading receipts should not block the conversation view.
       }
     }
-    return items;
+    final pending = await widget.offlineOutbox.messages();
+    return [
+      ...items,
+      ...pending.map(
+        (item) => ChatMessage(
+          id: item.id,
+          body: item.body,
+          serverTimestamp: item.createdAt,
+          pending: true,
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _syncPendingMessages() async {
+    final pending = await widget.offlineOutbox.messages();
+    for (final message in pending) {
+      try {
+        await widget.repository.sendMessage(message.body);
+        await widget.offlineOutbox.removeMessage(message.id);
+      } on ApiException catch (error) {
+        if (error.code == 'network_error') return;
+        await widget.offlineOutbox.removeMessage(message.id);
+      }
+    }
   }
 }
 

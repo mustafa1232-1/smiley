@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:smiley/core/offline_outbox.dart';
 import 'package:smiley/core/secure_stores.dart';
 import 'package:smiley/core/realtime_client.dart';
 import 'package:smiley/features/auth/auth_models.dart';
@@ -29,6 +30,7 @@ void main() {
         authRepository: FakeAuthRepository(),
         partnershipRepository: FakePartnershipRepository(),
         spaceRepository: FakeSpaceRepository(),
+        offlineOutbox: MemoryOfflineOutbox(),
         realtimeClient: RealtimeClient.disabled(),
       ),
     );
@@ -55,6 +57,7 @@ void main() {
         authRepository: FakeAuthRepository(),
         partnershipRepository: FakePartnershipRepository(),
         spaceRepository: FakeSpaceRepository(),
+        offlineOutbox: MemoryOfflineOutbox(),
         realtimeClient: RealtimeClient.disabled(),
       ),
     );
@@ -85,6 +88,7 @@ void main() {
         authRepository: FakeAuthRepository(),
         partnershipRepository: FakePartnershipRepository(),
         spaceRepository: FakeSpaceRepository(),
+        offlineOutbox: MemoryOfflineOutbox(),
         realtimeClient: RealtimeClient.disabled(),
       ),
     );
@@ -141,6 +145,53 @@ class MemoryAuthTokenStore implements AuthTokenStore {
   }) async {
     access = accessToken;
     refresh = refreshToken;
+  }
+}
+
+class MemoryOfflineOutbox implements OfflineOutbox {
+  final List<QueuedMessage> _messages = [];
+  final List<QueuedPost> _posts = [];
+
+  @override
+  Future<void> enqueueMessage(String body) async {
+    _messages.add(
+      QueuedMessage(
+        id: 'message-${_messages.length}',
+        body: body,
+        createdAt: DateTime(2026, 8, 3),
+      ),
+    );
+  }
+
+  @override
+  Future<void> enqueuePost({
+    required String body,
+    List<String> assetIds = const [],
+  }) async {
+    _posts.add(
+      QueuedPost(
+        id: 'post-${_posts.length}',
+        body: body,
+        assetIds: assetIds,
+        createdAt: DateTime(2026, 8, 3),
+      ),
+    );
+  }
+
+  @override
+  Future<List<QueuedMessage>> messages() async => [..._messages];
+
+  @override
+  Future<List<QueuedPost>> posts() async => [..._posts];
+
+  @override
+  Future<void> removeMessage(String id) async {
+    _messages.removeWhere((item) => item.id == id);
+  }
+
+  @override
+  Future<void> removePost(String id) async {
+    _posts.removeWhere((item) => item.id == id);
   }
 }
 

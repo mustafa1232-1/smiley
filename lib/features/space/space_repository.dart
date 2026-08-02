@@ -662,6 +662,7 @@ class ChatMessage {
     this.senderUsername,
     this.deliveredAt,
     this.readAt,
+    this.pending = false,
   });
 
   final String id;
@@ -670,6 +671,7 @@ class ChatMessage {
   final String? senderUsername;
   final DateTime? deliveredAt;
   final DateTime? readAt;
+  final bool pending;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final sender = json['sender'] as Map<String, dynamic>?;

@@ -11,7 +11,8 @@
 - `core`: HTTP client, Socket.IO realtime client, and secure storage abstractions.
 - `features/gate`: first-run date gate.
 - `features/auth`: login, registration, and password reset.
-- `features/home`: empty world, main navigation shell, chat, calendar, world tools, profile, and settings screens.
+- `features/home`: empty world, main navigation shell, chat, calendar, world tools, profile, settings screens, and offline retry wiring for messages/posts.
+- `core/offline_outbox`: SharedPreferences-backed local outbox for unsent chat messages and posts when network requests fail.
 - `features/partnerships`: partner search and request contracts.
 
 ## Backend Modules

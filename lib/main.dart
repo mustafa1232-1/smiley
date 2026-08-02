@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/api_client.dart';
+import 'core/offline_outbox.dart';
 import 'core/realtime_client.dart';
 import 'core/secure_stores.dart';
 import 'features/auth/auth_models.dart';
@@ -39,6 +40,7 @@ void main() {
       authRepository: HttpAuthRepository(apiClient),
       partnershipRepository: HttpPartnershipRepository(apiClient),
       spaceRepository: HttpSpaceRepository(apiClient),
+      offlineOutbox: const SharedPreferencesOfflineOutbox(),
       realtimeClient: realtimeClient,
     ),
   );
@@ -51,6 +53,7 @@ class SmileyApp extends StatelessWidget {
     required this.authRepository,
     required this.partnershipRepository,
     required this.spaceRepository,
+    required this.offlineOutbox,
     required this.realtimeClient,
     super.key,
   });
@@ -60,6 +63,7 @@ class SmileyApp extends StatelessWidget {
   final AuthRepository authRepository;
   final PartnershipRepository partnershipRepository;
   final SpaceRepository spaceRepository;
+  final OfflineOutbox offlineOutbox;
   final RealtimeClient realtimeClient;
 
   @override
@@ -82,6 +86,7 @@ class SmileyApp extends StatelessWidget {
         authRepository: authRepository,
         partnershipRepository: partnershipRepository,
         spaceRepository: spaceRepository,
+        offlineOutbox: offlineOutbox,
         realtimeClient: realtimeClient,
       ),
     );
@@ -135,6 +140,7 @@ class _Bootstrap extends StatefulWidget {
     required this.authRepository,
     required this.partnershipRepository,
     required this.spaceRepository,
+    required this.offlineOutbox,
     required this.realtimeClient,
   });
 
@@ -143,6 +149,7 @@ class _Bootstrap extends StatefulWidget {
   final AuthRepository authRepository;
   final PartnershipRepository partnershipRepository;
   final SpaceRepository spaceRepository;
+  final OfflineOutbox offlineOutbox;
   final RealtimeClient realtimeClient;
 
   @override
@@ -192,13 +199,14 @@ class _BootstrapState extends State<_Bootstrap> {
           );
         }
 
-          return EmptyWorldScreen(
-            partnershipRepository: widget.partnershipRepository,
-            spaceRepository: widget.spaceRepository,
-            authRepository: widget.authRepository,
-            realtimeClient: widget.realtimeClient,
-            tokenStore: widget.tokenStore,
-            onSignedOut: () => Navigator.of(context).pushReplacement(
+        return EmptyWorldScreen(
+          partnershipRepository: widget.partnershipRepository,
+          spaceRepository: widget.spaceRepository,
+          offlineOutbox: widget.offlineOutbox,
+          authRepository: widget.authRepository,
+          realtimeClient: widget.realtimeClient,
+          tokenStore: widget.tokenStore,
+          onSignedOut: () => Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(
               builder: (_) => AuthScreen(
                 repository: widget.authRepository,
@@ -218,6 +226,7 @@ class _BootstrapState extends State<_Bootstrap> {
         builder: (_) => EmptyWorldScreen(
           partnershipRepository: widget.partnershipRepository,
           spaceRepository: widget.spaceRepository,
+          offlineOutbox: widget.offlineOutbox,
           authRepository: widget.authRepository,
           realtimeClient: widget.realtimeClient,
           tokenStore: widget.tokenStore,

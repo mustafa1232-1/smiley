@@ -2,6 +2,8 @@
 
 Base path: `/api/v1`
 
+Client offline behavior: the Flutter app queues unsent chat messages and shared posts locally when a request fails with `network_error`, then retries synchronization when the related screen loads again.
+
 ## Auth
 
 ### `POST /auth/register`
