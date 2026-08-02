@@ -95,6 +95,25 @@ Completes the relationship setup and activates the shared world.
 
 All endpoints require bearer auth and an active partnership.
 
+### `GET /me`
+
+Returns the authenticated user's profile.
+
+### `PATCH /me`
+
+Updates display name, bio, search visibility, and partnership request availability.
+
+### `PATCH /partnerships/current/settings`
+
+Updates active world settings.
+
+```json
+{
+  "worldName": "عالمنا",
+  "themeColor": "#B96B7F"
+}
+```
+
 ### `GET /space`
 
 Returns the active world summary: members, world name, days together, latest mood, latest posts, next event, and unread notification count.
@@ -166,6 +185,89 @@ Lists recent notifications for the current user.
 ### `POST /notifications/read-all`
 
 Marks unread notifications as read.
+
+### `GET /wishes`
+
+Lists shared wishes.
+
+### `POST /wishes`
+
+Creates a wish.
+
+### `POST /wishes/:id/toggle`
+
+Toggles wish completion.
+
+### `GET /goals`
+
+Lists shared goals with steps.
+
+### `POST /goals`
+
+Creates a goal with optional steps.
+
+```json
+{
+  "title": "هدف مشترك",
+  "steps": ["خطوة أولى", "خطوة ثانية"]
+}
+```
+
+### `POST /goals/:id/toggle`
+
+Toggles goal completion.
+
+### `POST /goal-steps/:id/toggle`
+
+Toggles goal step completion.
+
+### `GET /shared-lists`
+
+Lists shared lists and their items.
+
+### `POST /shared-lists`
+
+Creates a shared list.
+
+### `POST /shared-lists/:id/items`
+
+Adds an item to a shared list.
+
+### `POST /shared-list-items/:id/toggle`
+
+Toggles shared list item completion.
+
+### `GET /places`
+
+Lists saved places for the memory map.
+
+### `POST /places`
+
+Creates a saved place.
+
+### `GET /albums`
+
+Lists albums.
+
+### `POST /albums`
+
+Creates an album shell. Media upload/storage can be layered on top of this.
+
+### `GET /music-room`
+
+Returns or creates the shared music room.
+
+### `POST /music-room/queue`
+
+Adds a music queue item.
+
+### `GET /watch-room`
+
+Returns or creates the shared watch room.
+
+### `POST /watch-room/items`
+
+Adds a watch item.
 
 ## Error Shape
 

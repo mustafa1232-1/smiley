@@ -94,6 +94,29 @@ paths:
       responses:
         "200":
           description: World summary
+  /me:
+    get:
+      summary: Get authenticated profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Profile
+    patch:
+      summary: Update authenticated profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated profile
+  /partnerships/current/settings:
+    patch:
+      summary: Update active partnership settings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Settings
   /posts:
     get:
       summary: List shared posts
@@ -170,6 +193,153 @@ paths:
       responses:
         "204":
           description: Updated
+  /wishes:
+    get:
+      summary: List wishes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Wishes
+    post:
+      summary: Create wish
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /wishes/{id}/toggle:
+    post:
+      summary: Toggle wish completion
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated
+  /goals:
+    get:
+      summary: List goals
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Goals
+    post:
+      summary: Create goal
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /goals/{id}/toggle:
+    post:
+      summary: Toggle goal completion
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated
+  /goal-steps/{id}/toggle:
+    post:
+      summary: Toggle goal step completion
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated
+  /shared-lists:
+    get:
+      summary: List shared lists
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Lists
+    post:
+      summary: Create shared list
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /shared-lists/{id}/items:
+    post:
+      summary: Add shared list item
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /shared-list-items/{id}/toggle:
+    post:
+      summary: Toggle shared list item
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated
+  /places:
+    get:
+      summary: List places
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Places
+    post:
+      summary: Create place
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /albums:
+    get:
+      summary: List albums
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Albums
+    post:
+      summary: Create album
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /music-room:
+    get:
+      summary: Get or create music room
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Music room
+  /music-room/queue:
+    post:
+      summary: Add music queue item
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /watch-room:
+    get:
+      summary: Get or create watch room
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Watch room
+  /watch-room/items:
+    post:
+      summary: Add watch item
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
 components:
   securitySchemes:
     bearerAuth:

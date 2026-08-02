@@ -126,7 +126,7 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
       1 => _ChatTab(repository: widget.spaceRepository),
       2 => _WorldTab(repository: widget.spaceRepository),
       3 => _CalendarTab(repository: widget.spaceRepository),
-      _ => _MoreTab(onSignOut: _signOut),
+      _ => _MoreHubTab(repository: widget.spaceRepository, onSignOut: _signOut),
     };
   }
 
@@ -825,6 +825,859 @@ class _PartnerSearchScreenState extends State<PartnerSearchScreen> {
   }
 }
 
+class _MoreItem {
+  const _MoreItem(this.title, this.icon, this.builder);
+
+  final String title;
+  final IconData icon;
+  final Widget Function() builder;
+}
+
+class _MoreHubTab extends StatelessWidget {
+  const _MoreHubTab({required this.repository, required this.onSignOut});
+
+  final SpaceRepository repository;
+  final VoidCallback onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      _MoreItem(
+        'الموسيقى',
+        Icons.music_note_rounded,
+        () => _RoomScreen.music(repository: repository),
+      ),
+      _MoreItem(
+        'السينما',
+        Icons.movie_outlined,
+        () => _RoomScreen.watch(repository: repository),
+      ),
+      _MoreItem(
+        'الألبومات',
+        Icons.photo_library_outlined,
+        () => _AlbumsScreen(repository: repository),
+      ),
+      _MoreItem(
+        'الأمنيات والأهداف',
+        Icons.flag_outlined,
+        () => _WishesGoalsScreen(repository: repository),
+      ),
+      _MoreItem(
+        'خريطة الذكريات',
+        Icons.map_outlined,
+        () => _PlacesScreen(repository: repository),
+      ),
+      _MoreItem(
+        'القوائم المشتركة',
+        Icons.checklist_rounded,
+        () => _SharedListsScreen(repository: repository),
+      ),
+      _MoreItem(
+        'الإشعارات',
+        Icons.notifications_none_rounded,
+        () => _NotificationsScreen(repository: repository),
+      ),
+      _MoreItem(
+        'الملف الشخصي',
+        Icons.person_outline_rounded,
+        () => _ProfileScreen(repository: repository),
+      ),
+      _MoreItem(
+        'الإعدادات',
+        Icons.settings_outlined,
+        () => _SettingsScreen(repository: repository),
+      ),
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        for (final item in items)
+          ListTile(
+            leading: Icon(item.icon),
+            title: Text(item.title),
+            trailing: const Icon(Icons.chevron_left_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => item.builder()),
+            ),
+          ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.logout_rounded),
+          title: const Text('تسجيل الخروج'),
+          onTap: onSignOut,
+        ),
+      ],
+    );
+  }
+}
+
+class _NotificationsScreen extends StatefulWidget {
+  const _NotificationsScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<_NotificationsScreen> {
+  late Future<List<NotificationItem>> _future = widget.repository.notifications();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('الإشعارات'),
+        actions: [
+          IconButton(
+            tooltip: 'قراءة الكل',
+            onPressed: _readAll,
+            icon: const Icon(Icons.done_all_rounded),
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<NotificationItem>>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final items = snapshot.requireData;
+          if (items.isEmpty) {
+            return const Center(child: Text('لا توجد إشعارات بعد.'));
+          }
+          return ListView(
+            padding: const EdgeInsets.all(12),
+            children: [
+              for (final item in items)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.notifications_none_rounded),
+                    title: Text(item.title),
+                    subtitle: item.body == null ? null : Text(item.body!),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _readAll() async {
+    await widget.repository.readAllNotifications();
+    setState(() => _future = widget.repository.notifications());
+  }
+}
+
+class _ProfileScreen extends StatefulWidget {
+  const _ProfileScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<_ProfileScreen> {
+  late Future<UserProfile> _future = widget.repository.me();
+  final _displayName = TextEditingController();
+  final _bio = TextEditingController();
+  bool _searchable = true;
+  bool _requests = true;
+  bool _ready = false;
+
+  @override
+  void dispose() {
+    _displayName.dispose();
+    _bio.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الملف الشخصي')),
+      body: FutureBuilder<UserProfile>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final profile = snapshot.requireData;
+          if (!_ready) {
+            _displayName.text = profile.displayName;
+            _bio.text = profile.bio ?? '';
+            _searchable = profile.searchable;
+            _requests = profile.canReceiveRequests;
+            _ready = true;
+          }
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              _SectionHeader(
+                icon: Icons.person_outline_rounded,
+                title: profile.username,
+                subtitle: profile.email ?? 'حساب Smiley',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _displayName,
+                decoration: const InputDecoration(labelText: 'اسم العرض'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _bio,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(labelText: 'نبذة قصيرة'),
+              ),
+              SwitchListTile(
+                value: _searchable,
+                onChanged: (value) => setState(() => _searchable = value),
+                title: const Text('ظهور الحساب في البحث'),
+              ),
+              SwitchListTile(
+                value: _requests,
+                onChanged: (value) => setState(() => _requests = value),
+                title: const Text('استقبال طلبات الارتباط'),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _save,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('حفظ الملف'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _save() async {
+    await widget.repository.updateProfile(
+      displayName: _displayName.text,
+      bio: _bio.text,
+      searchable: _searchable,
+      canReceiveRequests: _requests,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم حفظ الملف الشخصي')),
+    );
+    setState(() {
+      _ready = false;
+      _future = widget.repository.me();
+    });
+  }
+}
+
+class _SettingsScreen extends StatefulWidget {
+  const _SettingsScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<_SettingsScreen> {
+  final _worldName = TextEditingController();
+  final _themeColor = TextEditingController(text: '#B96B7F');
+
+  @override
+  void dispose() {
+    _worldName.dispose();
+    _themeColor.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الإعدادات')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const _SectionHeader(
+            icon: Icons.settings_outlined,
+            title: 'إعدادات العالم',
+            subtitle: 'تغيير الاسم واللون الأساسي للعلاقة.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _worldName,
+            decoration: const InputDecoration(labelText: 'اسم العالم'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _themeColor,
+            decoration: const InputDecoration(labelText: 'لون العالم'),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _save,
+            icon: const Icon(Icons.save_outlined),
+            label: const Text('حفظ الإعدادات'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _save() async {
+    await widget.repository.updateSettings(
+      worldName: _worldName.text,
+      themeColor: _themeColor.text,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم حفظ الإعدادات')),
+    );
+  }
+}
+
+class _WishesGoalsScreen extends StatefulWidget {
+  const _WishesGoalsScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_WishesGoalsScreen> createState() => _WishesGoalsScreenState();
+}
+
+class _WishesGoalsScreenState extends State<_WishesGoalsScreen> {
+  late Future<List<WishItem>> _wishes = widget.repository.wishes();
+  late Future<List<GoalItem>> _goals = widget.repository.goals();
+  final _wish = TextEditingController();
+  final _goal = TextEditingController();
+  final _steps = TextEditingController();
+
+  @override
+  void dispose() {
+    _wish.dispose();
+    _goal.dispose();
+    _steps.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الأمنيات والأهداف')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          TextField(
+            controller: _wish,
+            decoration: const InputDecoration(
+              labelText: 'أمنية جديدة',
+              prefixIcon: Icon(Icons.star_border_rounded),
+            ),
+            onSubmitted: (_) => _createWish(),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _createWish,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('إضافة أمنية'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<List<WishItem>>(
+            future: _wishes,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              return Column(
+                children: [
+                  for (final wish in snapshot.requireData)
+                    CheckboxListTile(
+                      value: wish.completed,
+                      onChanged: (_) => _toggleWish(wish.id),
+                      title: Text(wish.title),
+                    ),
+                ],
+              );
+            },
+          ),
+          const Divider(height: 32),
+          TextField(
+            controller: _goal,
+            decoration: const InputDecoration(
+              labelText: 'هدف جديد',
+              prefixIcon: Icon(Icons.flag_outlined),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _steps,
+            decoration: const InputDecoration(
+              labelText: 'خطوات الهدف مفصولة بفواصل',
+              prefixIcon: Icon(Icons.playlist_add_check_rounded),
+            ),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _createGoal,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('إضافة هدف'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<List<GoalItem>>(
+            future: _goals,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              return Column(
+                children: [
+                  for (final goal in snapshot.requireData)
+                    Card(
+                      child: ExpansionTile(
+                        leading: Checkbox(
+                          value: goal.completed,
+                          onChanged: (_) => _toggleGoal(goal.id),
+                        ),
+                        title: Text(goal.title),
+                        children: [
+                          for (final step in goal.steps)
+                            CheckboxListTile(
+                              value: step.completed,
+                              onChanged: (_) => _toggleStep(step.id),
+                              title: Text(step.title),
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _createWish() async {
+    if (_wish.text.trim().isEmpty) return;
+    await widget.repository.createWish(_wish.text);
+    _wish.clear();
+    setState(() => _wishes = widget.repository.wishes());
+  }
+
+  Future<void> _toggleWish(String id) async {
+    await widget.repository.toggleWish(id);
+    setState(() => _wishes = widget.repository.wishes());
+  }
+
+  Future<void> _createGoal() async {
+    if (_goal.text.trim().isEmpty) return;
+    final steps = _steps.text.split(',');
+    await widget.repository.createGoal(title: _goal.text, steps: steps);
+    _goal.clear();
+    _steps.clear();
+    setState(() => _goals = widget.repository.goals());
+  }
+
+  Future<void> _toggleGoal(String id) async {
+    await widget.repository.toggleGoal(id);
+    setState(() => _goals = widget.repository.goals());
+  }
+
+  Future<void> _toggleStep(String id) async {
+    await widget.repository.toggleGoalStep(id);
+    setState(() => _goals = widget.repository.goals());
+  }
+}
+
+class _SharedListsScreen extends StatefulWidget {
+  const _SharedListsScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_SharedListsScreen> createState() => _SharedListsScreenState();
+}
+
+class _SharedListsScreenState extends State<_SharedListsScreen> {
+  late Future<List<SharedListModel>> _future = widget.repository.sharedLists();
+  final _title = TextEditingController();
+  final _kind = TextEditingController(text: 'general');
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _kind.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('القوائم المشتركة')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(labelText: 'اسم القائمة'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _kind,
+            decoration: const InputDecoration(labelText: 'نوع القائمة'),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _createList,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('إنشاء قائمة'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<List<SharedListModel>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              return Column(
+                children: [
+                  for (final list in snapshot.requireData)
+                    Card(
+                      child: ExpansionTile(
+                        title: Text(list.title),
+                        subtitle: Text(list.kind),
+                        trailing: IconButton(
+                          tooltip: 'إضافة عنصر',
+                          onPressed: () => _addItem(list.id),
+                          icon: const Icon(Icons.add_rounded),
+                        ),
+                        children: [
+                          for (final item in list.items)
+                            CheckboxListTile(
+                              value: item.completed,
+                              onChanged: (_) => _toggleItem(item.id),
+                              title: Text(item.title),
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _createList() async {
+    if (_title.text.trim().isEmpty) return;
+    await widget.repository.createSharedList(
+      title: _title.text,
+      kind: _kind.text,
+    );
+    _title.clear();
+    setState(() => _future = widget.repository.sharedLists());
+  }
+
+  Future<void> _addItem(String listId) async {
+    final title = await _promptText(context, 'عنصر جديد');
+    if (title == null || title.trim().isEmpty) return;
+    await widget.repository.addSharedListItem(listId: listId, title: title);
+    setState(() => _future = widget.repository.sharedLists());
+  }
+
+  Future<void> _toggleItem(String id) async {
+    await widget.repository.toggleSharedListItem(id);
+    setState(() => _future = widget.repository.sharedLists());
+  }
+}
+
+class _PlacesScreen extends StatefulWidget {
+  const _PlacesScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_PlacesScreen> createState() => _PlacesScreenState();
+}
+
+class _PlacesScreenState extends State<_PlacesScreen> {
+  late Future<List<PlaceItem>> _future = widget.repository.places();
+  final _title = TextEditingController();
+
+  @override
+  void dispose() {
+    _title.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _NamedListScreen<PlaceItem>(
+      title: 'خريطة الذكريات',
+      icon: Icons.map_outlined,
+      controller: _title,
+      future: _future,
+      itemTitle: (item) => item.title,
+      onCreate: _create,
+    );
+  }
+
+  Future<void> _create() async {
+    if (_title.text.trim().isEmpty) return;
+    await widget.repository.createPlace(_title.text);
+    _title.clear();
+    setState(() => _future = widget.repository.places());
+  }
+}
+
+class _AlbumsScreen extends StatefulWidget {
+  const _AlbumsScreen({required this.repository});
+
+  final SpaceRepository repository;
+
+  @override
+  State<_AlbumsScreen> createState() => _AlbumsScreenState();
+}
+
+class _AlbumsScreenState extends State<_AlbumsScreen> {
+  late Future<List<AlbumModel>> _future = widget.repository.albums();
+  final _title = TextEditingController();
+
+  @override
+  void dispose() {
+    _title.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _NamedListScreen<AlbumModel>(
+      title: 'الألبومات',
+      icon: Icons.photo_library_outlined,
+      controller: _title,
+      future: _future,
+      itemTitle: (item) => item.title,
+      itemSubtitle: (item) => '${item.itemCount} عناصر',
+      onCreate: _create,
+    );
+  }
+
+  Future<void> _create() async {
+    if (_title.text.trim().isEmpty) return;
+    await widget.repository.createAlbum(_title.text);
+    _title.clear();
+    setState(() => _future = widget.repository.albums());
+  }
+}
+
+class _RoomScreen extends StatefulWidget {
+  const _RoomScreen.music({required this.repository})
+      : title = 'الموسيقى',
+        icon = Icons.music_note_rounded,
+        load = repositoryMusicRoom,
+        add = repositoryAddMusicItem;
+
+  const _RoomScreen.watch({required this.repository})
+      : title = 'السينما',
+        icon = Icons.movie_outlined,
+        load = repositoryWatchRoom,
+        add = repositoryAddWatchItem;
+
+  final SpaceRepository repository;
+  final String title;
+  final IconData icon;
+  final Future<RoomModel> Function(SpaceRepository repository) load;
+  final Future<void> Function(SpaceRepository repository, String title) add;
+
+  @override
+  State<_RoomScreen> createState() => _RoomScreenState();
+
+  static Future<RoomModel> repositoryMusicRoom(SpaceRepository repository) {
+    return repository.musicRoom();
+  }
+
+  static Future<void> repositoryAddMusicItem(
+    SpaceRepository repository,
+    String title,
+  ) {
+    return repository.addMusicItem(title);
+  }
+
+  static Future<RoomModel> repositoryWatchRoom(SpaceRepository repository) {
+    return repository.watchRoom();
+  }
+
+  static Future<void> repositoryAddWatchItem(
+    SpaceRepository repository,
+    String title,
+  ) {
+    return repository.addWatchItem(title);
+  }
+}
+
+class _RoomScreenState extends State<_RoomScreen> {
+  late Future<RoomModel> _future = widget.load(widget.repository);
+  final _title = TextEditingController();
+
+  @override
+  void dispose() {
+    _title.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          _SectionHeader(
+            icon: widget.icon,
+            title: widget.title,
+            subtitle: 'مساحة مشتركة تحفظ ما تريدان سماعه أو مشاهدته.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(labelText: 'عنوان جديد'),
+            onSubmitted: (_) => _create(),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _create,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('إضافة'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<RoomModel>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              final items = snapshot.requireData.items;
+              if (items.isEmpty) return const Text('لا توجد عناصر بعد.');
+              return Column(
+                children: [
+                  for (final item in items)
+                    ListTile(
+                      leading: Icon(widget.icon),
+                      title: Text(item.title),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _create() async {
+    if (_title.text.trim().isEmpty) return;
+    await widget.add(widget.repository, _title.text);
+    _title.clear();
+    setState(() => _future = widget.load(widget.repository));
+  }
+}
+
+class _NamedListScreen<T> extends StatelessWidget {
+  const _NamedListScreen({
+    required this.title,
+    required this.icon,
+    required this.controller,
+    required this.future,
+    required this.itemTitle,
+    required this.onCreate,
+    this.itemSubtitle,
+  });
+
+  final String title;
+  final IconData icon;
+  final TextEditingController controller;
+  final Future<List<T>> future;
+  final String Function(T item) itemTitle;
+  final String Function(T item)? itemSubtitle;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          _SectionHeader(
+            icon: icon,
+            title: title,
+            subtitle: 'أضفوا العناصر واحفظوها في مساحة العلاقة.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: controller,
+            decoration: const InputDecoration(labelText: 'عنوان جديد'),
+            onSubmitted: (_) => onCreate(),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: onCreate,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('إضافة'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<List<T>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              final items = snapshot.requireData;
+              if (items.isEmpty) return const Text('لا توجد عناصر بعد.');
+              return Column(
+                children: [
+                  for (final item in items)
+                    ListTile(
+                      leading: Icon(icon),
+                      title: Text(itemTitle(item)),
+                      subtitle: itemSubtitle == null
+                          ? null
+                          : Text(itemSubtitle!(item)),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<String?> _promptText(BuildContext context, String title) {
+  final controller = TextEditingController();
+  return showDialog<String>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'العنوان'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('حفظ'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+// ignore: unused_element
 class _MoreTab extends StatelessWidget {
   const _MoreTab({required this.onSignOut});
 

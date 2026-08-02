@@ -36,6 +36,115 @@ const messageSchema = z.object({
   body: z.string().trim().min(1).max(4000)
 });
 
+const profileSchema = z.object({
+  displayName: z.string().trim().min(1).max(80),
+  bio: z.string().trim().max(240).optional(),
+  searchable: z.boolean().optional(),
+  canReceivePartnershipRequests: z.boolean().optional()
+});
+
+const settingsSchema = z.object({
+  worldName: z.string().trim().min(1).max(80).optional(),
+  themeColor: z.string().trim().min(4).max(32).optional()
+});
+
+const wishSchema = z.object({
+  title: z.string().trim().min(1).max(160)
+});
+
+const goalSchema = z.object({
+  title: z.string().trim().min(1).max(160),
+  dueAt: z.coerce.date().optional(),
+  steps: z.array(z.string().trim().min(1).max(140)).max(20).optional()
+});
+
+const sharedListSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  kind: z.string().trim().min(1).max(40).default('general')
+});
+
+const sharedListItemSchema = z.object({
+  title: z.string().trim().min(1).max(160)
+});
+
+const placeSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional()
+});
+
+const albumSchema = z.object({
+  title: z.string().trim().min(1).max(120)
+});
+
+const roomItemSchema = z.object({
+  title: z.string().trim().min(1).max(160),
+  source: z.string().trim().min(1).max(60).default('manual'),
+  sourceUrl: z.string().trim().url().optional()
+});
+
+spaceRouter.get('/me', requireAuth, async (request, response) => {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: request.user!.sub },
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      createdAt: true,
+      profile: true
+    }
+  });
+
+  response.json({
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      createdAt: user.createdAt,
+      displayName: user.profile?.displayName ?? 'مستخدم',
+      avatarUrl: user.profile?.avatarUrl,
+      bio: user.profile?.bio,
+      searchable: user.profile?.searchable ?? true,
+      canReceivePartnershipRequests:
+        user.profile?.canReceivePartnershipRequests ?? true
+    }
+  });
+});
+
+spaceRouter.patch('/me', requireAuth, async (request, response) => {
+  const input = profileSchema.parse(request.body);
+  const profile = await prisma.userProfile.update({
+    where: { userId: request.user!.sub },
+    data: {
+      displayName: input.displayName,
+      bio: input.bio,
+      searchable: input.searchable,
+      canReceivePartnershipRequests: input.canReceivePartnershipRequests
+    }
+  });
+
+  response.json({ profile });
+});
+
+spaceRouter.patch('/partnerships/current/settings', requireAuth, async (request, response) => {
+  const input = settingsSchema.parse(request.body);
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const settings = await prisma.partnershipSettings.upsert({
+    where: { partnershipId: partnership.id },
+    update: {
+      worldName: input.worldName,
+      themeColor: input.themeColor
+    },
+    create: {
+      partnershipId: partnership.id,
+      worldName: input.worldName,
+      themeColor: input.themeColor
+    }
+  });
+
+  response.json({ settings });
+});
+
 spaceRouter.get('/space', requireAuth, async (request, response) => {
   const userId = request.user!.sub;
   const partnership = await requireActivePartnership(userId);
@@ -296,6 +405,287 @@ spaceRouter.post('/notifications/read-all', requireAuth, async (request, respons
   response.status(204).send();
 });
 
+spaceRouter.get('/wishes', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const items = await prisma.wish.findMany({
+    where: { partnershipId: partnership.id },
+    orderBy: [{ completedAt: 'asc' }, { createdAt: 'desc' }],
+    take: 100
+  });
+  response.json({ items });
+});
+
+spaceRouter.post('/wishes', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = wishSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const wish = await prisma.wish.create({
+    data: {
+      partnershipId: partnership.id,
+      creatorId: userId,
+      title: input.title
+    }
+  });
+  await notifyPartner(partnership, userId, {
+    type: 'wish.created',
+    title: 'أمنية جديدة',
+    body: input.title,
+    payload: { wishId: wish.id }
+  });
+  response.status(201).json({ wish });
+});
+
+spaceRouter.post('/wishes/:id/toggle', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const wish = await prisma.wish.findFirstOrThrow({
+    where: { id: routeParam(request.params.id), partnershipId: partnership.id }
+  });
+  const updated = await prisma.wish.update({
+    where: { id: wish.id },
+    data: { completedAt: wish.completedAt ? null : new Date() }
+  });
+  response.json({ wish: updated });
+});
+
+spaceRouter.get('/goals', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const items = await prisma.goal.findMany({
+    where: { partnershipId: partnership.id },
+    include: { steps: true },
+    orderBy: [{ completedAt: 'asc' }, { createdAt: 'desc' }],
+    take: 100
+  });
+  response.json({ items });
+});
+
+spaceRouter.post('/goals', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = goalSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const goal = await prisma.goal.create({
+    data: {
+      partnershipId: partnership.id,
+      title: input.title,
+      dueAt: input.dueAt,
+      steps: {
+        create: (input.steps ?? []).map((title) => ({ title }))
+      }
+    },
+    include: { steps: true }
+  });
+  await notifyPartner(partnership, userId, {
+    type: 'goal.created',
+    title: 'هدف جديد',
+    body: input.title,
+    payload: { goalId: goal.id }
+  });
+  response.status(201).json({ goal });
+});
+
+spaceRouter.post('/goals/:id/toggle', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const goal = await prisma.goal.findFirstOrThrow({
+    where: { id: routeParam(request.params.id), partnershipId: partnership.id }
+  });
+  const updated = await prisma.goal.update({
+    where: { id: goal.id },
+    data: { completedAt: goal.completedAt ? null : new Date() },
+    include: { steps: true }
+  });
+  response.json({ goal: updated });
+});
+
+spaceRouter.post('/goal-steps/:id/toggle', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const step = await prisma.goalStep.findFirstOrThrow({
+    where: {
+      id: routeParam(request.params.id),
+      goal: { partnershipId: partnership.id }
+    }
+  });
+  const updated = await prisma.goalStep.update({
+    where: { id: step.id },
+    data: { completedAt: step.completedAt ? null : new Date() }
+  });
+  response.json({ step: updated });
+});
+
+spaceRouter.get('/shared-lists', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const items = await prisma.sharedList.findMany({
+    where: { partnershipId: partnership.id },
+    include: { items: { orderBy: [{ completedAt: 'asc' }, { title: 'asc' }] } },
+    orderBy: { createdAt: 'desc' },
+    take: 50
+  });
+  response.json({ items });
+});
+
+spaceRouter.post('/shared-lists', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = sharedListSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const list = await prisma.sharedList.create({
+    data: {
+      partnershipId: partnership.id,
+      title: input.title,
+      kind: input.kind
+    },
+    include: { items: true }
+  });
+  await notifyPartner(partnership, userId, {
+    type: 'shared_list.created',
+    title: 'قائمة مشتركة جديدة',
+    body: input.title,
+    payload: { listId: list.id }
+  });
+  response.status(201).json({ list });
+});
+
+spaceRouter.post('/shared-lists/:id/items', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const input = sharedListItemSchema.parse(request.body);
+  const list = await prisma.sharedList.findFirstOrThrow({
+    where: { id: routeParam(request.params.id), partnershipId: partnership.id }
+  });
+  const item = await prisma.sharedListItem.create({
+    data: { sharedListId: list.id, title: input.title }
+  });
+  response.status(201).json({ item });
+});
+
+spaceRouter.post('/shared-list-items/:id/toggle', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const item = await prisma.sharedListItem.findFirstOrThrow({
+    where: {
+      id: routeParam(request.params.id),
+      sharedList: { partnershipId: partnership.id }
+    }
+  });
+  const updated = await prisma.sharedListItem.update({
+    where: { id: item.id },
+    data: { completedAt: item.completedAt ? null : new Date() }
+  });
+  response.json({ item: updated });
+});
+
+spaceRouter.get('/places', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const items = await prisma.place.findMany({
+    where: { partnershipId: partnership.id },
+    orderBy: { createdAt: 'desc' },
+    take: 100
+  });
+  response.json({ items });
+});
+
+spaceRouter.post('/places', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = placeSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const place = await prisma.place.create({
+    data: {
+      partnershipId: partnership.id,
+      title: input.title,
+      latitude: input.latitude,
+      longitude: input.longitude
+    }
+  });
+  await notifyPartner(partnership, userId, {
+    type: 'place.created',
+    title: 'مكان جديد',
+    body: input.title,
+    payload: { placeId: place.id }
+  });
+  response.status(201).json({ place });
+});
+
+spaceRouter.get('/albums', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const items = await prisma.album.findMany({
+    where: { partnershipId: partnership.id },
+    include: { items: true },
+    orderBy: { createdAt: 'desc' },
+    take: 50
+  });
+  response.json({ items });
+});
+
+spaceRouter.post('/albums', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = albumSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const album = await prisma.album.create({
+    data: { partnershipId: partnership.id, title: input.title },
+    include: { items: true }
+  });
+  await notifyPartner(partnership, userId, {
+    type: 'album.created',
+    title: 'ألبوم جديد',
+    body: input.title,
+    payload: { albumId: album.id }
+  });
+  response.status(201).json({ album });
+});
+
+spaceRouter.get('/music-room', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const room = await ensureMusicRoom(partnership.id);
+  response.json({ room });
+});
+
+spaceRouter.post('/music-room/queue', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = roomItemSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const room = await ensureMusicRoom(partnership.id);
+  const count = await prisma.musicQueueItem.count({ where: { musicRoomId: room.id } });
+  const item = await prisma.musicQueueItem.create({
+    data: {
+      musicRoomId: room.id,
+      title: input.title,
+      source: input.source,
+      sourceUrl: input.sourceUrl,
+      position: count + 1
+    }
+  });
+  await notifyPartner(partnership, userId, {
+    type: 'music.queue.updated',
+    title: 'أغنية جديدة',
+    body: input.title,
+    payload: { itemId: item.id }
+  });
+  response.status(201).json({ item });
+});
+
+spaceRouter.get('/watch-room', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const room = await ensureWatchRoom(partnership.id);
+  response.json({ room });
+});
+
+spaceRouter.post('/watch-room/items', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = roomItemSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const room = await ensureWatchRoom(partnership.id);
+  const item = await prisma.watchItem.create({
+    data: {
+      watchRoomId: room.id,
+      title: input.title,
+      source: input.source,
+      sourceUrl: input.sourceUrl
+    }
+  });
+  await notifyPartner(partnership, userId, {
+    type: 'watch.room.invited',
+    title: 'فيلم أو حلقة جديدة',
+    body: input.title,
+    payload: { itemId: item.id }
+  });
+  response.status(201).json({ item });
+});
+
 type NotificationInput = {
   type: string;
   title: string;
@@ -379,4 +769,34 @@ function daysBetween(start: Date, end: Date) {
   const startDay = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
   const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
   return Math.max(0, Math.floor((endDay - startDay) / 86_400_000) + 1);
+}
+
+function routeParam(value: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+async function ensureMusicRoom(partnershipId: string) {
+  const existing = await prisma.musicRoom.findFirst({
+    where: { partnershipId },
+    include: { queueItems: { orderBy: { position: 'asc' } } }
+  });
+  if (existing) return existing;
+
+  return prisma.musicRoom.create({
+    data: { partnershipId },
+    include: { queueItems: { orderBy: { position: 'asc' } } }
+  });
+}
+
+async function ensureWatchRoom(partnershipId: string) {
+  const existing = await prisma.watchRoom.findFirst({
+    where: { partnershipId },
+    include: { items: { orderBy: { title: 'asc' } } }
+  });
+  if (existing) return existing;
+
+  return prisma.watchRoom.create({
+    data: { partnershipId },
+    include: { items: { orderBy: { title: 'asc' } } }
+  });
 }

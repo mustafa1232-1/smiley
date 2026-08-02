@@ -176,7 +176,25 @@ class FakePartnershipRepository implements PartnershipRepository {
 
 class FakeSpaceRepository implements SpaceRepository {
   @override
+  Future<void> addMusicItem(String title) async {}
+
+  @override
+  Future<void> addSharedListItem({
+    required String listId,
+    required String title,
+  }) async {}
+
+  @override
+  Future<void> addWatchItem(String title) async {}
+
+  @override
+  Future<List<AlbumModel>> albums() async => [];
+
+  @override
   Future<List<CalendarItem>> calendarEvents() async => [];
+
+  @override
+  Future<void> createAlbum(String title) async {}
 
   @override
   Future<CalendarItem> createCalendarEvent({
@@ -185,6 +203,12 @@ class FakeSpaceRepository implements SpaceRepository {
   }) async {
     return CalendarItem(id: 'event', title: title, startsAt: startsAt);
   }
+
+  @override
+  Future<void> createGoal({
+    required String title,
+    List<String> steps = const [],
+  }) async {}
 
   @override
   Future<SpaceMood> createMood({
@@ -206,13 +230,50 @@ class FakeSpaceRepository implements SpaceRepository {
   }
 
   @override
+  Future<void> createPlace(String title) async {}
+
+  @override
+  Future<void> createSharedList({
+    required String title,
+    required String kind,
+  }) async {}
+
+  @override
+  Future<void> createWish(String title) async {}
+
+  @override
+  Future<List<GoalItem>> goals() async => [];
+
+  @override
+  Future<UserProfile> me() async {
+    return const UserProfile(
+      id: 'user-id',
+      username: 'user',
+      displayName: 'مستخدم',
+      searchable: true,
+      canReceiveRequests: true,
+    );
+  }
+
+  @override
   Future<List<ChatMessage>> messages() async => [];
+
+  @override
+  Future<RoomModel> musicRoom() async {
+    return const RoomModel(id: 'music', items: []);
+  }
 
   @override
   Future<List<NotificationItem>> notifications() async => [];
 
   @override
+  Future<List<PlaceItem>> places() async => [];
+
+  @override
   Future<List<SpacePost>> posts() async => [];
+
+  @override
+  Future<void> readAllNotifications() async {}
 
   @override
   Future<ChatMessage> sendMessage(String body) async {
@@ -234,4 +295,38 @@ class FakeSpaceRepository implements SpaceRepository {
       unreadNotifications: 0,
     );
   }
+
+  @override
+  Future<List<SharedListModel>> sharedLists() async => [];
+
+  @override
+  Future<void> toggleGoal(String id) async {}
+
+  @override
+  Future<void> toggleGoalStep(String id) async {}
+
+  @override
+  Future<void> toggleSharedListItem(String id) async {}
+
+  @override
+  Future<void> toggleWish(String id) async {}
+
+  @override
+  Future<void> updateProfile({
+    required String displayName,
+    String? bio,
+    required bool searchable,
+    required bool canReceiveRequests,
+  }) async {}
+
+  @override
+  Future<void> updateSettings({String? worldName, String? themeColor}) async {}
+
+  @override
+  Future<RoomModel> watchRoom() async {
+    return const RoomModel(id: 'watch', items: []);
+  }
+
+  @override
+  Future<List<WishItem>> wishes() async => [];
 }

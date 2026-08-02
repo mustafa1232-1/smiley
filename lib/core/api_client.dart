@@ -36,6 +36,20 @@ class ApiClient {
     return _decode(response);
   }
 
+  Future<Map<String, dynamic>> patchJson(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _send(() async {
+      return _client.patch(
+        _uri(path),
+        headers: await _headers(),
+        body: jsonEncode(body),
+      );
+    });
+    return _decode(response);
+  }
+
   Future<http.Response> _send(Future<http.Response> Function() action) async {
     try {
       return await action().timeout(_requestTimeout);
