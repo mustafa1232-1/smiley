@@ -2,23 +2,29 @@
 
 Smiley is a private two-person relationship space built with Flutter, Node.js, TypeScript, PostgreSQL, Prisma, and realtime events.
 
-## Phase One Status
+## Current Status
 
 Implemented in this repository:
 
 - Flutter app shell for Android, iOS, web, and desktop targets.
 - First-run date gate with secure local persistence.
 - Login, registration, and password-reset screens wired to REST endpoints.
-- Empty Smiley world state before partnership setup.
-- Partner search and partnership request UI wired to the backend contract.
-- Backend scaffold with Express, TypeScript, Prisma, JWT, bcrypt, request IDs, rate limiting, health endpoints, and Socket.IO bootstrap.
+- Empty Smiley world state before partnership setup with distinct tab states.
+- Partner search, partnership requests, accepting/rejecting/cancelling, and relationship onboarding.
+- Home/feed, moods, chat persistence, calendar, occasions, notifications, wishes, goals, lists, albums, places, daily tree leaves, time capsules, music queue, and watch queue.
+- Profile, relationship settings, reports, account export, and soft-delete.
+- Backend with Express, TypeScript, Prisma, JWT, bcrypt, request IDs, rate limiting, health endpoints, and authenticated Socket.IO realtime rooms.
 - PostgreSQL Prisma schema covering the requested product domains.
 - Environment variable examples and initial migration SQL for the core phase-one tables.
 - Flutter widget/unit tests and a backend username policy unit test.
 
-Not yet implemented:
+External integrations still require provider credentials before they can be production-active:
 
-- Email/phone delivery providers, push delivery, media upload signing, Redis presence, full relationship onboarding endpoints, feed, chat persistence, offline queue, and production deployment.
+- Email/phone delivery providers.
+- Firebase/APNs push delivery.
+- Cloudflare R2 media object storage and upload signing.
+- Redis-backed multi-instance presence.
+- Full offline queue/local database sync.
 
 ## Flutter
 
@@ -27,6 +33,8 @@ flutter pub get
 flutter test
 flutter run --dart-define=API_BASE_URL=http://localhost:3000/api/v1
 ```
+
+If `API_BASE_URL` is not provided, the Flutter app uses the deployed Railway API.
 
 ## Backend
 

@@ -10,6 +10,7 @@ import {
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 import { requireAuth } from '../../middleware/auth.js';
+import { emitToUser } from '../../realtime/server.js';
 
 export const partnershipsRouter = Router();
 
@@ -82,6 +83,14 @@ partnershipsRouter.post('/partnership-requests', requireAuth, async (request, re
   });
 
   response.status(201).json({ id: requestRecord.id, status: requestRecord.status });
+  emitToUser(receiver.id, 'partnership.requested', requesterId, {
+    requestId: requestRecord.id,
+    username: input.username
+  });
+  emitToUser(receiver.id, 'notification.created', requesterId, {
+    type: 'partnership.requested',
+    requestId: requestRecord.id
+  });
 });
 
 partnershipsRouter.get('/partnership-requests', requireAuth, async (request, response) => {
@@ -177,6 +186,11 @@ partnershipsRouter.post(
     });
 
     response.json({ partnership: { id: result.id, status: result.status } });
+    for (const member of result.members) {
+      emitToUser(member.userId, 'partnership.accepted', userId, {
+        partnershipId: result.id
+      });
+    }
   }
 );
 

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../core/realtime_client.dart';
 import '../../core/secure_stores.dart';
 import '../partnerships/partnership_repository.dart';
 import '../space/space_repository.dart';
@@ -9,6 +12,7 @@ class EmptyWorldScreen extends StatefulWidget {
   const EmptyWorldScreen({
     required this.partnershipRepository,
     required this.spaceRepository,
+    required this.realtimeClient,
     required this.tokenStore,
     required this.onSignedOut,
     super.key,
@@ -16,6 +20,7 @@ class EmptyWorldScreen extends StatefulWidget {
 
   final PartnershipRepository partnershipRepository;
   final SpaceRepository spaceRepository;
+  final RealtimeClient realtimeClient;
   final AuthTokenStore tokenStore;
   final VoidCallback onSignedOut;
 
@@ -26,6 +31,25 @@ class EmptyWorldScreen extends StatefulWidget {
 class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
   int _index = 0;
   late Future<_WorldState> _state = _load();
+  StreamSubscription<Map<String, dynamic>>? _realtimeSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.realtimeClient.connect();
+    _realtimeSubscription = widget.realtimeClient.events.listen((event) {
+      final type = event['type']?.toString() ?? '';
+      if (type.startsWith('partnership.') || type == 'notification.created') {
+        _reload();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _realtimeSubscription?.cancel();
+    super.dispose();
+  }
 
   Future<_WorldState> _load() async {
     final current = await widget.partnershipRepository.current();

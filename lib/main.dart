@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/api_client.dart';
+import 'core/realtime_client.dart';
 import 'core/secure_stores.dart';
 import 'features/auth/auth_models.dart';
 import 'features/auth/auth_repository.dart';
@@ -18,8 +19,13 @@ void main() {
   );
 
   final tokenStore = SecureAuthTokenStore();
+  final realtimeUrl = apiBaseUrl.replaceFirst(RegExp(r'/api/v1/?$'), '');
   final apiClient = ApiClient(
     baseUrl: apiBaseUrl,
+    tokenProvider: tokenStore.readAccessToken,
+  );
+  final realtimeClient = RealtimeClient(
+    serverUrl: realtimeUrl,
     tokenProvider: tokenStore.readAccessToken,
   );
 
@@ -30,6 +36,7 @@ void main() {
       authRepository: HttpAuthRepository(apiClient),
       partnershipRepository: HttpPartnershipRepository(apiClient),
       spaceRepository: HttpSpaceRepository(apiClient),
+      realtimeClient: realtimeClient,
     ),
   );
 }
@@ -41,6 +48,7 @@ class SmileyApp extends StatelessWidget {
     required this.authRepository,
     required this.partnershipRepository,
     required this.spaceRepository,
+    required this.realtimeClient,
     super.key,
   });
 
@@ -49,6 +57,7 @@ class SmileyApp extends StatelessWidget {
   final AuthRepository authRepository;
   final PartnershipRepository partnershipRepository;
   final SpaceRepository spaceRepository;
+  final RealtimeClient realtimeClient;
 
   @override
   Widget build(BuildContext context) {
@@ -70,6 +79,7 @@ class SmileyApp extends StatelessWidget {
         authRepository: authRepository,
         partnershipRepository: partnershipRepository,
         spaceRepository: spaceRepository,
+        realtimeClient: realtimeClient,
       ),
     );
   }
@@ -122,6 +132,7 @@ class _Bootstrap extends StatefulWidget {
     required this.authRepository,
     required this.partnershipRepository,
     required this.spaceRepository,
+    required this.realtimeClient,
   });
 
   final GateStore gateStore;
@@ -129,6 +140,7 @@ class _Bootstrap extends StatefulWidget {
   final AuthRepository authRepository;
   final PartnershipRepository partnershipRepository;
   final SpaceRepository spaceRepository;
+  final RealtimeClient realtimeClient;
 
   @override
   State<_Bootstrap> createState() => _BootstrapState();
@@ -180,6 +192,7 @@ class _BootstrapState extends State<_Bootstrap> {
           return EmptyWorldScreen(
             partnershipRepository: widget.partnershipRepository,
             spaceRepository: widget.spaceRepository,
+            realtimeClient: widget.realtimeClient,
             tokenStore: widget.tokenStore,
             onSignedOut: () => Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(
@@ -201,6 +214,7 @@ class _BootstrapState extends State<_Bootstrap> {
         builder: (_) => EmptyWorldScreen(
           partnershipRepository: widget.partnershipRepository,
           spaceRepository: widget.spaceRepository,
+          realtimeClient: widget.realtimeClient,
           tokenStore: widget.tokenStore,
           onSignedOut: () => Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(

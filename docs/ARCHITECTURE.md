@@ -8,19 +8,20 @@
 
 ## Flutter Modules
 
-- `core`: HTTP client and secure storage abstractions.
+- `core`: HTTP client, Socket.IO realtime client, and secure storage abstractions.
 - `features/gate`: first-run date gate.
 - `features/auth`: login, registration, and password reset.
-- `features/home`: empty world and main navigation shell.
+- `features/home`: empty world, main navigation shell, chat, calendar, world tools, profile, and settings screens.
 - `features/partnerships`: partner search and request contracts.
 
 ## Backend Modules
 
 - `auth`: registration, login, password reset request, token issuing.
 - `users`: username search with limited public profile data.
-- `partnerships`: partnership request creation and listing.
+- `partnerships`: partnership request lifecycle and onboarding.
+- `space`: active relationship APIs for home, feed, chat, calendar, moods, notifications, wishes, goals, lists, places, albums, rooms, tree leaves, time capsules, reports, export, and account deletion.
 - `health`: readiness and liveness.
-- `realtime`: event contract and Socket.IO bootstrap.
+- `realtime`: event contract plus authenticated Socket.IO rooms for users and partnerships.
 
 ## Security Decisions
 
@@ -31,13 +32,14 @@
 - Search results do not expose email, phone, birth date, or private profile fields.
 - Partnership requests are created inside database transactions.
 - API errors return `code`, `message`, `details`, and `requestId`.
+- Realtime sockets validate JWT access tokens and only join rooms for memberships found in the database.
 
 ## Phase Plan
 
 1. Core account, date gate, profile, partner discovery, partnership requests, relationship onboarding.
 2. Home, feed, moods, calendar, occasions, counters, basic notifications.
-3. Realtime chat, media messages, receipts, offline queue, full push notifications.
-4. Smiley world, tree, daily leaves, albums, memories, map, wishes, goals.
-5. Music rooms, audio upload, allowed YouTube integration, playback sync.
-6. Watch rooms, uploaded videos, allowed YouTube playback, external countdowns.
-7. Time capsules, games, summaries, performance, security hardening, deployment.
+3. Media messages, receipts, offline queue, full push notifications.
+4. Rich Smiley world visualizations, summaries, and games.
+5. Audio upload, allowed YouTube integration, and playback sync.
+6. Uploaded videos, allowed YouTube playback, and external countdowns.
+7. Performance, security hardening, and provider-specific production integrations.

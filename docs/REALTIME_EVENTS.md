@@ -15,7 +15,15 @@ All realtime events use this envelope:
 }
 ```
 
-Initial event types:
+Runtime:
+
+- Socket.IO is mounted on the same HTTPS origin as the API.
+- Clients authenticate with the JWT access token in `handshake.auth.token` or a `Bearer` header.
+- Authenticated sockets join `user:{userId}` and every active/pending partnership room they are allowed to see.
+- The Flutter client connects after login and refreshes relationship state on partnership and notification events.
+- Typing events are accepted as `typing.started` and `typing.stopped` with `{ "partnershipId": "uuid" }`.
+
+Event types:
 
 - `user.online`
 - `user.offline`
@@ -34,6 +42,13 @@ Initial event types:
 - `memory.created`
 - `tree.leaf.created`
 - `calendar.event.created`
+- `occasion.created`
+- `wish.created`
+- `goal.created`
+- `shared_list.created`
+- `place.created`
+- `album.created`
+- `time_capsule.created`
 - `music.room.invited`
 - `music.room.joined`
 - `music.playback.updated`

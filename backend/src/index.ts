@@ -1,24 +1,13 @@
 import { createServer } from 'node:http';
-import { Server } from 'socket.io';
 
 import { createApp } from './app.js';
 import { config } from './config.js';
+import { configureRealtime } from './realtime/server.js';
 
 const app = createApp();
 const server = createServer(app);
-const io = new Server(server, {
-  cors: { origin: config.corsOrigin === '*' ? true : config.corsOrigin }
-});
 
-io.use((socket, next) => {
-  const token = socket.handshake.auth.token;
-  if (!token) return next(new Error('unauthorized'));
-  next();
-});
-
-io.on('connection', (socket) => {
-  socket.emit('connected', { socketId: socket.id });
-});
+configureRealtime(server);
 
 server.listen(config.port, '0.0.0.0', () => {
   console.log(`Smiley API listening on 0.0.0.0:${config.port}`);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smiley/core/secure_stores.dart';
+import 'package:smiley/core/realtime_client.dart';
 import 'package:smiley/features/auth/auth_models.dart';
 import 'package:smiley/features/auth/auth_repository.dart';
 import 'package:smiley/features/gate/gate_validator.dart';
@@ -26,6 +27,7 @@ void main() {
         authRepository: FakeAuthRepository(),
         partnershipRepository: FakePartnershipRepository(),
         spaceRepository: FakeSpaceRepository(),
+        realtimeClient: RealtimeClient.disabled(),
       ),
     );
     await tester.pump();
@@ -51,6 +53,7 @@ void main() {
         authRepository: FakeAuthRepository(),
         partnershipRepository: FakePartnershipRepository(),
         spaceRepository: FakeSpaceRepository(),
+        realtimeClient: RealtimeClient.disabled(),
       ),
     );
     await tester.pump();
@@ -78,6 +81,7 @@ void main() {
         authRepository: FakeAuthRepository(),
         partnershipRepository: FakePartnershipRepository(),
         spaceRepository: FakeSpaceRepository(),
+        realtimeClient: RealtimeClient.disabled(),
       ),
     );
     await tester.pump();

@@ -10,6 +10,8 @@ import {
 } from '../../lib/access.js';
 import { prisma } from '../../lib/prisma.js';
 import { requireAuth } from '../../middleware/auth.js';
+import type { RealtimeEventType } from '../../realtime/events.js';
+import { emitToPartnership, emitToUser } from '../../realtime/server.js';
 
 export const spaceRouter = Router();
 
@@ -918,7 +920,7 @@ spaceRouter.delete('/me', requireAuth, async (request, response) => {
 });
 
 type NotificationInput = {
-  type: string;
+  type: RealtimeEventType;
   title: string;
   body?: string;
   payload?: Record<string, unknown>;
@@ -932,7 +934,7 @@ async function notifyPartner(
   const userId = otherPartnerId(partnership, actorId);
   if (!userId) return;
 
-  await prisma.notification.create({
+  const notification = await prisma.notification.create({
     data: {
       userId,
       partnershipId: partnership.id,
@@ -942,6 +944,8 @@ async function notifyPartner(
       payload: input.payload as Prisma.InputJsonValue | undefined
     }
   });
+  emitToUser(userId, 'notification.created', actorId, { notification });
+  emitToPartnership(input.type, actorId, partnership.id, input.payload ?? {});
 }
 
 function serializePost(post: {
