@@ -23,6 +23,26 @@ paths:
       responses:
         "202":
           description: Accepted
+  /auth/refresh:
+    post:
+      summary: Rotate refresh token
+      responses:
+        "200":
+          description: New auth session
+  /auth/logout:
+    post:
+      summary: Revoke current refresh token
+      responses:
+        "204":
+          description: Logged out
+  /auth/logout-all:
+    post:
+      summary: Revoke all refresh tokens for the current user
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Logged out everywhere
   /users/search:
     get:
       summary: Search users by username

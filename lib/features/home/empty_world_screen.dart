@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../core/realtime_client.dart';
 import '../../core/secure_stores.dart';
+import '../auth/auth_repository.dart';
 import '../partnerships/partnership_repository.dart';
 import '../space/space_repository.dart';
 
@@ -12,6 +13,7 @@ class EmptyWorldScreen extends StatefulWidget {
   const EmptyWorldScreen({
     required this.partnershipRepository,
     required this.spaceRepository,
+    required this.authRepository,
     required this.realtimeClient,
     required this.tokenStore,
     required this.onSignedOut,
@@ -20,6 +22,7 @@ class EmptyWorldScreen extends StatefulWidget {
 
   final PartnershipRepository partnershipRepository;
   final SpaceRepository spaceRepository;
+  final AuthRepository authRepository;
   final RealtimeClient realtimeClient;
   final AuthTokenStore tokenStore;
   final VoidCallback onSignedOut;
@@ -214,6 +217,15 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
   }
 
   Future<void> _signOut() async {
+    final refreshToken = await widget.tokenStore.readRefreshToken();
+    if (refreshToken != null) {
+      try {
+        await widget.authRepository.logout(refreshToken);
+      } on ApiException {
+        // Local sign-out should still complete if the session is already invalid.
+      }
+    }
+    await widget.realtimeClient.disconnect();
     await widget.tokenStore.clear();
     if (!mounted) return;
     widget.onSignedOut();

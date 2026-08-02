@@ -34,6 +34,30 @@ Creates a user and returns an auth session.
 
 Always returns `202` to avoid account enumeration.
 
+### `POST /auth/refresh`
+
+Rotates a refresh token and returns a new auth session. Reusing an already rotated token revokes the remaining active refresh tokens for that user.
+
+```json
+{
+  "refreshToken": "token"
+}
+```
+
+### `POST /auth/logout`
+
+Revokes the provided refresh token and returns `204`.
+
+```json
+{
+  "refreshToken": "token"
+}
+```
+
+### `POST /auth/logout-all`
+
+Requires bearer auth. Revokes all active refresh tokens for the current user.
+
 ## Users
 
 ### `GET /users/search?username=value`

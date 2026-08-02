@@ -23,6 +23,9 @@ void main() {
   final apiClient = ApiClient(
     baseUrl: apiBaseUrl,
     tokenProvider: tokenStore.readAccessToken,
+    refreshTokenProvider: tokenStore.readRefreshToken,
+    tokenSaver: tokenStore.saveTokens,
+    onAuthFailed: tokenStore.clear,
   );
   final realtimeClient = RealtimeClient(
     serverUrl: realtimeUrl,
@@ -192,6 +195,7 @@ class _BootstrapState extends State<_Bootstrap> {
           return EmptyWorldScreen(
             partnershipRepository: widget.partnershipRepository,
             spaceRepository: widget.spaceRepository,
+            authRepository: widget.authRepository,
             realtimeClient: widget.realtimeClient,
             tokenStore: widget.tokenStore,
             onSignedOut: () => Navigator.of(context).pushReplacement(
@@ -214,6 +218,7 @@ class _BootstrapState extends State<_Bootstrap> {
         builder: (_) => EmptyWorldScreen(
           partnershipRepository: widget.partnershipRepository,
           spaceRepository: widget.spaceRepository,
+          authRepository: widget.authRepository,
           realtimeClient: widget.realtimeClient,
           tokenStore: widget.tokenStore,
           onSignedOut: () => Navigator.of(context).pushReplacement(

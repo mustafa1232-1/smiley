@@ -7,6 +7,7 @@ import type { Prisma } from '@prisma/client';
 import { config } from '../../config.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
+import { requireAuth } from '../../middleware/auth.js';
 import { isReservedUsername, normalizeUsername, usernameRegex } from './username.js';
 
 export const authRouter = Router();
@@ -25,6 +26,10 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   identifier: z.string().trim().min(1),
   password: z.string().min(1)
+});
+
+const refreshSchema = z.object({
+  refreshToken: z.string().trim().min(1)
 });
 
 authRouter.post('/auth/register', async (request, response) => {
@@ -102,6 +107,90 @@ authRouter.post('/auth/password-reset/request', async (_request, response) => {
   response.status(202).json({ status: 'accepted' });
 });
 
+authRouter.post('/auth/refresh', async (request, response) => {
+  const input = refreshSchema.parse(request.body);
+  const payload = verifyRefreshToken(input.refreshToken);
+  const user = await prisma.user.findFirst({
+    where: { id: payload.sub, deletedAt: null },
+    include: { profile: true }
+  });
+  if (!user) {
+    throw new AppError(401, 'invalid_refresh_token', 'جلسة الدخول غير صالحة');
+  }
+
+  const session = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const activeTokens = await tx.refreshToken.findMany({
+      where: {
+        userId: user.id,
+        revokedAt: null,
+        expiresAt: { gt: new Date() }
+      }
+    });
+
+    for (const token of activeTokens) {
+      const matches = await bcrypt.compare(input.refreshToken, token.tokenHash);
+      if (!matches) continue;
+
+      await tx.refreshToken.update({
+        where: { id: token.id },
+        data: { revokedAt: new Date() }
+      });
+
+      return issueSession(
+        user.id,
+        user.username,
+        user.profile?.displayName ?? 'مستخدم',
+        tx
+      );
+    }
+
+    await tx.refreshToken.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+    throw new AppError(401, 'refresh_token_reuse_detected', 'جلسة الدخول غير صالحة');
+  });
+
+  response.json(session);
+});
+
+authRouter.post('/auth/logout', async (request, response) => {
+  const input = refreshSchema.safeParse(request.body);
+  if (input.success) {
+    const payload = safeVerifyRefreshToken(input.data.refreshToken);
+    if (payload) {
+      const activeTokens = await prisma.refreshToken.findMany({
+        where: {
+          userId: payload.sub,
+          revokedAt: null,
+          expiresAt: { gt: new Date() }
+        }
+      });
+      for (const token of activeTokens) {
+        if (await bcrypt.compare(input.data.refreshToken, token.tokenHash)) {
+          await prisma.refreshToken.update({
+            where: { id: token.id },
+            data: { revokedAt: new Date() }
+          });
+          break;
+        }
+      }
+    }
+  }
+  response.status(204).send();
+});
+
+authRouter.post('/auth/logout-all', requireAuth, async (request, response) => {
+  await prisma.refreshToken.updateMany({
+    where: {
+      userId: request.user!.sub,
+      revokedAt: null
+    },
+    data: { revokedAt: new Date() }
+  });
+  response.status(204).send();
+});
+
 async function issueSession(
   userId: string,
   username: string,
@@ -129,4 +218,24 @@ async function issueSession(
     refreshToken,
     user: { id: userId, username, displayName }
   };
+}
+
+type RefreshTokenPayload = {
+  sub: string;
+};
+
+function verifyRefreshToken(token: string) {
+  try {
+    return jwt.verify(token, config.jwtRefreshSecret) as RefreshTokenPayload;
+  } catch {
+    throw new AppError(401, 'invalid_refresh_token', 'جلسة الدخول غير صالحة');
+  }
+}
+
+function safeVerifyRefreshToken(token: string) {
+  try {
+    return jwt.verify(token, config.jwtRefreshSecret) as RefreshTokenPayload;
+  } catch {
+    return null;
+  }
 }
