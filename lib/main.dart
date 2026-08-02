@@ -9,6 +9,7 @@ import 'features/gate/date_gate_screen.dart';
 import 'features/gate/gate_validator.dart';
 import 'features/home/empty_world_screen.dart';
 import 'features/partnerships/partnership_repository.dart';
+import 'features/space/space_repository.dart';
 
 void main() {
   const apiBaseUrl = String.fromEnvironment(
@@ -28,6 +29,7 @@ void main() {
       tokenStore: tokenStore,
       authRepository: HttpAuthRepository(apiClient),
       partnershipRepository: HttpPartnershipRepository(apiClient),
+      spaceRepository: HttpSpaceRepository(apiClient),
     ),
   );
 }
@@ -38,6 +40,7 @@ class SmileyApp extends StatelessWidget {
     required this.tokenStore,
     required this.authRepository,
     required this.partnershipRepository,
+    required this.spaceRepository,
     super.key,
   });
 
@@ -45,6 +48,7 @@ class SmileyApp extends StatelessWidget {
   final AuthTokenStore tokenStore;
   final AuthRepository authRepository;
   final PartnershipRepository partnershipRepository;
+  final SpaceRepository spaceRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +69,7 @@ class SmileyApp extends StatelessWidget {
         tokenStore: tokenStore,
         authRepository: authRepository,
         partnershipRepository: partnershipRepository,
+        spaceRepository: spaceRepository,
       ),
     );
   }
@@ -116,12 +121,14 @@ class _Bootstrap extends StatefulWidget {
     required this.tokenStore,
     required this.authRepository,
     required this.partnershipRepository,
+    required this.spaceRepository,
   });
 
   final GateStore gateStore;
   final AuthTokenStore tokenStore;
   final AuthRepository authRepository;
   final PartnershipRepository partnershipRepository;
+  final SpaceRepository spaceRepository;
 
   @override
   State<_Bootstrap> createState() => _BootstrapState();
@@ -170,10 +177,11 @@ class _BootstrapState extends State<_Bootstrap> {
           );
         }
 
-        return EmptyWorldScreen(
-          partnershipRepository: widget.partnershipRepository,
-          tokenStore: widget.tokenStore,
-          onSignedOut: () => Navigator.of(context).pushReplacement(
+          return EmptyWorldScreen(
+            partnershipRepository: widget.partnershipRepository,
+            spaceRepository: widget.spaceRepository,
+            tokenStore: widget.tokenStore,
+            onSignedOut: () => Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(
               builder: (_) => AuthScreen(
                 repository: widget.authRepository,
@@ -192,6 +200,7 @@ class _BootstrapState extends State<_Bootstrap> {
       MaterialPageRoute<void>(
         builder: (_) => EmptyWorldScreen(
           partnershipRepository: widget.partnershipRepository,
+          spaceRepository: widget.spaceRepository,
           tokenStore: widget.tokenStore,
           onSignedOut: () => Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(

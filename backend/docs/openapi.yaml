@@ -46,6 +46,130 @@ paths:
       responses:
         "200":
           description: Requests
+  /partnership-requests/{id}/accept:
+    post:
+      summary: Accept a partnership request
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Partnership created
+  /partnership-requests/{id}/reject:
+    post:
+      summary: Reject a partnership request
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Rejected
+  /partnership-requests/{id}/cancel:
+    post:
+      summary: Cancel an outgoing partnership request
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Cancelled
+  /partnerships/current:
+    get:
+      summary: Get current partnership
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current partnership or null
+  /partnerships/{id}/onboarding:
+    post:
+      summary: Complete relationship onboarding
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Activated partnership
+  /space:
+    get:
+      summary: Get active world summary
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: World summary
+  /posts:
+    get:
+      summary: List shared posts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Posts
+    post:
+      summary: Create a shared post
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /moods:
+    get:
+      summary: List moods
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Moods
+    post:
+      summary: Create mood update
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /messages:
+    get:
+      summary: List conversation messages
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Messages
+    post:
+      summary: Send idempotent text message
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /calendar-events:
+    get:
+      summary: List calendar events
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Events
+    post:
+      summary: Create calendar event
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /notifications:
+    get:
+      summary: List notifications
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Notifications
+  /notifications/read-all:
+    post:
+      summary: Mark notifications as read
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Updated
 components:
   securitySchemes:
     bearerAuth:

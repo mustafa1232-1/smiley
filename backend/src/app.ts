@@ -9,6 +9,7 @@ import { errorHandler, notFound } from './lib/errors.js';
 import { authRouter } from './modules/auth/routes.js';
 import { healthRouter } from './modules/health/routes.js';
 import { partnershipsRouter } from './modules/partnerships/routes.js';
+import { spaceRouter } from './modules/space/routes.js';
 import { usersRouter } from './modules/users/routes.js';
 
 export function createApp() {
@@ -38,7 +39,7 @@ export function createApp() {
   );
 
   app.use(healthRouter);
-  app.use('/api/v1', authRouter, usersRouter, partnershipsRouter);
+  app.use('/api/v1', authRouter, usersRouter, partnershipsRouter, spaceRouter);
   app.use(notFound);
   app.use(errorHandler);
 

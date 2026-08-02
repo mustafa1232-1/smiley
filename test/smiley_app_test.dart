@@ -5,6 +5,7 @@ import 'package:smiley/features/auth/auth_models.dart';
 import 'package:smiley/features/auth/auth_repository.dart';
 import 'package:smiley/features/gate/gate_validator.dart';
 import 'package:smiley/features/partnerships/partnership_repository.dart';
+import 'package:smiley/features/space/space_repository.dart';
 import 'package:smiley/main.dart';
 
 void main() {
@@ -24,6 +25,7 @@ void main() {
         tokenStore: MemoryAuthTokenStore(),
         authRepository: FakeAuthRepository(),
         partnershipRepository: FakePartnershipRepository(),
+        spaceRepository: FakeSpaceRepository(),
       ),
     );
     await tester.pump();
@@ -48,6 +50,7 @@ void main() {
         tokenStore: MemoryAuthTokenStore(),
         authRepository: FakeAuthRepository(),
         partnershipRepository: FakePartnershipRepository(),
+        spaceRepository: FakeSpaceRepository(),
       ),
     );
     await tester.pump();
@@ -138,8 +141,97 @@ class FakeAuthRepository implements AuthRepository {
 
 class FakePartnershipRepository implements PartnershipRepository {
   @override
+  Future<void> acceptRequest(String id) async {}
+
+  @override
+  Future<void> cancelRequest(String id) async {}
+
+  @override
+  Future<CurrentPartnership> completeOnboarding(OnboardingInput input) async {
+    return CurrentPartnership(
+      id: input.partnershipId,
+      status: 'active',
+      members: const [],
+      onboardingCompleted: true,
+      startedAt: input.startDate,
+      worldName: input.worldName,
+    );
+  }
+
+  @override
+  Future<CurrentPartnership?> current() async => null;
+
+  @override
   Future<void> requestPartnership(String username) async {}
 
   @override
+  Future<List<PartnershipRequest>> requests() async => [];
+
+  @override
+  Future<void> rejectRequest(String id) async {}
+
+  @override
   Future<List<PartnerSearchResult>> search(String username) async => [];
+}
+
+class FakeSpaceRepository implements SpaceRepository {
+  @override
+  Future<List<CalendarItem>> calendarEvents() async => [];
+
+  @override
+  Future<CalendarItem> createCalendarEvent({
+    required String title,
+    required DateTime startsAt,
+  }) async {
+    return CalendarItem(id: 'event', title: title, startsAt: startsAt);
+  }
+
+  @override
+  Future<SpaceMood> createMood({
+    required String kind,
+    String? emoji,
+    String? note,
+  }) async {
+    return SpaceMood(id: 'mood', kind: kind, emoji: emoji, note: note);
+  }
+
+  @override
+  Future<SpacePost> createPost({String? title, required String body}) async {
+    return SpacePost(
+      id: 'post',
+      title: title,
+      body: body,
+      createdAt: DateTime(2026, 8, 3),
+    );
+  }
+
+  @override
+  Future<List<ChatMessage>> messages() async => [];
+
+  @override
+  Future<List<NotificationItem>> notifications() async => [];
+
+  @override
+  Future<List<SpacePost>> posts() async => [];
+
+  @override
+  Future<ChatMessage> sendMessage(String body) async {
+    return ChatMessage(
+      id: 'message',
+      body: body,
+      serverTimestamp: DateTime(2026, 8, 3),
+    );
+  }
+
+  @override
+  Future<SpaceSummary> summary() async {
+    return const SpaceSummary(
+      partnershipId: 'partnership',
+      worldName: 'عالمنا',
+      daysTogether: 1,
+      members: [],
+      latestPosts: [],
+      unreadNotifications: 0,
+    );
+  }
 }
