@@ -20,6 +20,6 @@ io.on('connection', (socket) => {
   socket.emit('connected', { socketId: socket.id });
 });
 
-server.listen(config.port, () => {
-  console.log(`Smiley API listening on port ${config.port}`);
+server.listen(config.port, '0.0.0.0', () => {
+  console.log(`Smiley API listening on 0.0.0.0:${config.port}`);
 });
