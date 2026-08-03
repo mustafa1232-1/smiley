@@ -109,6 +109,11 @@ abstract interface class SpaceRepository {
   Future<void> recordPlaceVisit(String placeId, {DateTime? visitedAt});
   Future<List<AlbumModel>> albums();
   Future<void> createAlbum(String title);
+  Future<void> addAlbumItem({
+    required String albumId,
+    required String assetId,
+    String? caption,
+  });
   Future<RoomModel> musicRoom();
   Future<void> addMusicItem(String title, {String? sourceUrl});
   Future<RoomModel> updateMusicPlayback({
@@ -591,6 +596,19 @@ class HttpSpaceRepository implements SpaceRepository {
   @override
   Future<void> createAlbum(String title) async {
     await _api.postJson('/albums', {'title': title.trim()});
+  }
+
+  @override
+  Future<void> addAlbumItem({
+    required String albumId,
+    required String assetId,
+    String? caption,
+  }) async {
+    await _api.postJson('/albums/$albumId/items', {
+      'assetId': assetId,
+      if (caption != null && caption.trim().isNotEmpty)
+        'caption': caption.trim(),
+    });
   }
 
   @override

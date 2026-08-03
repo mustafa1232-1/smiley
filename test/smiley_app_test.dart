@@ -360,6 +360,13 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<void> createAlbum(String title) async {}
 
   @override
+  Future<void> addAlbumItem({
+    required String albumId,
+    required String assetId,
+    String? caption,
+  }) async {}
+
+  @override
   Future<CalendarItem> createCalendarEvent({
     required String title,
     required DateTime startsAt,

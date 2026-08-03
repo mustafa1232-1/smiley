@@ -3936,6 +3936,7 @@ class _AlbumsScreen extends StatefulWidget {
 class _AlbumsScreenState extends State<_AlbumsScreen> {
   late Future<List<AlbumModel>> _future = widget.repository.albums();
   final _title = TextEditingController();
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -3945,22 +3946,113 @@ class _AlbumsScreenState extends State<_AlbumsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return _NamedListScreen<AlbumModel>(
-      title: 'الألبومات',
-      icon: Icons.photo_library_outlined,
-      controller: _title,
-      future: _future,
-      itemTitle: (item) => item.title,
-      itemSubtitle: (item) => '${item.itemCount} عناصر',
-      onCreate: _create,
+    return Scaffold(
+      appBar: AppBar(title: const Text('الألبومات')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const _SectionHeader(
+            icon: Icons.photo_library_outlined,
+            title: 'الألبومات',
+            subtitle: 'اجمعوا الصور والملفات في ألبومات مشتركة.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(
+              labelText: 'اسم الألبوم',
+              prefixIcon: Icon(Icons.photo_album_outlined),
+            ),
+            onSubmitted: (_) => _create(),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _busy ? null : _create,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('إنشاء ألبوم'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<List<AlbumModel>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              final items = snapshot.requireData;
+              if (items.isEmpty) {
+                return const _EmptyLine(
+                  text: 'لا توجد ألبومات بعد.',
+                  color: Colors.grey,
+                );
+              }
+              return Column(
+                children: [
+                  for (final item in items)
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.photo_library_outlined),
+                        title: Text(item.title),
+                        subtitle: Text('${item.itemCount} عناصر'),
+                        trailing: IconButton(
+                          tooltip: 'إضافة ملف',
+                          onPressed: _busy ? null : () => _addItem(item.id),
+                          icon: const Icon(Icons.add_photo_alternate_outlined),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
   Future<void> _create() async {
     if (_title.text.trim().isEmpty) return;
-    await widget.repository.createAlbum(_title.text);
-    _title.clear();
-    setState(() => _future = widget.repository.albums());
+    setState(() => _busy = true);
+    try {
+      await widget.repository.createAlbum(_title.text);
+      _title.clear();
+      setState(() => _future = widget.repository.albums());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _addItem(String albumId) async {
+    final result = await FilePicker.pickFiles(withData: true);
+    final file = result?.files.single;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null) return;
+
+    if (!mounted) return;
+    final caption = await _promptText(context, 'وصف اختياري');
+    setState(() => _busy = true);
+    try {
+      final asset = await widget.repository.uploadMedia(
+        fileName: file.name,
+        mimeType: _mimeTypeFromName(file.name),
+        bytes: bytes,
+      );
+      await widget.repository.addAlbumItem(
+        albumId: albumId,
+        assetId: asset.id,
+        caption: caption,
+      );
+      setState(() => _future = widget.repository.albums());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 
@@ -4239,76 +4331,6 @@ class _RoomPlaybackPanel extends StatelessWidget {
       'stop' => 'إيقاف',
       _ => eventType,
     };
-  }
-}
-
-class _NamedListScreen<T> extends StatelessWidget {
-  const _NamedListScreen({
-    required this.title,
-    required this.icon,
-    required this.controller,
-    required this.future,
-    required this.itemTitle,
-    required this.onCreate,
-    this.itemSubtitle,
-  });
-
-  final String title;
-  final IconData icon;
-  final TextEditingController controller;
-  final Future<List<T>> future;
-  final String Function(T item) itemTitle;
-  final String Function(T item)? itemSubtitle;
-  final VoidCallback onCreate;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          _SectionHeader(
-            icon: icon,
-            title: title,
-            subtitle: 'أضفوا العناصر واحفظوها في مساحة العلاقة.',
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: controller,
-            decoration: const InputDecoration(labelText: 'عنوان جديد'),
-            onSubmitted: (_) => onCreate(),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: onCreate,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('إضافة'),
-          ),
-          const SizedBox(height: 16),
-          FutureBuilder<List<T>>(
-            future: future,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const LinearProgressIndicator();
-              final items = snapshot.requireData;
-              if (items.isEmpty) return const Text('لا توجد عناصر بعد.');
-              return Column(
-                children: [
-                  for (final item in items)
-                    ListTile(
-                      leading: Icon(icon),
-                      title: Text(itemTitle(item)),
-                      subtitle: itemSubtitle == null
-                          ? null
-                          : Text(itemSubtitle!(item)),
-                    ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
   }
 }
 
