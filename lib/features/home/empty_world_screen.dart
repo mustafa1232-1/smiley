@@ -174,8 +174,10 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
         ),
         _ => _MoreHubTabV2(
           repository: widget.spaceRepository,
+          partnershipRepository: widget.partnershipRepository,
           authRepository: widget.authRepository,
           hasActivePartnership: false,
+          onPartnershipChanged: _reload,
           onSignOut: _signOut,
         ),
       };
@@ -189,8 +191,10 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
         ),
         4 => _MoreHubTabV2(
           repository: widget.spaceRepository,
+          partnershipRepository: widget.partnershipRepository,
           authRepository: widget.authRepository,
           hasActivePartnership: false,
+          onPartnershipChanged: _reload,
           onSignOut: _signOut,
         ),
         _ => _PartnerRequiredTab(
@@ -216,8 +220,10 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
       3 => _CalendarTab(repository: widget.spaceRepository),
       _ => _MoreHubTabV2(
         repository: widget.spaceRepository,
+        partnershipRepository: widget.partnershipRepository,
         authRepository: widget.authRepository,
         hasActivePartnership: true,
+        onPartnershipChanged: _reload,
         onSignOut: _signOut,
       ),
     };
@@ -1458,14 +1464,18 @@ class _MoreItem {
 class _MoreHubTabV2 extends StatelessWidget {
   const _MoreHubTabV2({
     required this.repository,
+    required this.partnershipRepository,
     required this.authRepository,
     required this.hasActivePartnership,
+    required this.onPartnershipChanged,
     required this.onSignOut,
   });
 
   final SpaceRepository repository;
+  final PartnershipRepository partnershipRepository;
   final AuthRepository authRepository;
   final bool hasActivePartnership;
+  final VoidCallback onPartnershipChanged;
   final VoidCallback onSignOut;
 
   @override
@@ -1604,8 +1614,10 @@ class _MoreHubTabV2 extends StatelessWidget {
         Icons.settings_outlined,
         () => _SettingsScreen(
           repository: repository,
+          partnershipRepository: partnershipRepository,
           authRepository: authRepository,
           hasActivePartnership: hasActivePartnership,
+          onPartnershipChanged: onPartnershipChanged,
         ),
       ),
     ];
@@ -3215,12 +3227,16 @@ class _SettingsScreen extends StatefulWidget {
   const _SettingsScreen({
     required this.repository,
     required this.hasActivePartnership,
+    this.partnershipRepository,
+    this.onPartnershipChanged,
     this.authRepository,
   });
 
   final SpaceRepository repository;
+  final PartnershipRepository? partnershipRepository;
   final AuthRepository? authRepository;
   final bool hasActivePartnership;
+  final VoidCallback? onPartnershipChanged;
 
   @override
   State<_SettingsScreen> createState() => _SettingsScreenState();
@@ -3272,6 +3288,15 @@ class _SettingsScreenState extends State<_SettingsScreen> {
             icon: const Icon(Icons.save_outlined),
             label: const Text('حفظ الإعدادات'),
           ),
+          if (widget.hasActivePartnership &&
+              widget.partnershipRepository != null) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _leavePartnership,
+              icon: const Icon(Icons.heart_broken_outlined),
+              label: const Text('إنهاء الارتباط الحالي'),
+            ),
+          ],
           if (widget.authRepository != null) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -3288,6 +3313,33 @@ class _SettingsScreenState extends State<_SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _leavePartnership() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('إنهاء الارتباط'),
+        content: const Text(
+          'سيتم إيقاف العلاقة الحالية مع حفظ الذكريات والبيانات السابقة.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('إنهاء'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await widget.partnershipRepository?.leaveCurrentPartnership();
+    if (!mounted) return;
+    widget.onPartnershipChanged?.call();
+    Navigator.of(context).pop();
   }
 
   Future<void> _save() async {

@@ -124,6 +124,10 @@ Cancels an outgoing pending request.
 
 Returns the current `pending_onboarding` or `active` partnership for the authenticated user, or `null`.
 
+### `POST /partnerships/current/leave`
+
+Ends the current partnership for the authenticated user without deleting existing relationship data.
+
 ### `POST /partnerships/:id/onboarding`
 
 Completes the relationship setup and activates the shared world.

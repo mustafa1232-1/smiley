@@ -144,6 +144,56 @@ partnershipsRouter.get('/partnerships/current', requireAuth, async (request, res
   response.json({ partnership: partnership ? serializePartnership(partnership) : null });
 });
 
+partnershipsRouter.post('/partnerships/current/leave', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const partnership = await getCurrentPartnership(userId);
+  if (!partnership) {
+    throw new AppError(404, 'partnership_not_found', 'لا توجد علاقة نشطة لهذا الحساب');
+  }
+
+  const now = new Date();
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.partnershipMember.updateMany({
+      where: { partnershipId: partnership.id, userId, leftAt: null },
+      data: { leftAt: now }
+    });
+    await tx.partnership.update({
+      where: { id: partnership.id },
+      data: { status: 'ended', endedAt: now }
+    });
+    await tx.partnershipRequest.updateMany({
+      where: {
+        status: 'pending',
+        OR: partnership.members.flatMap((member) => [
+          { requesterId: member.userId },
+          { receiverId: member.userId }
+        ])
+      },
+      data: { status: 'cancelled', decidedAt: now }
+    });
+    for (const member of partnership.members) {
+      if (member.userId === userId) continue;
+      await tx.notification.create({
+        data: {
+          userId: member.userId,
+          partnershipId: partnership.id,
+          type: 'partnership.ended',
+          title: 'تم إنهاء العلاقة',
+          body: 'تم إيقاف الارتباط المشترك مع حفظ البيانات السابقة.',
+          payload: { partnershipId: partnership.id }
+        }
+      });
+    }
+  });
+
+  for (const member of partnership.members) {
+    emitToUser(member.userId, 'partnership.ended', userId, {
+      partnershipId: partnership.id
+    });
+  }
+  response.status(204).send();
+});
+
 partnershipsRouter.post(
   '/partnership-requests/:id/accept',
   requireAuth,

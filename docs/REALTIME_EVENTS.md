@@ -39,6 +39,7 @@ Event types:
 - `partnership.requested`
 - `partnership.accepted`
 - `partnership.rejected`
+- `partnership.ended`
 - `mood.updated`
 - `post.created`
 - `memory.created`

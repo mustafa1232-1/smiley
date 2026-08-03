@@ -291,6 +291,9 @@ class FakePartnershipRepository implements PartnershipRepository {
   Future<CurrentPartnership?> current() async => null;
 
   @override
+  Future<void> leaveCurrentPartnership() async {}
+
+  @override
   Future<void> requestPartnership(String username) async {}
 
   @override

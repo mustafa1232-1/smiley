@@ -9,6 +9,7 @@ abstract interface class PartnershipRepository {
   Future<void> rejectRequest(String id);
   Future<void> cancelRequest(String id);
   Future<CurrentPartnership> completeOnboarding(OnboardingInput input);
+  Future<void> leaveCurrentPartnership();
 }
 
 class HttpPartnershipRepository implements PartnershipRepository {
@@ -42,7 +43,9 @@ class HttpPartnershipRepository implements PartnershipRepository {
   Future<CurrentPartnership?> current() async {
     final json = await _api.getJson('/partnerships/current');
     final partnership = json['partnership'] as Map<String, dynamic>?;
-    return partnership == null ? null : CurrentPartnership.fromJson(partnership);
+    return partnership == null
+        ? null
+        : CurrentPartnership.fromJson(partnership);
   }
 
   @override
@@ -69,6 +72,11 @@ class HttpPartnershipRepository implements PartnershipRepository {
     return CurrentPartnership.fromJson(
       json['partnership'] as Map<String, dynamic>,
     );
+  }
+
+  @override
+  Future<void> leaveCurrentPartnership() async {
+    await _api.postJson('/partnerships/current/leave', {});
   }
 }
 

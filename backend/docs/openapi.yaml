@@ -152,6 +152,14 @@ paths:
       responses:
         "200":
           description: Current partnership or null
+  /partnerships/current/leave:
+    post:
+      summary: Leave current partnership
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Partnership ended
   /partnerships/{id}/onboarding:
     post:
       summary: Complete relationship onboarding

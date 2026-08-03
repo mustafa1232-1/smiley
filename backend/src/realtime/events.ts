@@ -12,6 +12,7 @@ export type RealtimeEventType =
   | 'partnership.requested'
   | 'partnership.accepted'
   | 'partnership.rejected'
+  | 'partnership.ended'
   | 'mood.updated'
   | 'post.created'
   | 'post.updated'
