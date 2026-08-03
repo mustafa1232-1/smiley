@@ -657,6 +657,20 @@ class FakeSpaceRepository implements SpaceRepository {
   }
 
   @override
+  Future<ChatMessage> pinMessage({
+    required String messageId,
+    required bool pinned,
+  }) async {
+    return ChatMessage(
+      id: messageId,
+      body: 'message',
+      serverTimestamp: DateTime(2026, 8, 3),
+      pinCount: pinned ? 1 : 0,
+      pinnedByMe: pinned,
+    );
+  }
+
+  @override
   Future<List<ScheduledMessageModel>> scheduledMessages() async => [];
 
   @override

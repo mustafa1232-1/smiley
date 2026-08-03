@@ -257,6 +257,16 @@ Sets the current user's reaction on a message and returns the updated message co
 }
 ```
 
+### `POST /messages/:id/pin`
+
+Pins or unpins a message for the current user and returns the updated message counters.
+
+```json
+{
+  "pinned": true
+}
+```
+
 ### `GET /messages/scheduled`
 
 Lists unsent scheduled messages for the active conversation. Due messages are published before the response is returned.

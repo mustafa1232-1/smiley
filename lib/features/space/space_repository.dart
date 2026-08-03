@@ -44,6 +44,10 @@ abstract interface class SpaceRepository {
   Future<List<ChatMessage>> messages();
   Future<ChatMessage> sendMessage(String body, {List<String> assetIds});
   Future<ChatMessage> reactToMessage({required String messageId, String value});
+  Future<ChatMessage> pinMessage({
+    required String messageId,
+    required bool pinned,
+  });
   Future<List<ScheduledMessageModel>> scheduledMessages();
   Future<void> scheduleMessage({
     required String body,
@@ -303,6 +307,17 @@ class HttpSpaceRepository implements SpaceRepository {
   }) async {
     final json = await _api.postJson('/messages/$messageId/reactions', {
       'value': value,
+    });
+    return ChatMessage.fromJson(json['message'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<ChatMessage> pinMessage({
+    required String messageId,
+    required bool pinned,
+  }) async {
+    final json = await _api.postJson('/messages/$messageId/pin', {
+      'pinned': pinned,
     });
     return ChatMessage.fromJson(json['message'] as Map<String, dynamic>);
   }
@@ -995,6 +1010,8 @@ class ChatMessage {
     this.readAt,
     this.reactionCount = 0,
     this.myReaction,
+    this.pinCount = 0,
+    this.pinnedByMe = false,
     this.pending = false,
   });
 
@@ -1007,6 +1024,8 @@ class ChatMessage {
   final DateTime? readAt;
   final int reactionCount;
   final String? myReaction;
+  final int pinCount;
+  final bool pinnedByMe;
   final bool pending;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -1024,6 +1043,8 @@ class ChatMessage {
       readAt: _optionalDate(json['readAt']),
       reactionCount: int.parse((json['reactionCount'] ?? 0).toString()),
       myReaction: json['myReaction'] as String?,
+      pinCount: int.parse((json['pinCount'] ?? 0).toString()),
+      pinnedByMe: json['pinnedByMe'] as bool? ?? false,
     );
   }
 }

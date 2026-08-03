@@ -888,15 +888,30 @@ class _ChatTabState extends State<_ChatTab> {
                             ],
                             if (!item.pending) ...[
                               const SizedBox(height: 6),
-                              TextButton.icon(
-                                onPressed: () => _reactToMessage(item.id),
-                                icon: Icon(
-                                  item.myReaction == null
-                                      ? Icons.favorite_border_rounded
-                                      : Icons.favorite_rounded,
-                                  size: 18,
-                                ),
-                                label: Text('${item.reactionCount}'),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextButton.icon(
+                                    onPressed: () => _reactToMessage(item.id),
+                                    icon: Icon(
+                                      item.myReaction == null
+                                          ? Icons.favorite_border_rounded
+                                          : Icons.favorite_rounded,
+                                      size: 18,
+                                    ),
+                                    label: Text('${item.reactionCount}'),
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: () => _pinMessage(item),
+                                    icon: Icon(
+                                      item.pinnedByMe
+                                          ? Icons.push_pin
+                                          : Icons.push_pin_outlined,
+                                      size: 18,
+                                    ),
+                                    label: Text('${item.pinCount}'),
+                                  ),
+                                ],
                               ),
                             ],
                           ],
@@ -1113,6 +1128,14 @@ class _ChatTabState extends State<_ChatTab> {
 
   Future<void> _reactToMessage(String messageId) async {
     await widget.repository.reactToMessage(messageId: messageId);
+    setState(() => _messages = _loadMessages());
+  }
+
+  Future<void> _pinMessage(ChatMessage message) async {
+    await widget.repository.pinMessage(
+      messageId: message.id,
+      pinned: !message.pinnedByMe,
+    );
     setState(() => _messages = _loadMessages());
   }
 

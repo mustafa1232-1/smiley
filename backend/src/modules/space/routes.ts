@@ -66,6 +66,10 @@ const messageReactionSchema = z.object({
   value: z.string().trim().min(1).max(24).default('heart')
 });
 
+const messagePinSchema = z.object({
+  pinned: z.boolean().default(true)
+});
+
 const scheduledMessageSchema = z.object({
   body: z.string().trim().min(1).max(4000),
   sendAt: z.coerce.date()
@@ -889,6 +893,39 @@ spaceRouter.post('/messages/:id/reactions', requireAuth, async (request, respons
     await tx.messageReaction.create({
       data: { messageId, userId, value: input.value }
     });
+
+    return tx.message.findFirstOrThrow({
+      where: { id: messageId },
+      include: messageResponseInclude(userId)
+    });
+  });
+
+  emitToPartnership('message.updated', userId, partnership.id, { messageId });
+  response.json({ message: serializeMessage(message) });
+});
+
+spaceRouter.post('/messages/:id/pin', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = messagePinSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const messageId = routeParam(request.params.id);
+
+  const message = await prisma.$transaction(async (tx) => {
+    const existing = await tx.message.findFirst({
+      where: {
+        id: messageId,
+        deletedAt: null,
+        conversation: { partnershipId: partnership.id }
+      }
+    });
+    if (!existing) {
+      throw new AppError(404, 'message_not_found', 'الرسالة غير موجودة');
+    }
+
+    await tx.messagePin.deleteMany({ where: { messageId, userId } });
+    if (input.pinned) {
+      await tx.messagePin.create({ data: { messageId, userId } });
+    }
 
     return tx.message.findFirstOrThrow({
       where: { id: messageId },
@@ -2200,7 +2237,8 @@ function messageResponseInclude(userId: string) {
     attachments: true,
     receipts: { where: { userId } },
     reactions: { where: { userId }, select: { value: true } },
-    _count: { select: { reactions: true } },
+    pins: { where: { userId }, select: { id: true } },
+    _count: { select: { reactions: true, pins: true } },
     sender: { select: { username: true, profile: { select: { displayName: true } } } }
   };
 }
@@ -2216,7 +2254,8 @@ function serializeMessage(message: {
     readAt: Date | null;
   }>;
   reactions?: Array<{ value: string }>;
-  _count?: { reactions: number };
+  pins?: Array<{ id: string }>;
+  _count?: { reactions: number; pins: number };
   sender?: {
     username: string;
     profile: { displayName: string } | null;
@@ -2234,6 +2273,8 @@ function serializeMessage(message: {
     readAt: message.receipts?.[0]?.readAt ?? null,
     reactionCount: message._count?.reactions ?? 0,
     myReaction: message.reactions?.[0]?.value ?? null,
+    pinCount: message._count?.pins ?? 0,
+    pinnedByMe: Boolean(message.pins?.length),
     sender: message.sender
       ? {
           username: message.sender.username,
