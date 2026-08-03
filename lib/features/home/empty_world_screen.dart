@@ -2861,6 +2861,8 @@ class _SafetyScreenState extends State<_SafetyScreen> {
   final _reason = TextEditingController();
   final _details = TextEditingController();
   final _blockReason = TextEditingController();
+  late final Future<StorageUsageSummary> _storageFuture = widget.repository
+      .storageUsage();
   late Future<List<BlockedUserModel>> _blockedFuture = widget.repository
       .blockedUsers();
   String? _message;
@@ -2885,6 +2887,22 @@ class _SafetyScreenState extends State<_SafetyScreen> {
             icon: Icons.shield_outlined,
             title: 'الأمان والدعم',
             subtitle: 'تصدير بياناتك، إرسال بلاغ، أو حذف الحساب.',
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<StorageUsageSummary>(
+            future: _storageFuture,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const LinearProgressIndicator();
+              }
+              final usage = snapshot.requireData;
+              return _InfoTile(
+                icon: Icons.storage_outlined,
+                title: 'مساحة التخزين المستخدمة',
+                subtitle:
+                    'الحساب ${_formatBytes(usage.user?.usedBytes ?? 0)} - العالم ${_formatBytes(usage.partnership?.usedBytes ?? 0)}',
+              );
+            },
           ),
           const SizedBox(height: 16),
           TextField(
@@ -5380,6 +5398,20 @@ class _ErrorState extends StatelessWidget {
 String _date(DateTime value) {
   final local = value.toLocal();
   return '${local.year}-${_two(local.month)}-${_two(local.day)}';
+}
+
+String _formatBytes(int bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var value = bytes.toDouble();
+  var unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  final text = unitIndex == 0
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+  return '$text ${units[unitIndex]}';
 }
 
 String _mimeTypeFromName(String fileName) {

@@ -562,13 +562,17 @@ If storage environment variables are missing, the API returns `503 storage_not_c
 
 ### `POST /uploads/:id/complete`
 
-Marks a pending upload as ready and creates or updates its media asset.
+Marks a pending upload as ready, creates or updates its media asset, and increments user/partnership storage usage for newly completed media.
 
 ```json
 {
   "checksum": "optional-client-checksum"
 }
 ```
+
+### `GET /storage/usage`
+
+Returns storage usage for the authenticated user's account and the active relationship world when present. Byte counts are serialized as strings.
 
 ### `GET /albums`
 

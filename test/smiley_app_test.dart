@@ -526,6 +526,11 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<Map<String, dynamic>> exportAccount() async => {};
 
   @override
+  Future<StorageUsageSummary> storageUsage() async {
+    return const StorageUsageSummary();
+  }
+
+  @override
   Future<List<GoalItem>> goals() async => [];
 
   @override

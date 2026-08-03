@@ -153,6 +153,7 @@ abstract interface class SpaceRepository {
   });
   Future<TimeCapsuleItem> openTimeCapsule(String id);
   Future<Map<String, dynamic>> exportAccount();
+  Future<StorageUsageSummary> storageUsage();
   Future<void> report({required String reason, String? details});
   Future<List<BlockedUserModel>> blockedUsers();
   Future<void> blockPartner({String? reason});
@@ -801,6 +802,12 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
+  Future<StorageUsageSummary> storageUsage() async {
+    final json = await _api.getJson('/storage/usage');
+    return StorageUsageSummary.fromJson(json);
+  }
+
+  @override
   Future<void> report({required String reason, String? details}) async {
     await _api.postJson('/reports', {
       'reason': reason.trim(),
@@ -861,6 +868,49 @@ class PagedResult<T> {
         .map(fromJson)
         .toList();
     return PagedResult(items: items, nextCursor: json['nextCursor'] as String?);
+  }
+}
+
+class StorageUsageSummary {
+  const StorageUsageSummary({this.user, this.partnership});
+
+  final StorageUsageItem? user;
+  final StorageUsageItem? partnership;
+
+  int get totalBytes => (user?.usedBytes ?? 0) + (partnership?.usedBytes ?? 0);
+
+  factory StorageUsageSummary.fromJson(Map<String, dynamic> json) {
+    return StorageUsageSummary(
+      user: StorageUsageItem.fromOptionalJson(json['user']),
+      partnership: StorageUsageItem.fromOptionalJson(json['partnership']),
+    );
+  }
+}
+
+class StorageUsageItem {
+  const StorageUsageItem({
+    required this.id,
+    required this.usedBytes,
+    required this.updatedAt,
+    this.userId,
+    this.partnershipId,
+  });
+
+  final String id;
+  final String? userId;
+  final String? partnershipId;
+  final int usedBytes;
+  final DateTime updatedAt;
+
+  static StorageUsageItem? fromOptionalJson(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    return StorageUsageItem(
+      id: value['id'] as String,
+      userId: value['userId'] as String?,
+      partnershipId: value['partnershipId'] as String?,
+      usedBytes: int.parse(value['usedBytes'] as String? ?? '0'),
+      updatedAt: DateTime.parse(value['updatedAt'] as String),
+    );
   }
 }
 

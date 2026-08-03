@@ -280,7 +280,7 @@ paths:
           description: Storage is not configured
   /uploads/{id}/complete:
     post:
-      summary: Complete a pending media upload
+      summary: Complete a pending media upload and update storage usage
       security:
         - bearerAuth: []
       responses:
@@ -288,6 +288,14 @@ paths:
           description: Media asset
         "404":
           description: Upload not found
+  /storage/usage:
+    get:
+      summary: Get user and relationship storage usage
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Storage usage
   /moods:
     get:
       summary: List moods

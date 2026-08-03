@@ -588,11 +588,7 @@ spaceRouter.post('/uploads/:id/complete', requireAuth, async (request, response)
   });
 
   if (!upload) {
-    response.status(404).json({
-      code: 'upload_not_found',
-      message: 'ملف الرفع غير موجود'
-    });
-    return;
+    throw new AppError(404, 'upload_not_found', 'ملف الرفع غير موجود');
   }
 
   const partnership = await getOptionalActivePartnership(userId);
@@ -602,24 +598,61 @@ spaceRouter.post('/uploads/:id/complete', requireAuth, async (request, response)
       data: { status: 'ready' }
     });
 
-    return tx.mediaAsset.upsert({
+    const existing = await tx.mediaAsset.findUnique({
       where: { objectKey: upload.objectKey },
-      update: {
-        checksum: input.checksum,
-        deletedAt: null
-      },
-      create: {
+      select: { id: true }
+    });
+    const mediaAsset = existing
+      ? await tx.mediaAsset.update({
+          where: { objectKey: upload.objectKey },
+          data: {
+            checksum: input.checksum,
+            deletedAt: null
+          }
+        })
+      : await tx.mediaAsset.create({
+          data: {
+            ownerUserId: userId,
+            partnershipId: partnership?.id,
+            objectKey: upload.objectKey,
+            mimeType: upload.mimeType,
+            sizeBytes: upload.sizeBytes,
+            checksum: input.checksum
+          }
+        });
+
+    if (!existing) {
+      await incrementStorageUsage(tx, {
         ownerUserId: userId,
         partnershipId: partnership?.id,
-        objectKey: upload.objectKey,
-        mimeType: upload.mimeType,
-        sizeBytes: upload.sizeBytes,
-        checksum: input.checksum
-      }
-    });
+        sizeBytes: upload.sizeBytes
+      });
+    }
+
+    return mediaAsset;
   });
 
   response.json({ asset: serializeMediaAsset(asset) });
+});
+
+spaceRouter.get('/storage/usage', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const partnership = await getOptionalActivePartnership(userId);
+  const [userUsage, partnershipUsage] = await Promise.all([
+    prisma.storageUsage.findFirst({
+      where: { userId, partnershipId: null }
+    }),
+    partnership
+      ? prisma.storageUsage.findFirst({
+          where: { userId: null, partnershipId: partnership.id }
+        })
+      : null
+  ]);
+
+  response.json({
+    user: userUsage ? serializeStorageUsage(userUsage) : null,
+    partnership: partnershipUsage ? serializeStorageUsage(partnershipUsage) : null
+  });
 });
 
 spaceRouter.get('/space', requireAuth, async (request, response) => {
@@ -2185,7 +2218,7 @@ spaceRouter.post('/time-capsules/:id/open', requireAuth, async (request, respons
 
 spaceRouter.get('/account/export', requireAuth, async (request, response) => {
   const userId = request.user!.sub;
-  const [user, memberships, notifications] = await Promise.all([
+  const [user, memberships, notifications, storageUsage] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -2216,14 +2249,23 @@ spaceRouter.get('/account/export', requireAuth, async (request, response) => {
         }
       }
     }),
-    prisma.notification.findMany({ where: { userId }, take: 500 })
+    prisma.notification.findMany({ where: { userId }, take: 500 }),
+    prisma.storageUsage.findMany({
+      where: {
+        OR: [
+          { userId },
+          { partnershipId: { in: await userPartnershipIds(userId) } }
+        ]
+      }
+    })
   ]);
 
   response.json({
     exportedAt: new Date().toISOString(),
     user,
     partnerships: memberships.map((membership) => membership.partnership),
-    notifications
+    notifications,
+    storageUsage: storageUsage.map(serializeStorageUsage)
   });
 });
 
@@ -3266,5 +3308,74 @@ function serializeMediaAsset(asset: {
     sizeBytes: asset.sizeBytes.toString(),
     checksum: asset.checksum,
     createdAt: asset.createdAt
+  };
+}
+
+async function incrementStorageUsage(
+  tx: Prisma.TransactionClient,
+  input: { ownerUserId: string; partnershipId?: string; sizeBytes: bigint }
+) {
+  await incrementOneStorageUsage(tx, {
+    userId: input.ownerUserId,
+    partnershipId: null,
+    sizeBytes: input.sizeBytes
+  });
+  if (input.partnershipId) {
+    await incrementOneStorageUsage(tx, {
+      userId: null,
+      partnershipId: input.partnershipId,
+      sizeBytes: input.sizeBytes
+    });
+  }
+}
+
+async function incrementOneStorageUsage(
+  tx: Prisma.TransactionClient,
+  input: { userId: string | null; partnershipId: string | null; sizeBytes: bigint }
+) {
+  const existing = await tx.storageUsage.findFirst({
+    where: {
+      userId: input.userId,
+      partnershipId: input.partnershipId
+    },
+    select: { id: true }
+  });
+  if (existing) {
+    await tx.storageUsage.update({
+      where: { id: existing.id },
+      data: { usedBytes: { increment: input.sizeBytes } }
+    });
+    return;
+  }
+  await tx.storageUsage.create({
+    data: {
+      userId: input.userId,
+      partnershipId: input.partnershipId,
+      usedBytes: input.sizeBytes
+    }
+  });
+}
+
+async function userPartnershipIds(userId: string) {
+  const memberships = await prisma.partnershipMember.findMany({
+    where: { userId },
+    select: { partnershipId: true }
+  });
+  return memberships.map((membership) => membership.partnershipId);
+}
+
+function serializeStorageUsage(item: {
+  id: string;
+  userId: string | null;
+  partnershipId: string | null;
+  usedBytes: bigint;
+  updatedAt: Date;
+}) {
+  return {
+    id: item.id,
+    userId: item.userId,
+    partnershipId: item.partnershipId,
+    usedBytes: item.usedBytes.toString(),
+    updatedAt: item.updatedAt
   };
 }
