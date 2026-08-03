@@ -227,6 +227,20 @@ Creates a shared memory post. Optional `assetIds` attaches uploaded media assets
 }
 ```
 
+### `PATCH /posts/:id`
+
+Updates a post created by the current user.
+
+```json
+{
+  "body": "النص المحدّث"
+}
+```
+
+### `DELETE /posts/:id`
+
+Soft-deletes a post created by the current user.
+
 ### `POST /posts/:id/reactions`
 
 Sets the current user's reaction on a post and returns the updated post counters.

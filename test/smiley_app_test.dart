@@ -416,6 +416,24 @@ class FakeSpaceRepository implements SpaceRepository {
   }
 
   @override
+  Future<SpacePost> updatePost({
+    required String postId,
+    required String body,
+  }) async {
+    return SpacePost(
+      id: postId,
+      body: body,
+      createdAt: DateTime(2026, 8, 3),
+      assetIds: const [],
+      reactionCount: 0,
+      commentCount: 0,
+    );
+  }
+
+  @override
+  Future<void> deletePost(String postId) async {}
+
+  @override
   Future<SpacePost> reactToPost({
     required String postId,
     String value = 'heart',

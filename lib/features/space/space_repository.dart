@@ -34,6 +34,8 @@ abstract interface class SpaceRepository {
     required String body,
     List<String> assetIds,
   });
+  Future<SpacePost> updatePost({required String postId, required String body});
+  Future<void> deletePost(String postId);
   Future<SpacePost> reactToPost({required String postId, String value});
   Future<SpacePost> commentOnPost({
     required String postId,
@@ -269,6 +271,20 @@ class HttpSpaceRepository implements SpaceRepository {
       if (assetIds.isNotEmpty) 'assetIds': assetIds,
     });
     return SpacePost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<SpacePost> updatePost({
+    required String postId,
+    required String body,
+  }) async {
+    final json = await _api.patchJson('/posts/$postId', {'body': body.trim()});
+    return SpacePost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> deletePost(String postId) async {
+    await _api.deleteJson('/posts/$postId');
   }
 
   @override

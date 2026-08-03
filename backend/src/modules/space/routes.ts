@@ -36,6 +36,13 @@ const postSchema = z.object({
   assetIds: z.array(z.string().uuid()).max(20).optional()
 });
 
+const postUpdateSchema = z.object({
+  title: z.string().trim().max(120).optional(),
+  body: z.string().trim().min(1).max(4000).optional(),
+  memoryDate: z.coerce.date().optional(),
+  category: z.string().trim().max(40).optional()
+});
+
 const postReactionSchema = z.object({
   value: z.string().trim().min(1).max(24).default('heart')
 });
@@ -773,6 +780,59 @@ spaceRouter.post('/posts', requireAuth, async (request, response) => {
   });
 
   response.status(201).json({ post: serializePost(post) });
+});
+
+spaceRouter.patch('/posts/:id', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = postUpdateSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const postId = routeParam(request.params.id);
+  if (
+    input.title === undefined &&
+    input.body === undefined &&
+    input.memoryDate === undefined &&
+    input.category === undefined
+  ) {
+    throw new AppError(422, 'empty_post_update', 'لا توجد بيانات لتعديل المنشور');
+  }
+
+  const post = await prisma.post.update({
+    where: {
+      id: postId,
+      partnershipId: partnership.id,
+      authorId: userId,
+      deletedAt: null
+    },
+    data: {
+      title: input.title,
+      body: input.body,
+      memoryDate: input.memoryDate,
+      category: input.category
+    },
+    include: postResponseInclude(userId)
+  });
+
+  emitToPartnership('post.updated', userId, partnership.id, { postId });
+  response.json({ post: serializePost(post) });
+});
+
+spaceRouter.delete('/posts/:id', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const partnership = await requireActivePartnership(userId);
+  const postId = routeParam(request.params.id);
+
+  await prisma.post.update({
+    where: {
+      id: postId,
+      partnershipId: partnership.id,
+      authorId: userId,
+      deletedAt: null
+    },
+    data: { deletedAt: new Date() }
+  });
+
+  emitToPartnership('post.updated', userId, partnership.id, { postId });
+  response.status(204).send();
 });
 
 spaceRouter.post('/posts/:id/reactions', requireAuth, async (request, response) => {

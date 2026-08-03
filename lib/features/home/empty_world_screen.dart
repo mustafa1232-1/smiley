@@ -765,6 +765,8 @@ class _HomeTabState extends State<_HomeTab> {
                     post: post,
                     onReact: () => _reactToPost(post.id),
                     onComment: () => _commentOnPost(post.id),
+                    onEdit: () => _editPost(post),
+                    onDelete: () => _deletePost(post.id),
                   ),
             ],
           ),
@@ -862,6 +864,25 @@ class _HomeTabState extends State<_HomeTab> {
     await widget.repository.commentOnPost(postId: postId, body: body);
     _reload();
   }
+
+  Future<void> _editPost(SpacePost post) async {
+    final body = await _promptText(
+      context,
+      'تعديل الذكرى',
+      initial: post.body,
+      label: 'نص الذكرى',
+    );
+    if (body == null || body.trim().isEmpty) return;
+    await widget.repository.updatePost(postId: post.id, body: body);
+    _reload();
+  }
+
+  Future<void> _deletePost(String postId) async {
+    final confirmed = await _confirmDeletePost(context);
+    if (confirmed != true) return;
+    await widget.repository.deletePost(postId);
+    _reload();
+  }
 }
 
 class _WorldTab extends StatefulWidget {
@@ -933,6 +954,8 @@ class _WorldTabState extends State<_WorldTab> {
                     post: post,
                     onReact: () => _reactToPost(post.id),
                     onComment: () => _commentOnPost(post.id),
+                    onEdit: () => _editPost(post),
+                    onDelete: () => _deletePost(post.id),
                   ),
               ],
             );
@@ -957,6 +980,25 @@ class _WorldTabState extends State<_WorldTab> {
     final body = await _promptText(context, 'تعليق جديد');
     if (body == null || body.trim().isEmpty) return;
     await widget.repository.commentOnPost(postId: postId, body: body);
+    setState(() => _posts = widget.repository.posts());
+  }
+
+  Future<void> _editPost(SpacePost post) async {
+    final body = await _promptText(
+      context,
+      'تعديل الذكرى',
+      initial: post.body,
+      label: 'نص الذكرى',
+    );
+    if (body == null || body.trim().isEmpty) return;
+    await widget.repository.updatePost(postId: post.id, body: body);
+    setState(() => _posts = widget.repository.posts());
+  }
+
+  Future<void> _deletePost(String postId) async {
+    final confirmed = await _confirmDeletePost(context);
+    if (confirmed != true) return;
+    await widget.repository.deletePost(postId);
     setState(() => _posts = widget.repository.posts());
   }
 }
@@ -4928,6 +4970,7 @@ Future<String?> _promptText(
   BuildContext context,
   String title, {
   String? initial,
+  String label = 'العنوان',
 }) {
   final controller = TextEditingController(text: initial);
   return showDialog<String>(
@@ -4938,7 +4981,7 @@ Future<String?> _promptText(
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'العنوان'),
+          decoration: InputDecoration(labelText: label),
         ),
         actions: [
           TextButton(
@@ -4948,6 +4991,28 @@ Future<String?> _promptText(
           FilledButton(
             onPressed: () => Navigator.of(context).pop(controller.text),
             child: const Text('حفظ'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+Future<bool?> _confirmDeletePost(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text('حذف الذكرى'),
+        content: const Text('سيتم إخفاء هذه الذكرى من العالم المشترك.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('حذف'),
           ),
         ],
       );
@@ -5096,11 +5161,19 @@ class _PostComposer extends StatelessWidget {
 }
 
 class _PostTile extends StatelessWidget {
-  const _PostTile({required this.post, this.onReact, this.onComment});
+  const _PostTile({
+    required this.post,
+    this.onReact,
+    this.onComment,
+    this.onEdit,
+    this.onDelete,
+  });
 
   final SpacePost post;
   final VoidCallback? onReact;
   final VoidCallback? onComment;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -5119,6 +5192,19 @@ class _PostTile extends StatelessWidget {
               subtitle: post.title == null
                   ? Text(_date(post.createdAt))
                   : Text(post.body),
+              trailing: onEdit == null && onDelete == null
+                  ? null
+                  : PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert_rounded),
+                      onSelected: (value) {
+                        if (value == 'edit') onEdit?.call();
+                        if (value == 'delete') onDelete?.call();
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'edit', child: Text('تعديل')),
+                        PopupMenuItem(value: 'delete', child: Text('حذف')),
+                      ],
+                    ),
             ),
             Padding(
               padding: const EdgeInsetsDirectional.only(

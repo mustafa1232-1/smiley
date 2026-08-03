@@ -237,6 +237,21 @@ paths:
       responses:
         "201":
           description: Created
+  /posts/{id}:
+    patch:
+      summary: Edit own post
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated post
+    delete:
+      summary: Soft-delete own post
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Deleted
   /posts/{id}/reactions:
     post:
       summary: React to post
