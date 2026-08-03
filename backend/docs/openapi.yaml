@@ -205,6 +205,22 @@ paths:
       responses:
         "201":
           description: Created
+  /posts/{id}/reactions:
+    post:
+      summary: React to post
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated post
+  /posts/{id}/comments:
+    post:
+      summary: Comment on post
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Updated post
   /uploads/presign:
     post:
       summary: Create a signed media upload URL

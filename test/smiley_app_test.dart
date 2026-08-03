@@ -382,6 +382,39 @@ class FakeSpaceRepository implements SpaceRepository {
       body: body,
       createdAt: DateTime(2026, 8, 3),
       assetIds: assetIds,
+      reactionCount: 0,
+      commentCount: 0,
+    );
+  }
+
+  @override
+  Future<SpacePost> reactToPost({
+    required String postId,
+    String value = 'heart',
+  }) async {
+    return SpacePost(
+      id: postId,
+      body: 'post',
+      createdAt: DateTime(2026, 8, 3),
+      assetIds: const [],
+      reactionCount: 1,
+      commentCount: 0,
+      myReaction: value,
+    );
+  }
+
+  @override
+  Future<SpacePost> commentOnPost({
+    required String postId,
+    required String body,
+  }) async {
+    return SpacePost(
+      id: postId,
+      body: 'post',
+      createdAt: DateTime(2026, 8, 3),
+      assetIds: const [],
+      reactionCount: 0,
+      commentCount: 1,
     );
   }
 

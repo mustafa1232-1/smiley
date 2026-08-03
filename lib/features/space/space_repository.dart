@@ -26,6 +26,11 @@ abstract interface class SpaceRepository {
     required String body,
     List<String> assetIds,
   });
+  Future<SpacePost> reactToPost({required String postId, String value});
+  Future<SpacePost> commentOnPost({
+    required String postId,
+    required String body,
+  });
   Future<MediaAssetModel> uploadMedia({
     required String fileName,
     required String mimeType,
@@ -198,6 +203,28 @@ class HttpSpaceRepository implements SpaceRepository {
       if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
       'body': body.trim(),
       if (assetIds.isNotEmpty) 'assetIds': assetIds,
+    });
+    return SpacePost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<SpacePost> reactToPost({
+    required String postId,
+    String value = 'heart',
+  }) async {
+    final json = await _api.postJson('/posts/$postId/reactions', {
+      'value': value,
+    });
+    return SpacePost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<SpacePost> commentOnPost({
+    required String postId,
+    required String body,
+  }) async {
+    final json = await _api.postJson('/posts/$postId/comments', {
+      'body': body.trim(),
     });
     return SpacePost.fromJson(json['post'] as Map<String, dynamic>);
   }
@@ -866,7 +893,10 @@ class SpacePost {
     required this.body,
     required this.createdAt,
     required this.assetIds,
+    required this.reactionCount,
+    required this.commentCount,
     this.title,
+    this.myReaction,
   });
 
   final String id;
@@ -874,6 +904,9 @@ class SpacePost {
   final String body;
   final DateTime createdAt;
   final List<String> assetIds;
+  final int reactionCount;
+  final int commentCount;
+  final String? myReaction;
 
   factory SpacePost.fromJson(Map<String, dynamic> json) {
     final assetIds = (json['assetIds'] as List<dynamic>? ?? [])
@@ -885,6 +918,9 @@ class SpacePost {
       body: json['body'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String),
       assetIds: assetIds,
+      reactionCount: int.parse((json['reactionCount'] ?? 0).toString()),
+      commentCount: int.parse((json['commentCount'] ?? 0).toString()),
+      myReaction: json['myReaction'] as String?,
     );
   }
 }

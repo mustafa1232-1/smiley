@@ -196,6 +196,26 @@ Creates a shared memory post. Optional `assetIds` attaches uploaded media assets
 }
 ```
 
+### `POST /posts/:id/reactions`
+
+Sets the current user's reaction on a post and returns the updated post counters.
+
+```json
+{
+  "value": "heart"
+}
+```
+
+### `POST /posts/:id/comments`
+
+Adds a comment to a post and returns the updated post counters.
+
+```json
+{
+  "body": "تعليق قصير"
+}
+```
+
 ### `GET /moods`
 
 Lists recent moods.

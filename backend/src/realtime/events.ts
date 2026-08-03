@@ -14,6 +14,7 @@ export type RealtimeEventType =
   | 'partnership.rejected'
   | 'mood.updated'
   | 'post.created'
+  | 'post.updated'
   | 'memory.created'
   | 'tree.leaf.created'
   | 'calendar.event.created'

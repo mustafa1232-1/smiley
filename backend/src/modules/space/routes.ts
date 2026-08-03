@@ -35,6 +35,14 @@ const postSchema = z.object({
   assetIds: z.array(z.string().uuid()).max(20).optional()
 });
 
+const postReactionSchema = z.object({
+  value: z.string().trim().min(1).max(24).default('heart')
+});
+
+const postCommentSchema = z.object({
+  body: z.string().trim().min(1).max(1000)
+});
+
 const eventSchema = z.object({
   title: z.string().trim().min(1).max(120),
   startsAt: z.coerce.date(),
@@ -145,6 +153,7 @@ const defaultNotificationTypes = [
   'message.scheduled',
   'partnership.requested',
   'post.created',
+  'post.updated',
   'mood.updated',
   'calendar.event.created',
   'occasion.created',
@@ -418,6 +427,7 @@ spaceRouter.get('/space', requireAuth, async (request, response) => {
     }),
     prisma.post.findMany({
       where: { partnershipId: partnership.id, deletedAt: null },
+      include: postResponseInclude(userId),
       orderBy: { createdAt: 'desc' },
       take: 5
     }),
@@ -532,13 +542,11 @@ spaceRouter.post('/moods', requireAuth, async (request, response) => {
 });
 
 spaceRouter.get('/posts', requireAuth, async (request, response) => {
-  const partnership = await requireActivePartnership(request.user!.sub);
+  const userId = request.user!.sub;
+  const partnership = await requireActivePartnership(userId);
   const posts = await prisma.post.findMany({
     where: { partnershipId: partnership.id, deletedAt: null },
-    include: {
-      media: true,
-      author: { select: { username: true, profile: { select: { displayName: true } } } }
-    },
+    include: postResponseInclude(userId),
     orderBy: { createdAt: 'desc' },
     take: 50
   });
@@ -564,10 +572,7 @@ spaceRouter.post('/posts', requireAuth, async (request, response) => {
           }
         : undefined
     },
-    include: {
-      media: true,
-      author: { select: { username: true, profile: { select: { displayName: true } } } }
-    }
+    include: postResponseInclude(userId)
   });
 
   await notifyPartner(partnership, userId, {
@@ -577,6 +582,69 @@ spaceRouter.post('/posts', requireAuth, async (request, response) => {
     payload: { postId: post.id }
   });
 
+  response.status(201).json({ post: serializePost(post) });
+});
+
+spaceRouter.post('/posts/:id/reactions', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = postReactionSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const postId = routeParam(request.params.id);
+
+  const post = await prisma.$transaction(async (tx) => {
+    const existing = await tx.post.findFirst({
+      where: { id: postId, partnershipId: partnership.id, deletedAt: null }
+    });
+    if (!existing) {
+      throw new AppError(404, 'post_not_found', 'المنشور غير موجود');
+    }
+
+    await tx.postReaction.deleteMany({ where: { postId, userId } });
+    await tx.postReaction.create({
+      data: { postId, userId, value: input.value }
+    });
+
+    return tx.post.findFirstOrThrow({
+      where: { id: postId },
+      include: postResponseInclude(userId)
+    });
+  });
+
+  emitToPartnership('post.updated', userId, partnership.id, { postId });
+  response.json({ post: serializePost(post) });
+});
+
+spaceRouter.post('/posts/:id/comments', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = postCommentSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const postId = routeParam(request.params.id);
+
+  const post = await prisma.$transaction(async (tx) => {
+    const existing = await tx.post.findFirst({
+      where: { id: postId, partnershipId: partnership.id, deletedAt: null }
+    });
+    if (!existing) {
+      throw new AppError(404, 'post_not_found', 'المنشور غير موجود');
+    }
+
+    await tx.postComment.create({
+      data: { postId, authorId: userId, body: input.body }
+    });
+
+    return tx.post.findFirstOrThrow({
+      where: { id: postId },
+      include: postResponseInclude(userId)
+    });
+  });
+
+  emitToPartnership('post.updated', userId, partnership.id, { postId });
+  await notifyPartner(partnership, userId, {
+    type: 'post.updated',
+    title: 'تعليق جديد',
+    body: input.body,
+    payload: { postId }
+  });
   response.status(201).json({ post: serializePost(post) });
 });
 
@@ -2040,6 +2108,15 @@ function serializeGameSession(game: {
   };
 }
 
+function postResponseInclude(userId: string) {
+  return {
+    media: true,
+    author: { select: { username: true, profile: { select: { displayName: true } } } },
+    reactions: { where: { userId }, select: { value: true } },
+    _count: { select: { reactions: true, comments: true } }
+  };
+}
+
 function serializePost(post: {
   id: string;
   title: string | null;
@@ -2048,6 +2125,8 @@ function serializePost(post: {
   category: string | null;
   createdAt: Date;
   media?: Array<{ assetId: string }>;
+  reactions?: Array<{ value: string }>;
+  _count?: { reactions: number; comments: number };
   author?: {
     username: string;
     profile: { displayName: string } | null;
@@ -2061,6 +2140,9 @@ function serializePost(post: {
     category: post.category,
     createdAt: post.createdAt,
     assetIds: post.media?.map((item) => item.assetId) ?? [],
+    reactionCount: post._count?.reactions ?? 0,
+    commentCount: post._count?.comments ?? 0,
+    myReaction: post.reactions?.[0]?.value ?? null,
     author: post.author
       ? {
           username: post.author.username,

@@ -594,7 +594,12 @@ class _HomeTabState extends State<_HomeTab> {
                   color: Colors.grey,
                 )
               else
-                for (final post in summary.latestPosts) _PostTile(post: post),
+                for (final post in summary.latestPosts)
+                  _PostTile(
+                    post: post,
+                    onReact: () => _reactToPost(post.id),
+                    onComment: () => _commentOnPost(post.id),
+                  ),
             ],
           ),
         );
@@ -679,6 +684,18 @@ class _HomeTabState extends State<_HomeTab> {
       if (mounted) setState(() => _uploading = false);
     }
   }
+
+  Future<void> _reactToPost(String postId) async {
+    await widget.repository.reactToPost(postId: postId);
+    _reload();
+  }
+
+  Future<void> _commentOnPost(String postId) async {
+    final body = await _promptText(context, 'تعليق جديد');
+    if (body == null || body.trim().isEmpty) return;
+    await widget.repository.commentOnPost(postId: postId, body: body);
+    _reload();
+  }
 }
 
 class _WorldTab extends StatefulWidget {
@@ -744,7 +761,14 @@ class _WorldTabState extends State<_WorldTab> {
               );
             }
             return Column(
-              children: [for (final post in posts) _PostTile(post: post)],
+              children: [
+                for (final post in posts)
+                  _PostTile(
+                    post: post,
+                    onReact: () => _reactToPost(post.id),
+                    onComment: () => _commentOnPost(post.id),
+                  ),
+              ],
             );
           },
         ),
@@ -755,6 +779,18 @@ class _WorldTabState extends State<_WorldTab> {
   Future<void> _setMood(String kind) async {
     await widget.repository.createMood(kind: kind, note: _moodNote.text);
     _moodNote.clear();
+    setState(() => _posts = widget.repository.posts());
+  }
+
+  Future<void> _reactToPost(String postId) async {
+    await widget.repository.reactToPost(postId: postId);
+    setState(() => _posts = widget.repository.posts());
+  }
+
+  Future<void> _commentOnPost(String postId) async {
+    final body = await _promptText(context, 'تعليق جديد');
+    if (body == null || body.trim().isEmpty) return;
+    await widget.repository.commentOnPost(postId: postId, body: body);
     setState(() => _posts = widget.repository.posts());
   }
 }
@@ -4181,19 +4217,64 @@ class _PostComposer extends StatelessWidget {
 }
 
 class _PostTile extends StatelessWidget {
-  const _PostTile({required this.post});
+  const _PostTile({required this.post, this.onReact, this.onComment});
 
   final SpacePost post;
+  final VoidCallback? onReact;
+  final VoidCallback? onComment;
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: ListTile(
-        leading: const Icon(Icons.favorite_border_rounded),
-        title: Text(post.title ?? post.body),
-        subtitle: post.title == null
-            ? Text(_date(post.createdAt))
-            : Text(post.body),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(
+          children: [
+            ListTile(
+              leading: Icon(
+                post.myReaction == null
+                    ? Icons.favorite_border_rounded
+                    : Icons.favorite_rounded,
+              ),
+              title: Text(post.title ?? post.body),
+              subtitle: post.title == null
+                  ? Text(_date(post.createdAt))
+                  : Text(post.body),
+            ),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(
+                start: 12,
+                end: 12,
+                bottom: 8,
+              ),
+              child: Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: onReact,
+                    icon: Icon(
+                      post.myReaction == null
+                          ? Icons.favorite_border_rounded
+                          : Icons.favorite_rounded,
+                    ),
+                    label: Text('${post.reactionCount}'),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: onComment,
+                    icon: const Icon(Icons.mode_comment_outlined),
+                    label: Text('${post.commentCount}'),
+                  ),
+                  const Spacer(),
+                  if (post.assetIds.isNotEmpty)
+                    Text(
+                      '${post.assetIds.length} مرفق',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
