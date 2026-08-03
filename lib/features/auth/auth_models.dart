@@ -30,6 +30,7 @@ class RegisterRequest {
     required this.displayName,
     required this.username,
     required this.email,
+    required this.phone,
     required this.password,
     required this.birthDate,
     this.gender,
@@ -41,6 +42,7 @@ class RegisterRequest {
   final String displayName;
   final String username;
   final String email;
+  final String phone;
   final String password;
   final DateTime birthDate;
   final String? gender;
@@ -51,7 +53,8 @@ class RegisterRequest {
   Map<String, dynamic> toJson() => {
     'displayName': displayName,
     'username': username,
-    'email': email,
+    if (email.trim().isNotEmpty) 'email': email.trim(),
+    if (phone.trim().isNotEmpty) 'phone': phone.trim(),
     'password': password,
     'birthDate': birthDate.toUtc().toIso8601String(),
     if (gender != null && gender!.trim().isNotEmpty) 'gender': gender,

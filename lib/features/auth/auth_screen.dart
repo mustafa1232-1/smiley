@@ -32,6 +32,7 @@ class _AuthScreenState extends State<AuthScreen>
   final _displayName = TextEditingController();
   final _username = TextEditingController();
   final _email = TextEditingController();
+  final _phone = TextEditingController();
   final _password = TextEditingController();
   final _resetId = TextEditingController();
   final _resetToken = TextEditingController();
@@ -51,6 +52,7 @@ class _AuthScreenState extends State<AuthScreen>
     _displayName.dispose();
     _username.dispose();
     _email.dispose();
+    _phone.dispose();
     _password.dispose();
     _resetId.dispose();
     _resetToken.dispose();
@@ -80,6 +82,7 @@ class _AuthScreenState extends State<AuthScreen>
           displayName: _displayName.text.trim(),
           username: _username.text.trim(),
           email: _email.text.trim(),
+          phone: _phone.text.trim(),
           password: _password.text,
           birthDate: _birthDate!,
           gender: _gender,
@@ -94,7 +97,7 @@ class _AuthScreenState extends State<AuthScreen>
   String? _validateRegister() {
     if (_displayName.text.trim().isEmpty ||
         _username.text.trim().isEmpty ||
-        _email.text.trim().isEmpty ||
+        (_email.text.trim().isEmpty && _phone.text.trim().isEmpty) ||
         _password.text.isEmpty ||
         _birthDate == null) {
       return 'أكمل بيانات الحساب أولاً.';
@@ -231,6 +234,7 @@ class _AuthScreenState extends State<AuthScreen>
                           displayName: _displayName,
                           username: _username,
                           email: _email,
+                          phone: _phone,
                           password: _password,
                           birthDate: _birthDate,
                           gender: _gender,
@@ -300,7 +304,7 @@ class _LoginForm extends StatelessWidget {
         TextField(
           controller: identifier,
           decoration: const InputDecoration(
-            labelText: 'اسم المستخدم أو البريد',
+            labelText: 'اسم المستخدم أو البريد أو الهاتف',
             prefixIcon: Icon(Icons.alternate_email_rounded),
           ),
         ),
@@ -329,6 +333,7 @@ class _RegisterForm extends StatelessWidget {
     required this.displayName,
     required this.username,
     required this.email,
+    required this.phone,
     required this.password,
     required this.birthDate,
     required this.gender,
@@ -345,6 +350,7 @@ class _RegisterForm extends StatelessWidget {
   final TextEditingController displayName;
   final TextEditingController username;
   final TextEditingController email;
+  final TextEditingController phone;
   final TextEditingController password;
   final DateTime? birthDate;
   final String? gender;
@@ -384,6 +390,15 @@ class _RegisterForm extends StatelessWidget {
           decoration: const InputDecoration(
             labelText: 'البريد الإلكتروني',
             prefixIcon: Icon(Icons.mail_outline_rounded),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: phone,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(
+            labelText: 'رقم الهاتف اختياري',
+            prefixIcon: Icon(Icons.phone_outlined),
           ),
         ),
         const SizedBox(height: 12),

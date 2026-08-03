@@ -13,17 +13,45 @@ import { isReservedUsername, normalizeUsername, usernameRegex } from './username
 
 export const authRouter = Router();
 
-const registerSchema = z.object({
-  displayName: z.string().trim().min(1).max(80),
-  username: z.string().trim().regex(usernameRegex),
-  email: z.string().trim().email(),
-  password: z.string().min(10).max(200),
-  birthDate: z.string().datetime(),
-  gender: z.string().trim().max(40).optional(),
-  timezone: z.string().trim().min(1).max(80),
-  language: z.string().trim().min(2).max(12),
-  acceptedTerms: z.literal(true)
-});
+const optionalEmailSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().trim().email().optional()
+);
+
+const optionalPhoneSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().trim().min(7).max(32).optional()
+);
+
+const registerSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(80),
+    username: z.string().trim().regex(usernameRegex),
+    email: optionalEmailSchema,
+    phone: optionalPhoneSchema,
+    password: z.string().min(10).max(200),
+    birthDate: z.string().datetime(),
+    gender: z.string().trim().max(40).optional(),
+    timezone: z.string().trim().min(1).max(80),
+    language: z.string().trim().min(2).max(12),
+    acceptedTerms: z.literal(true)
+  })
+  .superRefine((input, context) => {
+    if (!input.email && !input.phone) {
+      context.addIssue({
+        code: 'custom',
+        path: ['email'],
+        message: 'email_or_phone_required'
+      });
+    }
+    if (input.phone && !normalizePhone(input.phone)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['phone'],
+        message: 'invalid_phone'
+      });
+    }
+  });
 
 const loginSchema = z.object({
   identifier: z.string().trim().min(1),
@@ -48,15 +76,21 @@ const sessionParamSchema = z.string().uuid();
 authRouter.post('/auth/register', async (request, response) => {
   const input = registerSchema.parse(request.body);
   const usernameNormalized = normalizeUsername(input.username);
+  const emailNormalized = input.email?.toLowerCase();
+  const phoneNormalized = normalizePhone(input.phone);
   if (isReservedUsername(usernameNormalized)) {
     throw new AppError(422, 'username_unavailable', 'اسم المستخدم غير متاح');
   }
 
   const passwordHash = await bcrypt.hash(input.password, config.bcryptCost);
   const session = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const identityFilters: Prisma.UserWhereInput[] = [{ usernameNormalized }];
+    if (emailNormalized) identityFilters.push({ emailNormalized });
+    if (phoneNormalized) identityFilters.push({ phoneNormalized });
+
     const exists = await tx.user.findFirst({
       where: {
-        OR: [{ emailNormalized: input.email.toLowerCase() }, { usernameNormalized }]
+        OR: identityFilters
       }
     });
     if (exists) throw new AppError(409, 'account_exists', 'الحساب موجود مسبقًا');
@@ -64,7 +98,9 @@ authRouter.post('/auth/register', async (request, response) => {
     const user = await tx.user.create({
       data: {
         email: input.email,
-        emailNormalized: input.email.toLowerCase(),
+        emailNormalized,
+        phone: input.phone,
+        phoneNormalized,
         username: input.username,
         usernameNormalized,
         passwordHash,
@@ -102,9 +138,10 @@ authRouter.post('/auth/register', async (request, response) => {
 authRouter.post('/auth/login', async (request, response) => {
   const input = loginSchema.parse(request.body);
   const identifier = input.identifier.toLowerCase();
+  const identityFilters = identityWhereFilters(identifier);
   const user = await prisma.user.findFirst({
     where: {
-      OR: [{ emailNormalized: identifier }, { usernameNormalized: identifier }],
+      OR: identityFilters,
       deletedAt: null
     },
     include: { profile: true }
@@ -127,9 +164,10 @@ authRouter.post('/auth/login', async (request, response) => {
 authRouter.post('/auth/password-reset/request', async (request, response) => {
   const input = passwordResetRequestSchema.parse(request.body);
   const identifier = input.identifier.toLowerCase();
+  const identityFilters = identityWhereFilters(identifier);
   const user = await prisma.user.findFirst({
     where: {
-      OR: [{ emailNormalized: identifier }, { usernameNormalized: identifier }],
+      OR: identityFilters,
       deletedAt: null
     }
   });
@@ -384,6 +422,22 @@ type SessionMeta = {
   userAgent?: string;
   ipHash?: string;
 };
+
+function normalizePhone(value?: string) {
+  const normalized = value?.replace(/[\s().-]/g, '');
+  if (!normalized) return undefined;
+  return /^\+?[0-9]{7,15}$/.test(normalized) ? normalized : undefined;
+}
+
+function identityWhereFilters(identifier: string): Prisma.UserWhereInput[] {
+  const filters: Prisma.UserWhereInput[] = [
+    { emailNormalized: identifier },
+    { usernameNormalized: identifier }
+  ];
+  const phoneNormalized = normalizePhone(identifier);
+  if (phoneNormalized) filters.push({ phoneNormalized });
+  return filters;
+}
 
 async function ensureSession(
   userId: string,

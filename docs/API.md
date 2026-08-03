@@ -15,6 +15,7 @@ Creates a user and returns an auth session.
   "displayName": "مستخدم",
   "username": "user.name",
   "email": "user@example.com",
+  "phone": "+9647000000000",
   "password": "strong-password",
   "birthDate": "2000-01-01T00:00:00.000Z",
   "gender": "prefer_not_to_say",
