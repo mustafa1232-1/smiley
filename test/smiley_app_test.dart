@@ -477,6 +477,12 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<void> confirmEmailVerification(String code) async {}
 
   @override
+  Future<void> requestPhoneVerification() async {}
+
+  @override
+  Future<void> confirmPhoneVerification(String code) async {}
+
+  @override
   Future<void> createTimeCapsule({
     required String title,
     String? body,

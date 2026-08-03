@@ -2905,6 +2905,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   final _displayName = TextEditingController();
   final _bio = TextEditingController();
   final _emailCode = TextEditingController();
+  final _phoneCode = TextEditingController();
   DateTime? _birthDate;
   String? _gender;
   String _language = 'ar';
@@ -2917,6 +2918,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     _displayName.dispose();
     _bio.dispose();
     _emailCode.dispose();
+    _phoneCode.dispose();
     super.dispose();
   }
 
@@ -2947,7 +2949,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
               _SectionHeader(
                 icon: Icons.person_outline_rounded,
                 title: profile.username,
-                subtitle: profile.email ?? 'حساب Smiley',
+                subtitle: profile.email ?? profile.phone ?? 'حساب Smiley',
               ),
               if (profile.email != null) ...[
                 const SizedBox(height: 12),
@@ -2984,6 +2986,49 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                       Expanded(
                         child: FilledButton.icon(
                           onPressed: _confirmEmailVerification,
+                          icon: const Icon(Icons.check_rounded),
+                          label: const Text('تأكيد'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+              if (profile.phone != null) ...[
+                const SizedBox(height: 12),
+                _InfoTile(
+                  icon: profile.phoneVerified
+                      ? Icons.verified_rounded
+                      : Icons.sms_outlined,
+                  title: profile.phoneVerified
+                      ? 'الهاتف موثق'
+                      : 'الهاتف غير موثق',
+                  subtitle: profile.phone!,
+                ),
+                if (!profile.phoneVerified) ...[
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _phoneCode,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: const InputDecoration(
+                      labelText: 'رمز تحقق الهاتف',
+                      prefixIcon: Icon(Icons.pin_outlined),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _requestPhoneVerification,
+                          icon: const Icon(Icons.sms_outlined),
+                          label: const Text('إرسال الرمز'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _confirmPhoneVerification,
                           icon: const Icon(Icons.check_rounded),
                           label: const Text('تأكيد'),
                         ),
@@ -3111,6 +3156,33 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('تم توثيق البريد.')));
+    setState(() {
+      _ready = false;
+      _future = widget.repository.me();
+    });
+  }
+
+  Future<void> _requestPhoneVerification() async {
+    await widget.repository.requestPhoneVerification();
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('تم إرسال رمز تحقق الهاتف.')));
+  }
+
+  Future<void> _confirmPhoneVerification() async {
+    if (_phoneCode.text.trim().length != 6) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('أدخل رمزاً من 6 أرقام.')));
+      return;
+    }
+    await widget.repository.confirmPhoneVerification(_phoneCode.text);
+    _phoneCode.clear();
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('تم توثيق الهاتف.')));
     setState(() {
       _ready = false;
       _future = widget.repository.me();

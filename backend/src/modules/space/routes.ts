@@ -240,7 +240,9 @@ spaceRouter.get('/me', requireAuth, async (request, response) => {
       id: true,
       username: true,
       email: true,
+      phone: true,
       emailVerifiedAt: true,
+      phoneVerifiedAt: true,
       createdAt: true,
       profile: true
     }
@@ -251,7 +253,9 @@ spaceRouter.get('/me', requireAuth, async (request, response) => {
       id: user.id,
       username: user.username,
       email: user.email,
+      phone: user.phone,
       emailVerifiedAt: user.emailVerifiedAt,
+      phoneVerifiedAt: user.phoneVerifiedAt,
       createdAt: user.createdAt,
       displayName: user.profile?.displayName ?? 'مستخدم',
       avatarUrl: user.profile?.avatarUrl,
@@ -349,6 +353,75 @@ spaceRouter.post('/me/email-verification/confirm', requireAuth, async (request, 
     await tx.user.update({
       where: { id: request.user!.sub },
       data: { emailVerifiedAt: new Date() }
+    });
+  });
+
+  response.status(204).send();
+});
+
+spaceRouter.post('/me/phone-verification/request', requireAuth, async (request, response) => {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: request.user!.sub },
+    select: { id: true, phone: true, phoneVerifiedAt: true }
+  });
+  if (!user.phone) {
+    throw new AppError(409, 'phone_missing', 'لا يوجد رقم هاتف للتحقق');
+  }
+  if (user.phoneVerifiedAt) {
+    response.status(202).json({ status: 'already_verified' });
+    return;
+  }
+
+  const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+  await prisma.verificationCode.create({
+    data: {
+      userId: user.id,
+      channel: 'phone',
+      codeHash: await bcrypt.hash(code, config.bcryptCost),
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000)
+    }
+  });
+
+  request.log?.info({ userId: user.id, channel: 'phone' }, 'phone verification code created');
+  response.status(202).json({
+    status: 'accepted',
+    ...(config.exposeAuthDebugTokens ? { code } : {})
+  });
+});
+
+spaceRouter.post('/me/phone-verification/confirm', requireAuth, async (request, response) => {
+  const input = emailVerificationSchema.parse(request.body);
+  const codes = await prisma.verificationCode.findMany({
+    where: {
+      userId: request.user!.sub,
+      channel: 'phone',
+      usedAt: null,
+      expiresAt: { gt: new Date() }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 5
+  });
+
+  let matched: (typeof codes)[number] | undefined;
+  for (const code of codes) {
+    if (await bcrypt.compare(input.code, code.codeHash)) {
+      matched = code;
+      break;
+    }
+  }
+
+  if (!matched) {
+    throw new AppError(400, 'invalid_verification_code', 'رمز التحقق غير صالح');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.verificationCode.update({
+      where: { id: matched.id },
+      data: { usedAt: new Date() }
+    });
+    await tx.user.update({
+      where: { id: request.user!.sub },
+      data: { phoneVerifiedAt: new Date() }
     });
   });
 

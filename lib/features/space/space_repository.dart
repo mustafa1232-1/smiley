@@ -18,6 +18,8 @@ abstract interface class SpaceRepository {
   });
   Future<void> requestEmailVerification();
   Future<void> confirmEmailVerification(String code);
+  Future<void> requestPhoneVerification();
+  Future<void> confirmPhoneVerification(String code);
   Future<void> updateSettings({String? worldName, String? themeColor});
   Future<SpaceSummary> summary();
   Future<RelationshipSummaryModel> relationshipSummary({
@@ -194,6 +196,18 @@ class HttpSpaceRepository implements SpaceRepository {
   @override
   Future<void> confirmEmailVerification(String code) async {
     await _api.postJson('/me/email-verification/confirm', {
+      'code': code.trim(),
+    });
+  }
+
+  @override
+  Future<void> requestPhoneVerification() async {
+    await _api.postJson('/me/phone-verification/request', {});
+  }
+
+  @override
+  Future<void> confirmPhoneVerification(String code) async {
+    await _api.postJson('/me/phone-verification/confirm', {
       'code': code.trim(),
     });
   }
@@ -1302,7 +1316,9 @@ class UserProfile {
     required this.searchable,
     required this.canReceiveRequests,
     this.email,
+    this.phone,
     this.emailVerifiedAt,
+    this.phoneVerifiedAt,
     this.bio,
     this.birthDate,
     this.gender,
@@ -1313,7 +1329,9 @@ class UserProfile {
   final String id;
   final String username;
   final String? email;
+  final String? phone;
   final DateTime? emailVerifiedAt;
+  final DateTime? phoneVerifiedAt;
   final String displayName;
   final String? bio;
   final DateTime? birthDate;
@@ -1323,13 +1341,16 @@ class UserProfile {
   final bool searchable;
   final bool canReceiveRequests;
   bool get emailVerified => emailVerifiedAt != null;
+  bool get phoneVerified => phoneVerifiedAt != null;
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       id: json['id'] as String,
       username: json['username'] as String,
       email: json['email'] as String?,
+      phone: json['phone'] as String?,
       emailVerifiedAt: _optionalDate(json['emailVerifiedAt']),
+      phoneVerifiedAt: _optionalDate(json['phoneVerifiedAt']),
       displayName: json['displayName'] as String? ?? 'مستخدم',
       bio: json['bio'] as String?,
       birthDate: _optionalDate(json['birthDate'])?.toLocal(),

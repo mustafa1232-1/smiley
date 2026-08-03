@@ -89,6 +89,22 @@ paths:
       responses:
         "204":
           description: Email verified
+  /me/phone-verification/request:
+    post:
+      summary: Request phone verification code
+      security:
+        - bearerAuth: []
+      responses:
+        "202":
+          description: Accepted
+  /me/phone-verification/confirm:
+    post:
+      summary: Confirm phone verification code
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Phone verified
   /partnership-requests:
     post:
       summary: Create a partnership request
