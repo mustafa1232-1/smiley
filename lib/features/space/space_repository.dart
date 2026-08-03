@@ -149,6 +149,7 @@ abstract interface class SpaceRepository {
     String? body,
     required DateTime opensAt,
   });
+  Future<TimeCapsuleItem> openTimeCapsule(String id);
   Future<Map<String, dynamic>> exportAccount();
   Future<void> report({required String reason, String? details});
   Future<List<BlockedUserModel>> blockedUsers();
@@ -768,6 +769,12 @@ class HttpSpaceRepository implements SpaceRepository {
       if (body != null && body.trim().isNotEmpty) 'body': body.trim(),
       'opensAt': opensAt.toUtc().toIso8601String(),
     });
+  }
+
+  @override
+  Future<TimeCapsuleItem> openTimeCapsule(String id) async {
+    final json = await _api.postJson('/time-capsules/$id/open', {});
+    return TimeCapsuleItem.fromJson(json['capsule'] as Map<String, dynamic>);
   }
 
   @override
@@ -1865,6 +1872,8 @@ class TimeCapsuleItem {
     required this.title,
     required this.opensAt,
     required this.opened,
+    required this.canOpen,
+    required this.locked,
     this.body,
   });
 
@@ -1873,6 +1882,8 @@ class TimeCapsuleItem {
   final String? body;
   final DateTime opensAt;
   final bool opened;
+  final bool canOpen;
+  final bool locked;
 
   factory TimeCapsuleItem.fromJson(Map<String, dynamic> json) {
     return TimeCapsuleItem(
@@ -1881,6 +1892,8 @@ class TimeCapsuleItem {
       body: json['body'] as String?,
       opensAt: DateTime.parse(json['opensAt'] as String),
       opened: json['openedAt'] != null,
+      canOpen: json['canOpen'] as bool? ?? false,
+      locked: json['locked'] as bool? ?? true,
     );
   }
 }

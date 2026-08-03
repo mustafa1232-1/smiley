@@ -661,11 +661,15 @@ Adds a contribution to an existing tree leaf.
 
 ### `GET /time-capsules`
 
-Lists time capsules for the active partnership.
+Lists time capsules for the active partnership. Locked capsules do not include `body`; use `canOpen` to decide whether the client may open them.
 
 ### `POST /time-capsules`
 
 Creates a time capsule.
+
+### `POST /time-capsules/:id/open`
+
+Opens a capsule only after `opensAt`, records `openedAt`, and returns the content. Before the opening time it returns `409 time_capsule_locked`.
 
 ### `GET /account/export`
 

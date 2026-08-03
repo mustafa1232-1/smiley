@@ -2780,9 +2780,28 @@ class _TimeCapsulesScreenState extends State<_TimeCapsulesScreen> {
                   for (final item in items)
                     Card(
                       child: ListTile(
-                        leading: const Icon(Icons.lock_clock_outlined),
+                        leading: Icon(
+                          item.opened
+                              ? Icons.lock_open_rounded
+                              : Icons.lock_clock_outlined,
+                        ),
                         title: Text(item.title),
-                        subtitle: Text('تفتح في ${_date(item.opensAt)}'),
+                        subtitle: Text(
+                          item.body?.isNotEmpty == true
+                              ? item.body!
+                              : item.locked
+                              ? 'تفتح في ${_date(item.opensAt)}'
+                              : 'جاهزة للفتح',
+                        ),
+                        trailing: item.opened
+                            ? null
+                            : FilledButton.tonalIcon(
+                                onPressed: item.canOpen
+                                    ? () => _openCapsule(item.id)
+                                    : null,
+                                icon: const Icon(Icons.lock_open_outlined),
+                                label: const Text('فتح'),
+                              ),
                       ),
                     ),
                 ],
@@ -2814,6 +2833,18 @@ class _TimeCapsulesScreenState extends State<_TimeCapsulesScreen> {
     _title.clear();
     _body.clear();
     setState(() => _future = widget.repository.timeCapsules());
+  }
+
+  Future<void> _openCapsule(String id) async {
+    try {
+      await widget.repository.openTimeCapsule(id);
+      setState(() => _future = widget.repository.timeCapsules());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
   }
 }
 

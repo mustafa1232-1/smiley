@@ -2111,7 +2111,7 @@ spaceRouter.get('/time-capsules', requireAuth, async (request, response) => {
     orderBy: { opensAt: 'asc' },
     take: 100
   });
-  response.json({ items });
+  response.json({ items: items.map((item) => serializeTimeCapsule(item)) });
 });
 
 spaceRouter.post('/time-capsules', requireAuth, async (request, response) => {
@@ -2133,7 +2133,35 @@ spaceRouter.post('/time-capsules', requireAuth, async (request, response) => {
     body: input.title,
     payload: { capsuleId: capsule.id }
   });
-  response.status(201).json({ capsule });
+  response.status(201).json({ capsule: serializeTimeCapsule(capsule) });
+});
+
+spaceRouter.post('/time-capsules/:id/open', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const partnership = await requireActivePartnership(userId);
+  const capsuleId = routeParam(request.params.id);
+  const now = new Date();
+  const capsule = await prisma.timeCapsule.findFirst({
+    where: { id: capsuleId, partnershipId: partnership.id }
+  });
+  if (!capsule) {
+    throw new AppError(404, 'time_capsule_not_found', 'كبسولة الوقت غير موجودة');
+  }
+  if (capsule.opensAt > now) {
+    throw new AppError(409, 'time_capsule_locked', 'لم يحن وقت فتح الكبسولة بعد', {
+      opensAt: capsule.opensAt
+    });
+  }
+
+  const opened = capsule.openedAt
+    ? capsule
+    : await prisma.timeCapsule.update({
+        where: { id: capsule.id },
+        data: { openedAt: now }
+      });
+
+  emitToPartnership('time_capsule.opened', userId, partnership.id, { capsuleId });
+  response.json({ capsule: serializeTimeCapsule(opened, { forceOpen: true }) });
 });
 
 spaceRouter.get('/account/export', requireAuth, async (request, response) => {
@@ -2656,6 +2684,31 @@ function serializePlace(place: {
     createdAt: place.createdAt,
     visitCount: place.visits?.length ?? 0,
     lastVisitedAt: place.visits?.[0]?.visitedAt ?? null
+  };
+}
+
+function serializeTimeCapsule(
+  capsule: {
+    id: string;
+    title: string;
+    body: string | null;
+    opensAt: Date;
+    openedAt: Date | null;
+    createdAt: Date;
+  },
+  options: { forceOpen?: boolean } = {}
+) {
+  const canOpen = capsule.opensAt <= new Date();
+  const open = options.forceOpen === true || Boolean(capsule.openedAt);
+  return {
+    id: capsule.id,
+    title: capsule.title,
+    body: open ? capsule.body : null,
+    opensAt: capsule.opensAt,
+    openedAt: capsule.openedAt,
+    createdAt: capsule.createdAt,
+    locked: !canOpen,
+    canOpen
   };
 }
 

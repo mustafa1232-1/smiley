@@ -1,9 +1,17 @@
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockPrisma = {
   user: {
     findFirst: vi.fn()
+  },
+  partnership: {
+    findFirst: vi.fn()
+  },
+  timeCapsule: {
+    findFirst: vi.fn(),
+    update: vi.fn()
   }
 };
 
@@ -15,6 +23,9 @@ describe('api app contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPrisma.user.findFirst.mockResolvedValue(null);
+    mockPrisma.partnership.findFirst.mockResolvedValue(null);
+    mockPrisma.timeCapsule.findFirst.mockResolvedValue(null);
+    mockPrisma.timeCapsule.update.mockResolvedValue(null);
   });
 
   it('returns standardized errors with requestId for protected routes', async () => {
@@ -77,5 +88,39 @@ describe('api app contract', () => {
         deletedAt: null
       }
     });
+  });
+
+  it('does not reveal or open time capsules before their opening date', async () => {
+    const accessToken = jwt.sign(
+      { sub: '11111111-1111-4111-8111-111111111111', username: 'tester' },
+      'dev-access-secret'
+    );
+    const opensAt = new Date(Date.now() + 86_400_000);
+    mockPrisma.partnership.findFirst.mockResolvedValue({
+      id: '22222222-2222-4222-8222-222222222222',
+      status: 'active'
+    });
+    mockPrisma.timeCapsule.findFirst.mockResolvedValue({
+      id: '33333333-3333-4333-8333-333333333333',
+      partnershipId: '22222222-2222-4222-8222-222222222222',
+      creatorId: '11111111-1111-4111-8111-111111111111',
+      title: 'locked',
+      body: 'secret',
+      opensAt,
+      openedAt: null,
+      createdAt: new Date()
+    });
+
+    const response = await request(createApp())
+      .post('/api/v1/time-capsules/33333333-3333-4333-8333-333333333333/open')
+      .set('authorization', `Bearer ${accessToken}`);
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      code: 'time_capsule_locked',
+      details: { opensAt: opensAt.toISOString() }
+    });
+    expect(response.text).not.toContain('secret');
+    expect(mockPrisma.timeCapsule.update).not.toHaveBeenCalled();
   });
 });

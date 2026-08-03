@@ -708,7 +708,7 @@ paths:
           description: Created
   /time-capsules:
     get:
-      summary: List time capsules
+      summary: List time capsules without locked content
       security:
         - bearerAuth: []
       responses:
@@ -721,6 +721,16 @@ paths:
       responses:
         "201":
           description: Created
+  /time-capsules/{id}/open:
+    post:
+      summary: Open a time capsule after its opening date
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Opened capsule
+        "409":
+          description: Capsule is still locked
   /account/export:
     get:
       summary: Export account data

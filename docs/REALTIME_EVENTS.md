@@ -53,6 +53,7 @@ Event types:
 - `place.created`
 - `album.created`
 - `time_capsule.created`
+- `time_capsule.opened`
 - `music.room.invited`
 - `music.room.joined`
 - `music.playback.updated`

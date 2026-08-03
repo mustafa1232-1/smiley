@@ -799,6 +799,19 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<List<TimeCapsuleItem>> timeCapsules() async => [];
 
   @override
+  Future<TimeCapsuleItem> openTimeCapsule(String id) async {
+    return TimeCapsuleItem(
+      id: id,
+      title: 'capsule',
+      body: 'open',
+      opensAt: DateTime(2026, 8, 3),
+      opened: true,
+      canOpen: true,
+      locked: false,
+    );
+  }
+
+  @override
   Future<void> updateProfile({
     required String displayName,
     String? avatarUrl,
