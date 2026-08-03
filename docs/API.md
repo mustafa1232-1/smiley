@@ -477,7 +477,25 @@ Returns or creates the shared music room.
 
 ### `POST /music-room/queue`
 
-Adds a music queue item.
+Adds a music queue item. Optional `sourceUrl` can store an external track link.
+
+```json
+{
+  "title": "أغنية",
+  "sourceUrl": "https://example.com/track"
+}
+```
+
+### `POST /music-room/playback`
+
+Records a shared playback event for the music room and updates room status. `eventType` can be `play`, `pause`, `seek`, or `stop`.
+
+```json
+{
+  "eventType": "play",
+  "positionMs": 0
+}
+```
 
 ### `GET /watch-room`
 
@@ -485,7 +503,25 @@ Returns or creates the shared watch room.
 
 ### `POST /watch-room/items`
 
-Adds a watch item.
+Adds a watch item. Optional `sourceUrl` can store an external video or streaming link.
+
+```json
+{
+  "title": "فيلم",
+  "sourceUrl": "https://example.com/watch"
+}
+```
+
+### `POST /watch-room/playback`
+
+Records a shared playback event for the watch room and updates room status. `eventType` can be `play`, `pause`, `seek`, or `stop`.
+
+```json
+{
+  "eventType": "pause",
+  "positionMs": 120000
+}
+```
 
 ### `GET /tree/today`
 

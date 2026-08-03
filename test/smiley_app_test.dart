@@ -287,7 +287,24 @@ class FakePartnershipRepository implements PartnershipRepository {
 
 class FakeSpaceRepository implements SpaceRepository {
   @override
-  Future<void> addMusicItem(String title) async {}
+  Future<void> addMusicItem(String title, {String? sourceUrl}) async {}
+
+  @override
+  Future<RoomModel> updateMusicPlayback({
+    required String eventType,
+    int? positionMs,
+  }) async {
+    return RoomModel(
+      id: 'music',
+      status: eventType == 'pause' ? 'paused' : 'playing',
+      items: const [],
+      latestEvent: RoomPlaybackEvent(
+        id: 'event',
+        eventType: eventType,
+        positionMs: positionMs,
+      ),
+    );
+  }
 
   @override
   Future<void> addSharedListItem({
@@ -296,7 +313,24 @@ class FakeSpaceRepository implements SpaceRepository {
   }) async {}
 
   @override
-  Future<void> addWatchItem(String title) async {}
+  Future<void> addWatchItem(String title, {String? sourceUrl}) async {}
+
+  @override
+  Future<RoomModel> updateWatchPlayback({
+    required String eventType,
+    int? positionMs,
+  }) async {
+    return RoomModel(
+      id: 'watch',
+      status: eventType == 'pause' ? 'paused' : 'playing',
+      items: const [],
+      latestEvent: RoomPlaybackEvent(
+        id: 'event',
+        eventType: eventType,
+        positionMs: positionMs,
+      ),
+    );
+  }
 
   @override
   Future<List<AlbumModel>> albums() async => [];
@@ -461,7 +495,7 @@ class FakeSpaceRepository implements SpaceRepository {
 
   @override
   Future<RoomModel> musicRoom() async {
-    return const RoomModel(id: 'music', items: []);
+    return const RoomModel(id: 'music', status: 'idle', items: []);
   }
 
   @override
@@ -618,7 +652,7 @@ class FakeSpaceRepository implements SpaceRepository {
 
   @override
   Future<RoomModel> watchRoom() async {
-    return const RoomModel(id: 'watch', items: []);
+    return const RoomModel(id: 'watch', status: 'idle', items: []);
   }
 
   @override

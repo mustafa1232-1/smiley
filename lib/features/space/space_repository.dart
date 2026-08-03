@@ -90,9 +90,17 @@ abstract interface class SpaceRepository {
   Future<List<AlbumModel>> albums();
   Future<void> createAlbum(String title);
   Future<RoomModel> musicRoom();
-  Future<void> addMusicItem(String title);
+  Future<void> addMusicItem(String title, {String? sourceUrl});
+  Future<RoomModel> updateMusicPlayback({
+    required String eventType,
+    int? positionMs,
+  });
   Future<RoomModel> watchRoom();
-  Future<void> addWatchItem(String title);
+  Future<void> addWatchItem(String title, {String? sourceUrl});
+  Future<RoomModel> updateWatchPlayback({
+    required String eventType,
+    int? positionMs,
+  });
   Future<TreeDayModel> todayTree();
   Future<void> createTreeLeaf({String? title, required String body});
   Future<List<TimeCapsuleItem>> timeCapsules();
@@ -497,8 +505,23 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<void> addMusicItem(String title) async {
-    await _api.postJson('/music-room/queue', {'title': title.trim()});
+  Future<void> addMusicItem(String title, {String? sourceUrl}) async {
+    await _api.postJson('/music-room/queue', {
+      'title': title.trim(),
+      if (sourceUrl != null && sourceUrl.trim().isNotEmpty)
+        'sourceUrl': sourceUrl.trim(),
+    });
+  }
+
+  @override
+  Future<RoomModel> updateMusicPlayback({
+    required String eventType,
+    int? positionMs,
+  }) async {
+    final body = <String, dynamic>{'eventType': eventType};
+    if (positionMs != null) body['positionMs'] = positionMs;
+    final json = await _api.postJson('/music-room/playback', body);
+    return RoomModel.fromMusicJson(json['room'] as Map<String, dynamic>);
   }
 
   @override
@@ -508,8 +531,23 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<void> addWatchItem(String title) async {
-    await _api.postJson('/watch-room/items', {'title': title.trim()});
+  Future<void> addWatchItem(String title, {String? sourceUrl}) async {
+    await _api.postJson('/watch-room/items', {
+      'title': title.trim(),
+      if (sourceUrl != null && sourceUrl.trim().isNotEmpty)
+        'sourceUrl': sourceUrl.trim(),
+    });
+  }
+
+  @override
+  Future<RoomModel> updateWatchPlayback({
+    required String eventType,
+    int? positionMs,
+  }) async {
+    final body = <String, dynamic>{'eventType': eventType};
+    if (positionMs != null) body['positionMs'] = positionMs;
+    final json = await _api.postJson('/watch-room/playback', body);
+    return RoomModel.fromWatchJson(json['room'] as Map<String, dynamic>);
   }
 
   @override
@@ -1263,17 +1301,29 @@ class AlbumModel {
 }
 
 class RoomModel {
-  const RoomModel({required this.id, required this.items});
+  const RoomModel({
+    required this.id,
+    required this.status,
+    required this.items,
+    this.latestEvent,
+  });
 
   final String id;
+  final String status;
   final List<RoomItem> items;
+  final RoomPlaybackEvent? latestEvent;
 
   factory RoomModel.fromMusicJson(Map<String, dynamic> json) {
     final items = (json['queueItems'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>()
         .map(RoomItem.fromJson)
         .toList();
-    return RoomModel(id: json['id'] as String, items: items);
+    return RoomModel(
+      id: json['id'] as String,
+      status: json['status'] as String? ?? 'idle',
+      items: items,
+      latestEvent: _latestPlaybackEvent(json),
+    );
   }
 
   factory RoomModel.fromWatchJson(Map<String, dynamic> json) {
@@ -1281,18 +1331,65 @@ class RoomModel {
         .cast<Map<String, dynamic>>()
         .map(RoomItem.fromJson)
         .toList();
-    return RoomModel(id: json['id'] as String, items: items);
+    return RoomModel(
+      id: json['id'] as String,
+      status: json['status'] as String? ?? 'idle',
+      items: items,
+      latestEvent: _latestPlaybackEvent(json),
+    );
+  }
+
+  static RoomPlaybackEvent? _latestPlaybackEvent(Map<String, dynamic> json) {
+    final events = (json['playbackEvents'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+    if (events.isEmpty) return null;
+    return RoomPlaybackEvent.fromJson(events.first);
   }
 }
 
 class RoomItem {
-  const RoomItem({required this.id, required this.title});
+  const RoomItem({
+    required this.id,
+    required this.title,
+    required this.source,
+    this.sourceUrl,
+  });
 
   final String id;
   final String title;
+  final String source;
+  final String? sourceUrl;
 
   factory RoomItem.fromJson(Map<String, dynamic> json) {
-    return RoomItem(id: json['id'] as String, title: json['title'] as String);
+    return RoomItem(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      source: json['source'] as String? ?? 'manual',
+      sourceUrl: json['sourceUrl'] as String?,
+    );
+  }
+}
+
+class RoomPlaybackEvent {
+  const RoomPlaybackEvent({
+    required this.id,
+    required this.eventType,
+    this.positionMs,
+    this.createdAt,
+  });
+
+  final String id;
+  final String eventType;
+  final int? positionMs;
+  final DateTime? createdAt;
+
+  factory RoomPlaybackEvent.fromJson(Map<String, dynamic> json) {
+    return RoomPlaybackEvent(
+      id: json['id'] as String,
+      eventType: json['eventType'] as String? ?? 'play',
+      positionMs: json['positionMs'] as int?,
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
+    );
   }
 }
 

@@ -153,6 +153,7 @@ const defaultNotificationTypes = [
   'shared_list.created',
   'game.updated',
   'music.queue.updated',
+  'music.playback.updated',
   'watch.playback.updated'
 ];
 
@@ -172,6 +173,11 @@ const roomItemSchema = z.object({
   title: z.string().trim().min(1).max(160),
   source: z.string().trim().min(1).max(60).default('manual'),
   sourceUrl: z.string().trim().url().optional()
+});
+
+const roomPlaybackSchema = z.object({
+  eventType: z.enum(['play', 'pause', 'seek', 'stop']),
+  positionMs: z.number().int().min(0).max(86_400_000).optional()
 });
 
 const treeLeafSchema = z.object({
@@ -1421,6 +1427,35 @@ spaceRouter.post('/music-room/queue', requireAuth, async (request, response) => 
   response.status(201).json({ item });
 });
 
+spaceRouter.post('/music-room/playback', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = roomPlaybackSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const room = await ensureMusicRoom(partnership.id);
+
+  const event = await prisma.musicPlaybackEvent.create({
+    data: {
+      musicRoomId: room.id,
+      actorId: userId,
+      eventType: input.eventType,
+      positionMs: input.positionMs
+    }
+  });
+  const updated = await prisma.musicRoom.update({
+    where: { id: room.id },
+    data: { status: playbackStatus(input.eventType) },
+    include: musicRoomInclude
+  });
+
+  emitToPartnership('music.playback.updated', userId, partnership.id, {
+    roomId: room.id,
+    eventId: event.id,
+    eventType: event.eventType,
+    positionMs: event.positionMs
+  });
+  response.json({ room: updated });
+});
+
 spaceRouter.get('/watch-room', requireAuth, async (request, response) => {
   const partnership = await requireActivePartnership(request.user!.sub);
   const room = await ensureWatchRoom(partnership.id);
@@ -1447,6 +1482,35 @@ spaceRouter.post('/watch-room/items', requireAuth, async (request, response) => 
     payload: { itemId: item.id }
   });
   response.status(201).json({ item });
+});
+
+spaceRouter.post('/watch-room/playback', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = roomPlaybackSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const room = await ensureWatchRoom(partnership.id);
+
+  const event = await prisma.watchPlaybackEvent.create({
+    data: {
+      watchRoomId: room.id,
+      actorId: userId,
+      eventType: input.eventType,
+      positionMs: input.positionMs
+    }
+  });
+  const updated = await prisma.watchRoom.update({
+    where: { id: room.id },
+    data: { status: playbackStatus(input.eventType) },
+    include: watchRoomInclude
+  });
+
+  emitToPartnership('watch.playback.updated', userId, partnership.id, {
+    roomId: room.id,
+    eventId: event.id,
+    eventType: event.eventType,
+    positionMs: event.positionMs
+  });
+  response.json({ room: updated });
 });
 
 spaceRouter.get('/tree/today', requireAuth, async (request, response) => {
@@ -2342,30 +2406,46 @@ function routeParam(value: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+const musicRoomInclude = {
+  queueItems: { orderBy: { position: 'asc' as const } },
+  playbackEvents: { orderBy: { createdAt: 'desc' as const }, take: 1 }
+};
+
+const watchRoomInclude = {
+  items: { orderBy: { title: 'asc' as const } },
+  playbackEvents: { orderBy: { createdAt: 'desc' as const }, take: 1 }
+};
+
 async function ensureMusicRoom(partnershipId: string) {
   const existing = await prisma.musicRoom.findFirst({
     where: { partnershipId },
-    include: { queueItems: { orderBy: { position: 'asc' } } }
+    include: musicRoomInclude
   });
   if (existing) return existing;
 
   return prisma.musicRoom.create({
     data: { partnershipId },
-    include: { queueItems: { orderBy: { position: 'asc' } } }
+    include: musicRoomInclude
   });
 }
 
 async function ensureWatchRoom(partnershipId: string) {
   const existing = await prisma.watchRoom.findFirst({
     where: { partnershipId },
-    include: { items: { orderBy: { title: 'asc' } } }
+    include: watchRoomInclude
   });
   if (existing) return existing;
 
   return prisma.watchRoom.create({
     data: { partnershipId },
-    include: { items: { orderBy: { title: 'asc' } } }
+    include: watchRoomInclude
   });
+}
+
+function playbackStatus(eventType: 'play' | 'pause' | 'seek' | 'stop') {
+  if (eventType === 'play' || eventType === 'seek') return 'playing';
+  if (eventType === 'pause') return 'paused';
+  return 'idle';
 }
 
 async function getOptionalActivePartnership(userId: string) {

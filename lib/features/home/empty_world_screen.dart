@@ -3670,19 +3670,32 @@ class _RoomScreen extends StatefulWidget {
     : title = 'الموسيقى',
       icon = Icons.music_note_rounded,
       load = repositoryMusicRoom,
-      add = repositoryAddMusicItem;
+      add = repositoryAddMusicItem,
+      playback = repositoryUpdateMusicPlayback;
 
   const _RoomScreen.watch({required this.repository})
     : title = 'السينما',
       icon = Icons.movie_outlined,
       load = repositoryWatchRoom,
-      add = repositoryAddWatchItem;
+      add = repositoryAddWatchItem,
+      playback = repositoryUpdateWatchPlayback;
 
   final SpaceRepository repository;
   final String title;
   final IconData icon;
   final Future<RoomModel> Function(SpaceRepository repository) load;
-  final Future<void> Function(SpaceRepository repository, String title) add;
+  final Future<void> Function(
+    SpaceRepository repository,
+    String title,
+    String? sourceUrl,
+  )
+  add;
+  final Future<RoomModel> Function(
+    SpaceRepository repository,
+    String eventType,
+    int? positionMs,
+  )
+  playback;
 
   @override
   State<_RoomScreen> createState() => _RoomScreenState();
@@ -3694,8 +3707,20 @@ class _RoomScreen extends StatefulWidget {
   static Future<void> repositoryAddMusicItem(
     SpaceRepository repository,
     String title,
+    String? sourceUrl,
   ) {
-    return repository.addMusicItem(title);
+    return repository.addMusicItem(title, sourceUrl: sourceUrl);
+  }
+
+  static Future<RoomModel> repositoryUpdateMusicPlayback(
+    SpaceRepository repository,
+    String eventType,
+    int? positionMs,
+  ) {
+    return repository.updateMusicPlayback(
+      eventType: eventType,
+      positionMs: positionMs,
+    );
   }
 
   static Future<RoomModel> repositoryWatchRoom(SpaceRepository repository) {
@@ -3705,18 +3730,33 @@ class _RoomScreen extends StatefulWidget {
   static Future<void> repositoryAddWatchItem(
     SpaceRepository repository,
     String title,
+    String? sourceUrl,
   ) {
-    return repository.addWatchItem(title);
+    return repository.addWatchItem(title, sourceUrl: sourceUrl);
+  }
+
+  static Future<RoomModel> repositoryUpdateWatchPlayback(
+    SpaceRepository repository,
+    String eventType,
+    int? positionMs,
+  ) {
+    return repository.updateWatchPlayback(
+      eventType: eventType,
+      positionMs: positionMs,
+    );
   }
 }
 
 class _RoomScreenState extends State<_RoomScreen> {
   late Future<RoomModel> _future = widget.load(widget.repository);
   final _title = TextEditingController();
+  final _sourceUrl = TextEditingController();
+  bool _busy = false;
 
   @override
   void dispose() {
     _title.dispose();
+    _sourceUrl.dispose();
     super.dispose();
   }
 
@@ -3739,8 +3779,18 @@ class _RoomScreenState extends State<_RoomScreen> {
             onSubmitted: (_) => _create(),
           ),
           const SizedBox(height: 8),
+          TextField(
+            controller: _sourceUrl,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(
+              labelText: 'رابط اختياري',
+              prefixIcon: Icon(Icons.link_rounded),
+            ),
+            onSubmitted: (_) => _create(),
+          ),
+          const SizedBox(height: 8),
           FilledButton.icon(
-            onPressed: _create,
+            onPressed: _busy ? null : _create,
             icon: const Icon(Icons.add_rounded),
             label: const Text('إضافة'),
           ),
@@ -3749,15 +3799,29 @@ class _RoomScreenState extends State<_RoomScreen> {
             future: _future,
             builder: (context, snapshot) {
               if (!snapshot.hasData) return const LinearProgressIndicator();
-              final items = snapshot.requireData.items;
-              if (items.isEmpty) return const Text('لا توجد عناصر بعد.');
+              final room = snapshot.requireData;
+              final items = room.items;
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  for (final item in items)
-                    ListTile(
-                      leading: Icon(widget.icon),
-                      title: Text(item.title),
-                    ),
+                  _RoomPlaybackPanel(
+                    room: room,
+                    busy: _busy,
+                    onPlayback: _playback,
+                  ),
+                  const SizedBox(height: 12),
+                  if (items.isEmpty)
+                    const Text('لا توجد عناصر بعد.')
+                  else
+                    for (final item in items)
+                      ListTile(
+                        leading: Icon(widget.icon),
+                        title: Text(item.title),
+                        subtitle: Text(item.sourceUrl ?? item.source),
+                        trailing: item.sourceUrl == null
+                            ? null
+                            : const Icon(Icons.open_in_new_rounded),
+                      ),
                 ],
               );
             },
@@ -3769,9 +3833,113 @@ class _RoomScreenState extends State<_RoomScreen> {
 
   Future<void> _create() async {
     if (_title.text.trim().isEmpty) return;
-    await widget.add(widget.repository, _title.text);
-    _title.clear();
-    setState(() => _future = widget.load(widget.repository));
+    setState(() => _busy = true);
+    try {
+      await widget.add(widget.repository, _title.text, _sourceUrl.text);
+      _title.clear();
+      _sourceUrl.clear();
+      setState(() => _future = widget.load(widget.repository));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _playback(String eventType) async {
+    setState(() => _busy = true);
+    try {
+      await widget.playback(widget.repository, eventType, null);
+      setState(() => _future = widget.load(widget.repository));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+}
+
+class _RoomPlaybackPanel extends StatelessWidget {
+  const _RoomPlaybackPanel({
+    required this.room,
+    required this.busy,
+    required this.onPlayback,
+  });
+
+  final RoomModel room;
+  final bool busy;
+  final ValueChanged<String> onPlayback;
+
+  @override
+  Widget build(BuildContext context) {
+    final event = room.latestEvent;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _SectionHeader(
+              icon: Icons.sensors_rounded,
+              title: _statusLabel(room.status),
+              subtitle: event == null
+                  ? 'لا يوجد تشغيل مسجل بعد.'
+                  : 'آخر حدث: ${_eventLabel(event.eventType)}',
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: busy ? null : () => onPlayback('play'),
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: const Text('تشغيل'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: busy ? null : () => onPlayback('pause'),
+                    icon: const Icon(Icons.pause_rounded),
+                    label: const Text('إيقاف مؤقت'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: busy ? null : () => onPlayback('stop'),
+              icon: const Icon(Icons.stop_rounded),
+              label: const Text('إيقاف'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _statusLabel(String status) {
+    return switch (status) {
+      'playing' => 'قيد التشغيل',
+      'paused' => 'متوقف مؤقتاً',
+      _ => 'جاهز للتشغيل',
+    };
+  }
+
+  String _eventLabel(String eventType) {
+    return switch (eventType) {
+      'play' => 'تشغيل',
+      'pause' => 'إيقاف مؤقت',
+      'seek' => 'انتقال',
+      'stop' => 'إيقاف',
+      _ => eventType,
+    };
   }
 }
 

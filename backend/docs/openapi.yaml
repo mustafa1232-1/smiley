@@ -548,6 +548,14 @@ paths:
       responses:
         "201":
           description: Created
+  /music-room/playback:
+    post:
+      summary: Update music playback
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated room
   /watch-room:
     get:
       summary: Get or create watch room
@@ -564,6 +572,14 @@ paths:
       responses:
         "201":
           description: Created
+  /watch-room/playback:
+    post:
+      summary: Update watch playback
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated room
   /tree/today:
     get:
       summary: Get today's tree day
