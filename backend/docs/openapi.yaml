@@ -690,6 +690,37 @@ paths:
       responses:
         "201":
           description: Created
+  /blocks:
+    get:
+      summary: List blocked users
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Block list
+  /blocks/partner:
+    post:
+      summary: Block current partner
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+  /blocks/{blockedId}:
+    delete:
+      summary: Unblock user
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: blockedId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted
 components:
   securitySchemes:
     bearerAuth:

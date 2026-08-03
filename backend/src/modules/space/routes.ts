@@ -225,6 +225,10 @@ const reportSchema = z.object({
   details: z.string().trim().max(2000).optional()
 });
 
+const blockPartnerSchema = z.object({
+  reason: z.string().trim().max(500).optional()
+});
+
 spaceRouter.get('/me', requireAuth, async (request, response) => {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: request.user!.sub },
@@ -1928,6 +1932,77 @@ spaceRouter.post('/reports', requireAuth, async (request, response) => {
     }
   });
   response.status(201).json({ report });
+});
+
+spaceRouter.get('/blocks', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const blocks = await prisma.block.findMany({
+    where: { blockerId: userId },
+    orderBy: { createdAt: 'desc' }
+  });
+  const users = await prisma.user.findMany({
+    where: { id: { in: blocks.map((block) => block.blockedId) } },
+    include: { profile: true }
+  });
+  const usersById = new Map(users.map((user) => [user.id, user]));
+
+  response.json({
+    items: blocks.map((block) => {
+      const blocked = usersById.get(block.blockedId);
+      return {
+        id: block.id,
+        blockedId: block.blockedId,
+        reason: block.reason,
+        createdAt: block.createdAt,
+        user: blocked
+          ? {
+              id: blocked.id,
+              username: blocked.username,
+              displayName: blocked.profile?.displayName ?? blocked.username,
+              avatarUrl: blocked.profile?.avatarUrl
+            }
+          : null
+      };
+    })
+  });
+});
+
+spaceRouter.post('/blocks/partner', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = blockPartnerSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const partnerId = otherPartnerId(partnership, userId);
+  if (!partnerId) {
+    throw new AppError(404, 'partner_not_found', 'لا يوجد شريك فعال');
+  }
+
+  const block = await prisma.block.upsert({
+    where: {
+      blockerId_blockedId: {
+        blockerId: userId,
+        blockedId: partnerId
+      }
+    },
+    update: { reason: input.reason },
+    create: {
+      blockerId: userId,
+      blockedId: partnerId,
+      reason: input.reason
+    }
+  });
+
+  response.status(201).json({ block });
+});
+
+spaceRouter.delete('/blocks/:blockedId', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  await prisma.block.deleteMany({
+    where: {
+      blockerId: userId,
+      blockedId: routeParam(request.params.blockedId)
+    }
+  });
+  response.status(204).send();
 });
 
 spaceRouter.delete('/me', requireAuth, async (request, response) => {

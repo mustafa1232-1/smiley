@@ -51,6 +51,18 @@ partnershipsRouter.post('/partnership-requests', requireAuth, async (request, re
   const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await assertNoLivePartnership(tx, [requesterId, receiver.id]);
 
+    const block = await tx.block.findFirst({
+      where: {
+        OR: [
+          { blockerId: requesterId, blockedId: receiver.id },
+          { blockerId: receiver.id, blockedId: requesterId }
+        ]
+      }
+    });
+    if (block) {
+      throw new AppError(403, 'partnership_blocked', 'لا يمكن إرسال طلب لهذا المستخدم');
+    }
+
     const duplicate = await tx.partnershipRequest.findFirst({
       where: {
         OR: [

@@ -140,6 +140,9 @@ abstract interface class SpaceRepository {
   });
   Future<Map<String, dynamic>> exportAccount();
   Future<void> report({required String reason, String? details});
+  Future<List<BlockedUserModel>> blockedUsers();
+  Future<void> blockPartner({String? reason});
+  Future<void> unblockUser(String blockedUserId);
   Future<void> deleteAccount();
 }
 
@@ -725,6 +728,24 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
+  Future<List<BlockedUserModel>> blockedUsers() async {
+    final json = await _api.getJson('/blocks');
+    return _items(json).map(BlockedUserModel.fromJson).toList();
+  }
+
+  @override
+  Future<void> blockPartner({String? reason}) async {
+    await _api.postJson('/blocks/partner', {
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    });
+  }
+
+  @override
+  Future<void> unblockUser(String blockedUserId) async {
+    await _api.deleteJson('/blocks/$blockedUserId');
+  }
+
+  @override
   Future<void> deleteAccount() async {
     await _api.deleteJson('/me');
   }
@@ -777,6 +798,58 @@ class SpaceSummary {
       latestPosts: posts,
       nextEvent: nextEvent == null ? null : CalendarItem.fromJson(nextEvent),
       unreadNotifications: json['unreadNotifications'] as int? ?? 0,
+    );
+  }
+}
+
+class BlockedUserModel {
+  const BlockedUserModel({
+    required this.id,
+    required this.blockedId,
+    required this.createdAt,
+    this.reason,
+    this.user,
+  });
+
+  final String id;
+  final String blockedId;
+  final DateTime createdAt;
+  final String? reason;
+  final BlockedUserProfile? user;
+
+  factory BlockedUserModel.fromJson(Map<String, dynamic> json) {
+    final user = json['user'];
+    return BlockedUserModel(
+      id: json['id'] as String,
+      blockedId: json['blockedId'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
+      reason: json['reason'] as String?,
+      user: user is Map<String, dynamic>
+          ? BlockedUserProfile.fromJson(user)
+          : null,
+    );
+  }
+}
+
+class BlockedUserProfile {
+  const BlockedUserProfile({
+    required this.id,
+    required this.username,
+    required this.displayName,
+    this.avatarUrl,
+  });
+
+  final String id;
+  final String username;
+  final String displayName;
+  final String? avatarUrl;
+
+  factory BlockedUserProfile.fromJson(Map<String, dynamic> json) {
+    return BlockedUserProfile(
+      id: json['id'] as String,
+      username: json['username'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? 'مستخدم',
+      avatarUrl: json['avatarUrl'] as String?,
     );
   }
 }

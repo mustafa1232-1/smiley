@@ -629,6 +629,18 @@ Exports the authenticated user's profile and relationship data.
 
 Creates an abuse/support report.
 
+### `GET /blocks`
+
+Lists accounts blocked by the authenticated user.
+
+### `POST /blocks/partner`
+
+Blocks the current active partner and prevents future partnership requests between the two accounts.
+
+### `DELETE /blocks/:blockedId`
+
+Removes a block created by the authenticated user.
+
 ### `DELETE /me`
 
 Soft-deletes the authenticated user and revokes active refresh tokens.

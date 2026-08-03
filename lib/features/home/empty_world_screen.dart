@@ -2630,12 +2630,17 @@ class _SafetyScreen extends StatefulWidget {
 class _SafetyScreenState extends State<_SafetyScreen> {
   final _reason = TextEditingController();
   final _details = TextEditingController();
+  final _blockReason = TextEditingController();
+  late Future<List<BlockedUserModel>> _blockedFuture = widget.repository
+      .blockedUsers();
   String? _message;
+  bool _blocking = false;
 
   @override
   void dispose() {
     _reason.dispose();
     _details.dispose();
+    _blockReason.dispose();
     super.dispose();
   }
 
@@ -2669,6 +2674,65 @@ class _SafetyScreenState extends State<_SafetyScreen> {
             icon: const Icon(Icons.report_outlined),
             label: const Text('إرسال بلاغ'),
           ),
+          const SizedBox(height: 24),
+          const _SectionHeader(
+            icon: Icons.block,
+            title: 'الحظر',
+            subtitle:
+                'احظر الشريك الحالي لمنع طلبات الارتباط المستقبلية بينكما.',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _blockReason,
+            minLines: 1,
+            maxLines: 3,
+            decoration: const InputDecoration(labelText: 'سبب الحظر اختياري'),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _blocking ? null : _blockPartner,
+            icon: const Icon(Icons.block),
+            label: Text(_blocking ? 'جار الحظر...' : 'حظر الشريك الحالي'),
+          ),
+          const SizedBox(height: 12),
+          FutureBuilder<List<BlockedUserModel>>(
+            future: _blockedFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const LinearProgressIndicator();
+              }
+              final items = snapshot.data ?? const [];
+              if (items.isEmpty) {
+                return const Text(
+                  'لا توجد حسابات محظورة.',
+                  textAlign: TextAlign.center,
+                );
+              }
+              return Column(
+                children: [
+                  for (final item in items)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.person_off_outlined),
+                      title: Text(item.user?.displayName ?? item.blockedId),
+                      subtitle: Text(
+                        [
+                          if (item.user?.username.isNotEmpty == true)
+                            '@${item.user!.username}',
+                          if (item.reason?.isNotEmpty == true) item.reason!,
+                        ].join(' - '),
+                      ),
+                      trailing: IconButton(
+                        tooltip: 'فك الحظر',
+                        onPressed: () => _unblock(item.blockedId),
+                        icon: const Icon(Icons.lock_open_outlined),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 24),
           OutlinedButton.icon(
             onPressed: _export,
             icon: const Icon(Icons.download_outlined),
@@ -2695,6 +2759,35 @@ class _SafetyScreenState extends State<_SafetyScreen> {
       details: _details.text,
     );
     setState(() => _message = 'تم إرسال البلاغ.');
+  }
+
+  Future<void> _blockPartner() async {
+    setState(() => _blocking = true);
+    try {
+      await widget.repository.blockPartner(reason: _blockReason.text);
+      if (!mounted) return;
+      setState(() {
+        _blocking = false;
+        _message = 'تم حظر الشريك الحالي.';
+        _blockReason.clear();
+        _blockedFuture = widget.repository.blockedUsers();
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _blocking = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  Future<void> _unblock(String blockedUserId) async {
+    await widget.repository.unblockUser(blockedUserId);
+    if (!mounted) return;
+    setState(() {
+      _message = 'تم فك الحظر.';
+      _blockedFuture = widget.repository.blockedUsers();
+    });
   }
 
   Future<void> _export() async {

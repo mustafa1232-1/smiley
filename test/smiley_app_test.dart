@@ -632,6 +632,15 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<void> report({required String reason, String? details}) async {}
 
   @override
+  Future<List<BlockedUserModel>> blockedUsers() async => [];
+
+  @override
+  Future<void> blockPartner({String? reason}) async {}
+
+  @override
+  Future<void> unblockUser(String blockedUserId) async {}
+
+  @override
   Future<RelationshipSummaryModel> relationshipSummary({
     String period = 'month',
     DateTime? referenceDate,
