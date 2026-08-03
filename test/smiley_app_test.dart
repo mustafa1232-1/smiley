@@ -793,6 +793,9 @@ class FakeSpaceRepository implements SpaceRepository {
   }) async {}
 
   @override
+  Future<void> updateUsername(String username) async {}
+
+  @override
   Future<void> updateSettings({String? worldName, String? themeColor}) async {}
 
   @override

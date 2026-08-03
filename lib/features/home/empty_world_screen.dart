@@ -2914,6 +2914,7 @@ class _ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<_ProfileScreen> {
   late Future<UserProfile> _future = widget.repository.me();
+  final _username = TextEditingController();
   final _displayName = TextEditingController();
   final _bio = TextEditingController();
   final _emailCode = TextEditingController();
@@ -2927,6 +2928,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
 
   @override
   void dispose() {
+    _username.dispose();
     _displayName.dispose();
     _bio.dispose();
     _emailCode.dispose();
@@ -2946,6 +2948,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
           }
           final profile = snapshot.requireData;
           if (!_ready) {
+            _username.text = profile.username;
             _displayName.text = profile.displayName;
             _bio.text = profile.bio ?? '';
             _birthDate = profile.birthDate;
@@ -3050,6 +3053,14 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                 ],
               ],
               const SizedBox(height: 16),
+              TextField(
+                controller: _username,
+                decoration: const InputDecoration(
+                  labelText: 'اسم المستخدم',
+                  prefixIcon: Icon(Icons.alternate_email_rounded),
+                ),
+              ),
+              const SizedBox(height: 12),
               TextField(
                 controller: _displayName,
                 decoration: const InputDecoration(labelText: 'اسم العرض'),
@@ -3202,6 +3213,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   }
 
   Future<void> _save() async {
+    await widget.repository.updateUsername(_username.text);
     await widget.repository.updateProfile(
       displayName: _displayName.text,
       bio: _bio.text,

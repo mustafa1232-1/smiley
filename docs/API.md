@@ -154,6 +154,10 @@ Returns the authenticated user's profile.
 
 Updates display name, bio, birth date, gender, timezone, language, search visibility, and partnership request availability.
 
+### `PATCH /me/username`
+
+Changes the authenticated user's username, records the change in username history, and enforces username availability and cooldown rules.
+
 ### `POST /me/email-verification/request`
 
 Creates a short-lived 6-digit email verification code for the authenticated user. The code is only included in the response when `AUTH_DEBUG_TOKENS=true` for local development.

@@ -16,6 +16,7 @@ abstract interface class SpaceRepository {
     required bool searchable,
     required bool canReceiveRequests,
   });
+  Future<void> updateUsername(String username);
   Future<void> requestEmailVerification();
   Future<void> confirmEmailVerification(String code);
   Future<void> requestPhoneVerification();
@@ -186,6 +187,11 @@ class HttpSpaceRepository implements SpaceRepository {
       'searchable': searchable,
       'canReceivePartnershipRequests': canReceiveRequests,
     });
+  }
+
+  @override
+  Future<void> updateUsername(String username) async {
+    await _api.patchJson('/me/username', {'username': username.trim()});
   }
 
   @override

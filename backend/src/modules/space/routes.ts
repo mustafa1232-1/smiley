@@ -18,6 +18,7 @@ import { createPutUploadUrl } from '../../lib/storage.js';
 import { requireAuth } from '../../middleware/auth.js';
 import type { RealtimeEventType } from '../../realtime/events.js';
 import { emitToPartnership, emitToUser } from '../../realtime/server.js';
+import { isReservedUsername, normalizeUsername, usernameRegex } from '../auth/username.js';
 
 export const spaceRouter = Router();
 
@@ -92,6 +93,10 @@ const profileSchema = z.object({
   language: z.string().trim().min(2).max(12).optional(),
   searchable: z.boolean().optional(),
   canReceivePartnershipRequests: z.boolean().optional()
+});
+
+const usernameUpdateSchema = z.object({
+  username: z.string().trim().regex(usernameRegex)
 });
 
 const emailVerificationSchema = z.object({
@@ -288,6 +293,68 @@ spaceRouter.patch('/me', requireAuth, async (request, response) => {
   });
 
   response.json({ profile });
+});
+
+spaceRouter.patch('/me/username', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = usernameUpdateSchema.parse(request.body);
+  const usernameNormalized = normalizeUsername(input.username);
+  if (isReservedUsername(usernameNormalized)) {
+    throw new AppError(422, 'username_unavailable', 'اسم المستخدم غير متاح');
+  }
+
+  const current = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { id: true, username: true, usernameNormalized: true }
+  });
+  if (current.usernameNormalized === usernameNormalized) {
+    response.json({
+      user: { id: current.id, username: current.username }
+    });
+    return;
+  }
+
+  const exists = await prisma.user.findFirst({
+    where: { usernameNormalized, id: { not: userId } },
+    select: { id: true }
+  });
+  if (exists) {
+    throw new AppError(409, 'username_unavailable', 'اسم المستخدم غير متاح');
+  }
+
+  const history = await prisma.usernameHistory.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    take: 2
+  });
+  const latestChange = history.length > 1 ? history[0] : null;
+  if (latestChange) {
+    const nextAllowedAt = new Date(latestChange.createdAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+    if (nextAllowedAt > new Date()) {
+      throw new AppError(409, 'username_change_cooldown', 'يمكن تغيير اسم المستخدم مرة كل 30 يوماً');
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const user = await tx.user.update({
+      where: { id: userId },
+      data: {
+        username: input.username,
+        usernameNormalized
+      },
+      select: { id: true, username: true }
+    });
+    await tx.usernameHistory.create({
+      data: {
+        userId,
+        username: input.username,
+        usernameNormalized
+      }
+    });
+    return user;
+  });
+
+  response.json({ user: updated });
 });
 
 spaceRouter.post('/me/email-verification/request', requireAuth, async (request, response) => {

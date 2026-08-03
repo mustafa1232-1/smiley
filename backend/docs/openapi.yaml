@@ -81,6 +81,14 @@ paths:
       responses:
         "202":
           description: Accepted
+  /me/username:
+    patch:
+      summary: Change username
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Username updated
   /me/email-verification/confirm:
     post:
       summary: Confirm email verification code
