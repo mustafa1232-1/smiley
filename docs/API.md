@@ -17,6 +17,7 @@ Creates a user and returns an auth session.
   "email": "user@example.com",
   "password": "strong-password",
   "birthDate": "2000-01-01T00:00:00.000Z",
+  "gender": "prefer_not_to_say",
   "timezone": "Asia/Baghdad",
   "language": "ar",
   "acceptedTerms": true

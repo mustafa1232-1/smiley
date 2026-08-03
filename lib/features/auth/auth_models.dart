@@ -32,6 +32,7 @@ class RegisterRequest {
     required this.email,
     required this.password,
     required this.birthDate,
+    this.gender,
     required this.timezone,
     required this.language,
     required this.acceptedTerms,
@@ -42,6 +43,7 @@ class RegisterRequest {
   final String email;
   final String password;
   final DateTime birthDate;
+  final String? gender;
   final String timezone;
   final String language;
   final bool acceptedTerms;
@@ -52,6 +54,7 @@ class RegisterRequest {
     'email': email,
     'password': password,
     'birthDate': birthDate.toUtc().toIso8601String(),
+    if (gender != null && gender!.trim().isNotEmpty) 'gender': gender,
     'timezone': timezone,
     'language': language,
     'acceptedTerms': acceptedTerms,

@@ -36,6 +36,9 @@ class _AuthScreenState extends State<AuthScreen>
   final _resetId = TextEditingController();
   final _resetToken = TextEditingController();
   final _resetPassword = TextEditingController();
+  DateTime? _birthDate;
+  String? _gender;
+  String _language = 'ar';
   bool _acceptedTerms = false;
   bool _busy = false;
   String? _message;
@@ -78,9 +81,10 @@ class _AuthScreenState extends State<AuthScreen>
           username: _username.text.trim(),
           email: _email.text.trim(),
           password: _password.text,
-          birthDate: DateTime.utc(2000),
+          birthDate: _birthDate!,
+          gender: _gender,
           timezone: DateTime.now().timeZoneName,
-          language: 'ar',
+          language: _language,
           acceptedTerms: _acceptedTerms,
         ),
       );
@@ -91,7 +95,8 @@ class _AuthScreenState extends State<AuthScreen>
     if (_displayName.text.trim().isEmpty ||
         _username.text.trim().isEmpty ||
         _email.text.trim().isEmpty ||
-        _password.text.isEmpty) {
+        _password.text.isEmpty ||
+        _birthDate == null) {
       return 'أكمل بيانات الحساب أولاً.';
     }
     if (_password.text.length < 10) {
@@ -101,6 +106,19 @@ class _AuthScreenState extends State<AuthScreen>
       return 'يجب الموافقة على الشروط وسياسة الخصوصية.';
     }
     return null;
+  }
+
+  Future<void> _pickBirthDate() async {
+    final now = DateTime.now();
+    final value = await showDatePicker(
+      context: context,
+      initialDate: _birthDate ?? DateTime(now.year - 20),
+      firstDate: DateTime(now.year - 100),
+      lastDate: DateTime(now.year - 13, now.month, now.day),
+    );
+    if (value != null) {
+      setState(() => _birthDate = value);
+    }
   }
 
   Future<void> _submitReset() async {
@@ -214,8 +232,19 @@ class _AuthScreenState extends State<AuthScreen>
                           username: _username,
                           email: _email,
                           password: _password,
+                          birthDate: _birthDate,
+                          gender: _gender,
+                          language: _language,
                           acceptedTerms: _acceptedTerms,
                           busy: _busy,
+                          onBirthDatePressed: _pickBirthDate,
+                          onGenderChanged: (value) {
+                            setState(() => _gender = value);
+                          },
+                          onLanguageChanged: (value) {
+                            if (value == null) return;
+                            setState(() => _language = value);
+                          },
                           onTermsChanged: (value) {
                             setState(() => _acceptedTerms = value);
                           },
@@ -265,8 +294,8 @@ class _LoginForm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      padding: EdgeInsets.zero,
       children: [
         TextField(
           controller: identifier,
@@ -301,8 +330,14 @@ class _RegisterForm extends StatelessWidget {
     required this.username,
     required this.email,
     required this.password,
+    required this.birthDate,
+    required this.gender,
+    required this.language,
     required this.acceptedTerms,
     required this.busy,
+    required this.onBirthDatePressed,
+    required this.onGenderChanged,
+    required this.onLanguageChanged,
     required this.onTermsChanged,
     required this.onSubmit,
   });
@@ -311,15 +346,21 @@ class _RegisterForm extends StatelessWidget {
   final TextEditingController username;
   final TextEditingController email;
   final TextEditingController password;
+  final DateTime? birthDate;
+  final String? gender;
+  final String language;
   final bool acceptedTerms;
   final bool busy;
+  final VoidCallback onBirthDatePressed;
+  final ValueChanged<String?> onGenderChanged;
+  final ValueChanged<String?> onLanguageChanged;
   final ValueChanged<bool> onTermsChanged;
   final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      padding: EdgeInsets.zero,
       children: [
         TextField(
           controller: displayName,
@@ -353,6 +394,46 @@ class _RegisterForm extends StatelessWidget {
             labelText: 'كلمة المرور',
             prefixIcon: Icon(Icons.password_rounded),
           ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: busy ? null : onBirthDatePressed,
+          icon: const Icon(Icons.cake_outlined),
+          label: Text(
+            birthDate == null
+                ? 'اختر تاريخ الميلاد'
+                : '${birthDate!.year}-${birthDate!.month.toString().padLeft(2, '0')}-${birthDate!.day.toString().padLeft(2, '0')}',
+          ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: gender,
+          decoration: const InputDecoration(
+            labelText: 'الجنس اختياري',
+            prefixIcon: Icon(Icons.person_outline_rounded),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'female', child: Text('أنثى')),
+            DropdownMenuItem(value: 'male', child: Text('ذكر')),
+            DropdownMenuItem(
+              value: 'prefer_not_to_say',
+              child: Text('أفضل عدم القول'),
+            ),
+          ],
+          onChanged: busy ? null : onGenderChanged,
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: language,
+          decoration: const InputDecoration(
+            labelText: 'اللغة',
+            prefixIcon: Icon(Icons.language_rounded),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'ar', child: Text('العربية')),
+            DropdownMenuItem(value: 'en', child: Text('English')),
+          ],
+          onChanged: busy ? null : onLanguageChanged,
         ),
         CheckboxListTile(
           value: acceptedTerms,

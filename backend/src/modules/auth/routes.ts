@@ -19,6 +19,7 @@ const registerSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(10).max(200),
   birthDate: z.string().datetime(),
+  gender: z.string().trim().max(40).optional(),
   timezone: z.string().trim().min(1).max(80),
   language: z.string().trim().min(2).max(12),
   acceptedTerms: z.literal(true)
@@ -71,6 +72,7 @@ authRouter.post('/auth/register', async (request, response) => {
           create: {
             displayName: input.displayName,
             birthDate: new Date(input.birthDate),
+            gender: input.gender,
             timezone: input.timezone,
             language: input.language
           }
