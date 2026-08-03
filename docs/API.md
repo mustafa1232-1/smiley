@@ -381,11 +381,11 @@ Lists recent shared games for the active partnership.
 
 ### `POST /games`
 
-Creates a persisted X/O game session.
+Creates a persisted game session. Supported `gameType` values are `tic_tac_toe` and `daily_prompt`.
 
 ```json
 {
-  "gameType": "tic_tac_toe"
+  "gameType": "daily_prompt"
 }
 ```
 
@@ -398,6 +398,20 @@ Plays one X/O move. The backend validates turn order, occupied cells, winner det
   "position": 4
 }
 ```
+
+### `POST /games/:id/answer`
+
+Submits the current user's answer for a `daily_prompt` game. The game finishes when both partners answer or skip.
+
+```json
+{
+  "answer": "فيلم هادئ"
+}
+```
+
+### `POST /games/:id/skip`
+
+Skips the current user's answer for a `daily_prompt` game.
 
 ### `GET /places`
 

@@ -75,11 +75,16 @@ abstract interface class SpaceRepository {
   });
   Future<void> toggleSharedListItem(String id);
   Future<List<GameSessionModel>> games();
-  Future<GameSessionModel> createGame();
+  Future<GameSessionModel> createGame({String gameType});
   Future<GameSessionModel> playGameMove({
     required String gameId,
     required int position,
   });
+  Future<GameSessionModel> answerPromptGame({
+    required String gameId,
+    required String answer,
+  });
+  Future<GameSessionModel> skipPromptGame({required String gameId});
   Future<List<PlaceItem>> places();
   Future<void> createPlace(String title);
   Future<List<AlbumModel>> albums();
@@ -430,8 +435,8 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<GameSessionModel> createGame() async {
-    final json = await _api.postJson('/games', {'gameType': 'tic_tac_toe'});
+  Future<GameSessionModel> createGame({String gameType = 'tic_tac_toe'}) async {
+    final json = await _api.postJson('/games', {'gameType': gameType});
     return GameSessionModel.fromJson(json['game'] as Map<String, dynamic>);
   }
 
@@ -443,6 +448,23 @@ class HttpSpaceRepository implements SpaceRepository {
     final json = await _api.postJson('/games/$gameId/moves', {
       'position': position,
     });
+    return GameSessionModel.fromJson(json['game'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<GameSessionModel> answerPromptGame({
+    required String gameId,
+    required String answer,
+  }) async {
+    final json = await _api.postJson('/games/$gameId/answer', {
+      'answer': answer.trim(),
+    });
+    return GameSessionModel.fromJson(json['game'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<GameSessionModel> skipPromptGame({required String gameId}) async {
+    final json = await _api.postJson('/games/$gameId/skip', {});
     return GameSessionModel.fromJson(json['game'] as Map<String, dynamic>);
   }
 
@@ -1150,19 +1172,32 @@ class SharedListEntry {
 class GameSessionModel {
   const GameSessionModel({
     required this.id,
+    required this.gameType,
     required this.status,
     required this.board,
+    this.prompt,
+    this.options = const [],
+    this.players = const [],
+    this.answers = const {},
+    this.skipped = const [],
     this.currentTurnUserId,
     this.winnerUserId,
   });
 
   final String id;
+  final String gameType;
   final String status;
   final List<String?> board;
+  final String? prompt;
+  final List<String> options;
+  final List<String> players;
+  final Map<String, String> answers;
+  final List<String> skipped;
   final String? currentTurnUserId;
   final String? winnerUserId;
 
   bool get finished => status == 'finished';
+  bool get isPrompt => gameType == 'daily_prompt';
 
   factory GameSessionModel.fromJson(Map<String, dynamic> json) {
     final board = (json['board'] as List<dynamic>? ?? [])
@@ -1171,10 +1206,25 @@ class GameSessionModel {
     while (board.length < 9) {
       board.add(null);
     }
+    final answers = (json['answers'] as Map<String, dynamic>? ?? {}).map(
+      (key, value) => MapEntry(key, value.toString()),
+    );
     return GameSessionModel(
       id: json['id'] as String,
+      gameType: json['gameType'] as String? ?? 'tic_tac_toe',
       status: json['status'] as String? ?? 'active',
       board: board.take(9).toList(),
+      prompt: json['prompt'] as String?,
+      options: (json['options'] as List<dynamic>? ?? [])
+          .map((item) => item.toString())
+          .toList(),
+      players: (json['players'] as List<dynamic>? ?? [])
+          .map((item) => item.toString())
+          .toList(),
+      answers: answers,
+      skipped: (json['skipped'] as List<dynamic>? ?? [])
+          .map((item) => item.toString())
+          .toList(),
       currentTurnUserId: json['currentTurnUserId'] as String?,
       winnerUserId: json['winnerUserId'] as String?,
     );

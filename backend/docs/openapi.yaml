@@ -464,7 +464,7 @@ paths:
         "200":
           description: Games
     post:
-      summary: Create X/O game
+      summary: Create shared game
       security:
         - bearerAuth: []
       responses:
@@ -473,6 +473,22 @@ paths:
   /games/{id}/moves:
     post:
       summary: Play X/O move
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated game
+  /games/{id}/answer:
+    post:
+      summary: Answer daily prompt game
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated game
+  /games/{id}/skip:
+    post:
+      summary: Skip daily prompt game
       security:
         - bearerAuth: []
       responses:

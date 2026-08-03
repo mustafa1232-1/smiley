@@ -104,11 +104,15 @@ const sharedListItemSchema = z.object({
 });
 
 const gameCreateSchema = z.object({
-  gameType: z.literal('tic_tac_toe').default('tic_tac_toe')
+  gameType: z.enum(['tic_tac_toe', 'daily_prompt']).default('tic_tac_toe')
 });
 
 const gameMoveSchema = z.object({
   position: z.number().int().min(0).max(8)
+});
+
+const gamePromptAnswerSchema = z.object({
+  answer: z.string().trim().min(1).max(500)
 });
 
 const placeSchema = z.object({
@@ -1177,8 +1181,10 @@ spaceRouter.post('/games', requireAuth, async (request, response) => {
       partnershipId: partnership.id,
       gameType: input.gameType,
       status: 'active',
-      state: initialTicTacToeState(gamePlayers),
-      currentTurnUserId: gamePlayers[0],
+      state: input.gameType === 'daily_prompt'
+        ? initialDailyPromptState(gamePlayers)
+        : initialTicTacToeState(gamePlayers),
+      currentTurnUserId: input.gameType === 'daily_prompt' ? null : gamePlayers[0],
       createdById: userId
     }
   });
@@ -1201,6 +1207,9 @@ spaceRouter.post('/games/:id/moves', requireAuth, async (request, response) => {
     if (!existing) {
       throw new AppError(404, 'game_not_found', 'Ø§Ù„Ù„Ø¹Ø¨Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©');
     }
+    if (existing.gameType !== 'tic_tac_toe') {
+      throw new AppError(409, 'unsupported_game_move', 'هذه اللعبة لا تستخدم خانات X/O');
+    }
     if (existing.status !== 'active') {
       throw new AppError(409, 'game_finished', 'Ø§Ù†ØªÙ‡Øª Ø§Ù„Ù„Ø¹Ø¨Ø©');
     }
@@ -1221,6 +1230,82 @@ spaceRouter.post('/games/:id/moves', requireAuth, async (request, response) => {
         status: next.status,
         winnerUserId: next.winnerUserId,
         currentTurnUserId: next.currentTurnUserId
+      }
+    });
+  });
+
+  emitToPartnership('game.updated', userId, partnership.id, { gameId: game.id });
+  response.json({ game: serializeGameSession(game) });
+});
+
+spaceRouter.post('/games/:id/answer', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = gamePromptAnswerSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+
+  const game = await prisma.$transaction(async (tx) => {
+    const existing = await tx.gameSession.findFirst({
+      where: { id: routeParam(request.params.id), partnershipId: partnership.id }
+    });
+    if (!existing) {
+      throw new AppError(404, 'game_not_found', 'اللعبة غير موجودة');
+    }
+    if (existing.gameType !== 'daily_prompt') {
+      throw new AppError(409, 'unsupported_game_answer', 'هذه اللعبة لا تقبل إجابات نصية');
+    }
+    if (existing.status !== 'active') {
+      throw new AppError(409, 'game_finished', 'انتهت اللعبة');
+    }
+
+    const next = applyDailyPromptAnswer(
+      normalizeDailyPromptState(existing.state, partnership.members.map((member) => member.userId)),
+      userId,
+      input.answer
+    );
+
+    return tx.gameSession.update({
+      where: { id: existing.id },
+      data: {
+        state: next.state as Prisma.InputJsonValue,
+        status: next.status,
+        currentTurnUserId: null
+      }
+    });
+  });
+
+  emitToPartnership('game.updated', userId, partnership.id, { gameId: game.id });
+  response.json({ game: serializeGameSession(game) });
+});
+
+spaceRouter.post('/games/:id/skip', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const partnership = await requireActivePartnership(userId);
+
+  const game = await prisma.$transaction(async (tx) => {
+    const existing = await tx.gameSession.findFirst({
+      where: { id: routeParam(request.params.id), partnershipId: partnership.id }
+    });
+    if (!existing) {
+      throw new AppError(404, 'game_not_found', 'اللعبة غير موجودة');
+    }
+    if (existing.gameType !== 'daily_prompt') {
+      throw new AppError(409, 'unsupported_game_skip', 'هذه اللعبة لا تدعم التخطي');
+    }
+    if (existing.status !== 'active') {
+      throw new AppError(409, 'game_finished', 'انتهت اللعبة');
+    }
+
+    const next = applyDailyPromptSkip(
+      normalizeDailyPromptState(existing.state, partnership.members.map((member) => member.userId)),
+      userId
+    );
+
+    return tx.gameSession.update({
+      where: { id: existing.id },
+      data: {
+        state: next.state as Prisma.InputJsonValue,
+        status: next.status,
+        currentTurnUserId: null
       }
     });
   });
@@ -1673,6 +1758,33 @@ type TicTacToeState = {
   symbols: Record<string, 'x' | 'o'>;
 };
 
+type DailyPromptState = {
+  prompt: string;
+  options: string[];
+  players: string[];
+  answers: Record<string, string>;
+  skipped: string[];
+};
+
+const dailyPromptBank = [
+  {
+    prompt: 'أي نشاط بسيط تختارانه لهذا الأسبوع؟',
+    options: ['مشي قصير', 'فيلم', 'طبخة جديدة', 'مكالمة هادئة']
+  },
+  {
+    prompt: 'أي تفصيل صغير أسعدك اليوم؟',
+    options: ['رسالة', 'صورة', 'موقف لطيف', 'وقت هادئ']
+  },
+  {
+    prompt: 'هذا أو ذاك لليلة القادمة؟',
+    options: ['قهوة', 'شاي', 'فيلم', 'موسيقى']
+  },
+  {
+    prompt: 'اختر فكرة ذكرى جديدة.',
+    options: ['صورة', 'ورقة شجرة', 'مكان', 'أغنية']
+  }
+];
+
 function initialTicTacToeState(players: string[]): Prisma.InputJsonValue {
   const orderedPlayers = players.slice(0, 2);
   return {
@@ -1703,6 +1815,70 @@ function normalizeTicTacToeState(value: unknown, players: string[]): TicTacToeSt
       };
 
   return { board, players: normalizedPlayers, symbols };
+}
+
+function initialDailyPromptState(players: string[]): Prisma.InputJsonValue {
+  const prompt = dailyPromptBank[Math.floor(Math.random() * dailyPromptBank.length)];
+  return {
+    prompt: prompt.prompt,
+    options: prompt.options,
+    players: players.slice(0, 2),
+    answers: {},
+    skipped: []
+  };
+}
+
+function normalizeDailyPromptState(value: unknown, players: string[]): DailyPromptState {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const fallback = dailyPromptBank[0];
+  const answers = raw.answers && typeof raw.answers === 'object'
+    ? Object.fromEntries(
+        Object.entries(raw.answers as Record<string, unknown>).map(([key, value]) => [key, String(value)])
+      )
+    : {};
+  const skipped = Array.isArray(raw.skipped) ? raw.skipped.map(String) : [];
+  return {
+    prompt: typeof raw.prompt === 'string' ? raw.prompt : fallback.prompt,
+    options: Array.isArray(raw.options) ? raw.options.map(String).slice(0, 6) : fallback.options,
+    players: Array.isArray(raw.players) ? raw.players.map(String).slice(0, 2) : players.slice(0, 2),
+    answers,
+    skipped
+  };
+}
+
+function applyDailyPromptAnswer(state: DailyPromptState, userId: string, answer: string) {
+  if (!state.players.includes(userId)) {
+    throw new AppError(403, 'not_game_player', 'لست مشاركاً في هذه اللعبة');
+  }
+  const nextState: DailyPromptState = {
+    ...state,
+    answers: { ...state.answers, [userId]: answer.trim() },
+    skipped: state.skipped.filter((id) => id !== userId)
+  };
+  return {
+    state: nextState,
+    status: dailyPromptFinished(nextState) ? 'finished' : 'active'
+  };
+}
+
+function applyDailyPromptSkip(state: DailyPromptState, userId: string) {
+  if (!state.players.includes(userId)) {
+    throw new AppError(403, 'not_game_player', 'لست مشاركاً في هذه اللعبة');
+  }
+  const nextState: DailyPromptState = {
+    ...state,
+    answers: Object.fromEntries(Object.entries(state.answers).filter(([id]) => id !== userId)),
+    skipped: [...new Set([...state.skipped, userId])]
+  };
+  return {
+    state: nextState,
+    status: dailyPromptFinished(nextState) ? 'finished' : 'active'
+  };
+}
+
+function dailyPromptFinished(state: DailyPromptState) {
+  return state.players.length > 0
+    && state.players.every((player) => state.answers[player] || state.skipped.includes(player));
 }
 
 function applyTicTacToeMove(
@@ -1766,6 +1942,24 @@ function serializeGameSession(game: {
   createdAt: Date;
   updatedAt: Date;
 }) {
+  if (game.gameType === 'daily_prompt') {
+    const state = normalizeDailyPromptState(game.state, []);
+    return {
+      id: game.id,
+      gameType: game.gameType,
+      status: game.status,
+      prompt: state.prompt,
+      options: state.options,
+      players: state.players,
+      answers: state.answers,
+      skipped: state.skipped,
+      currentTurnUserId: game.currentTurnUserId,
+      winnerUserId: game.winnerUserId,
+      createdById: game.createdById,
+      createdAt: game.createdAt,
+      updatedAt: game.updatedAt
+    };
+  }
   const state = normalizeTicTacToeState(game.state, []);
   return {
     id: game.id,

@@ -392,11 +392,43 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<List<GameSessionModel>> games() async => [];
 
   @override
-  Future<GameSessionModel> createGame() async {
-    return const GameSessionModel(
+  Future<GameSessionModel> createGame({String gameType = 'tic_tac_toe'}) async {
+    return GameSessionModel(
       id: 'game',
+      gameType: gameType,
       status: 'active',
-      board: [null, null, null, null, null, null, null, null, null],
+      board: const [null, null, null, null, null, null, null, null, null],
+      prompt: gameType == 'daily_prompt' ? 'question' : null,
+      players: const ['user', 'partner'],
+    );
+  }
+
+  @override
+  Future<GameSessionModel> answerPromptGame({
+    required String gameId,
+    required String answer,
+  }) async {
+    return GameSessionModel(
+      id: gameId,
+      gameType: 'daily_prompt',
+      status: 'active',
+      board: const [null, null, null, null, null, null, null, null, null],
+      prompt: 'question',
+      players: const ['user', 'partner'],
+      answers: {'user': answer},
+    );
+  }
+
+  @override
+  Future<GameSessionModel> skipPromptGame({required String gameId}) async {
+    return GameSessionModel(
+      id: gameId,
+      gameType: 'daily_prompt',
+      status: 'active',
+      board: const [null, null, null, null, null, null, null, null, null],
+      prompt: 'question',
+      players: const ['user', 'partner'],
+      skipped: const ['user'],
     );
   }
 
@@ -407,6 +439,7 @@ class FakeSpaceRepository implements SpaceRepository {
   }) async {
     return GameSessionModel(
       id: gameId,
+      gameType: 'tic_tac_toe',
       status: 'active',
       board: List<String?>.filled(9, null)..[position] = 'x',
     );

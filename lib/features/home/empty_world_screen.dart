@@ -3291,7 +3291,14 @@ class _GamesScreen extends StatefulWidget {
 
 class _GamesScreenState extends State<_GamesScreen> {
   late Future<List<GameSessionModel>> _future = widget.repository.games();
+  final _promptAnswer = TextEditingController();
   bool _busy = false;
+
+  @override
+  void dispose() {
+    _promptAnswer.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3309,59 +3316,98 @@ class _GamesScreenState extends State<_GamesScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           final games = snapshot.requireData;
-          if (games.isEmpty) {
-            return const Center(child: Text('لا توجد ألعاب بعد.'));
-          }
-          final game = games.first;
+          final promptGames = games.where((game) => game.isPrompt).toList();
+          final xGames = games.where((game) => !game.isPrompt).toList();
+          final game = xGames.isEmpty ? null : xGames.first;
           return ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              _SectionHeader(
-                icon: Icons.grid_3x3_rounded,
-                title: 'X/O',
-                subtitle: game.finished ? 'انتهت اللعبة' : 'اللعبة مستمرة',
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : _createPromptGame,
+                      icon: const Icon(Icons.question_answer_outlined),
+                      label: const Text('سؤال يومي'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _busy ? null : _createGame,
+                      icon: const Icon(Icons.grid_3x3_rounded),
+                      label: const Text('X/O'),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
-              AspectRatio(
-                aspectRatio: 1,
-                child: GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
+              if (games.isEmpty) ...[
+                const _EmptyLine(
+                  text: 'ابدأ لعبة X/O أو سؤال يومي مشترك.',
+                  color: Colors.grey,
+                ),
+              ],
+              for (final promptGame in promptGames) ...[
+                _PromptGameCard(
+                  game: promptGame,
+                  answerController: _promptAnswer,
+                  busy: _busy,
+                  onPick: (answer) => _promptAnswer.text = answer,
+                  onAnswer: () => _answerPrompt(promptGame.id),
+                  onSkip: () => _skipPrompt(promptGame.id),
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (game != null) ...[
+                _SectionHeader(
+                  icon: Icons.grid_3x3_rounded,
+                  title: 'X/O',
+                  subtitle: game.finished ? 'انتهت اللعبة' : 'اللعبة مستمرة',
+                ),
+                const SizedBox(height: 16),
+                AspectRatio(
+                  aspectRatio: 1,
+                  child: GridView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
+                    itemCount: 9,
+                    itemBuilder: (context, index) {
+                      final value = game.board[index];
+                      return FilledButton.tonal(
+                        onPressed: _busy || game.finished || value != null
+                            ? null
+                            : () => _play(game.id, index),
+                        child: Text(
+                          value?.toUpperCase() ?? '',
+                          style: Theme.of(context).textTheme.displayMedium,
+                        ),
+                      );
+                    },
                   ),
-                  itemCount: 9,
-                  itemBuilder: (context, index) {
-                    final value = game.board[index];
-                    return FilledButton.tonal(
-                      onPressed: _busy || game.finished || value != null
-                          ? null
-                          : () => _play(game.id, index),
-                      child: Text(
-                        value?.toUpperCase() ?? '',
-                        style: Theme.of(context).textTheme.displayMedium,
-                      ),
-                    );
-                  },
                 ),
-              ),
-              const SizedBox(height: 12),
-              if (game.winnerUserId != null)
-                const _EmptyLine(
-                  text: 'هناك فائز في هذه الجولة.',
-                  color: Colors.green,
-                )
-              else if (game.finished)
-                const _EmptyLine(
-                  text: 'انتهت الجولة بالتعادل.',
-                  color: Colors.grey,
-                )
-              else
-                const _EmptyLine(
-                  text: 'اضغط على خانة عندما يكون الدور لك.',
-                  color: Colors.grey,
-                ),
+                const SizedBox(height: 12),
+                if (game.winnerUserId != null)
+                  const _EmptyLine(
+                    text: 'هناك فائز في هذه الجولة.',
+                    color: Colors.green,
+                  )
+                else if (game.finished)
+                  const _EmptyLine(
+                    text: 'انتهت الجولة بالتعادل.',
+                    color: Colors.grey,
+                  )
+                else
+                  const _EmptyLine(
+                    text: 'اضغط على خانة عندما يكون الدور لك.',
+                    color: Colors.grey,
+                  ),
+              ],
             ],
           );
         },
@@ -3373,6 +3419,16 @@ class _GamesScreenState extends State<_GamesScreen> {
     setState(() => _busy = true);
     try {
       await widget.repository.createGame();
+      setState(() => _future = widget.repository.games());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _createPromptGame() async {
+    setState(() => _busy = true);
+    try {
+      await widget.repository.createGame(gameType: 'daily_prompt');
       setState(() => _future = widget.repository.games());
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -3392,6 +3448,141 @@ class _GamesScreenState extends State<_GamesScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _answerPrompt(String gameId) async {
+    final answer = _promptAnswer.text.trim();
+    if (answer.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      await widget.repository.answerPromptGame(gameId: gameId, answer: answer);
+      _promptAnswer.clear();
+      setState(() => _future = widget.repository.games());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _skipPrompt(String gameId) async {
+    setState(() => _busy = true);
+    try {
+      await widget.repository.skipPromptGame(gameId: gameId);
+      _promptAnswer.clear();
+      setState(() => _future = widget.repository.games());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+}
+
+class _PromptGameCard extends StatelessWidget {
+  const _PromptGameCard({
+    required this.game,
+    required this.answerController,
+    required this.busy,
+    required this.onPick,
+    required this.onAnswer,
+    required this.onSkip,
+  });
+
+  final GameSessionModel game;
+  final TextEditingController answerController;
+  final bool busy;
+  final ValueChanged<String> onPick;
+  final VoidCallback onAnswer;
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    final completed = game.answers.length + game.skipped.length;
+    final total = game.players.length;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _SectionHeader(
+              icon: Icons.question_answer_outlined,
+              title: 'سؤال يومي',
+              subtitle: game.finished
+                  ? 'اكتمل السؤال'
+                  : 'إجابات $completed من $total',
+            ),
+            const SizedBox(height: 12),
+            Text(
+              game.prompt ?? 'اختارا إجابة مشتركة لهذا اليوم.',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            if (game.options.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final option in game.options)
+                    ActionChip(
+                      label: Text(option),
+                      onPressed: busy || game.finished
+                          ? null
+                          : () => onPick(option),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: answerController,
+              enabled: !busy && !game.finished,
+              minLines: 1,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'إجابتك',
+                prefixIcon: Icon(Icons.edit_note_rounded),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: busy || game.finished ? null : onSkip,
+                    icon: const Icon(Icons.skip_next_rounded),
+                    label: const Text('تخطي'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: busy || game.finished ? null : onAnswer,
+                    icon: const Icon(Icons.send_rounded),
+                    label: const Text('إرسال'),
+                  ),
+                ),
+              ],
+            ),
+            if (game.answers.isNotEmpty || game.skipped.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _EmptyLine(
+                text:
+                    '${game.answers.length} إجابة، ${game.skipped.length} تخطي.',
+                color: Colors.grey,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 
