@@ -86,6 +86,10 @@ const messageReceiptSchema = z.object({
 const profileSchema = z.object({
   displayName: z.string().trim().min(1).max(80),
   bio: z.string().trim().max(240).optional(),
+  birthDate: z.coerce.date().optional(),
+  gender: z.string().trim().max(40).optional(),
+  timezone: z.string().trim().min(1).max(80).optional(),
+  language: z.string().trim().min(2).max(12).optional(),
   searchable: z.boolean().optional(),
   canReceivePartnershipRequests: z.boolean().optional()
 });
@@ -252,6 +256,10 @@ spaceRouter.get('/me', requireAuth, async (request, response) => {
       displayName: user.profile?.displayName ?? 'مستخدم',
       avatarUrl: user.profile?.avatarUrl,
       bio: user.profile?.bio,
+      birthDate: user.profile?.birthDate,
+      gender: user.profile?.gender,
+      timezone: user.profile?.timezone,
+      language: user.profile?.language,
       searchable: user.profile?.searchable ?? true,
       canReceivePartnershipRequests:
         user.profile?.canReceivePartnershipRequests ?? true
@@ -266,6 +274,10 @@ spaceRouter.patch('/me', requireAuth, async (request, response) => {
     data: {
       displayName: input.displayName,
       bio: input.bio,
+      birthDate: input.birthDate,
+      gender: input.gender,
+      timezone: input.timezone,
+      language: input.language,
       searchable: input.searchable,
       canReceivePartnershipRequests: input.canReceivePartnershipRequests
     }

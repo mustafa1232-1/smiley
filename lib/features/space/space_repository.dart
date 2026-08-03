@@ -9,6 +9,10 @@ abstract interface class SpaceRepository {
   Future<void> updateProfile({
     required String displayName,
     String? bio,
+    DateTime? birthDate,
+    String? gender,
+    String? timezone,
+    String? language,
     required bool searchable,
     required bool canReceiveRequests,
   });
@@ -161,12 +165,22 @@ class HttpSpaceRepository implements SpaceRepository {
   Future<void> updateProfile({
     required String displayName,
     String? bio,
+    DateTime? birthDate,
+    String? gender,
+    String? timezone,
+    String? language,
     required bool searchable,
     required bool canReceiveRequests,
   }) async {
     await _api.patchJson('/me', {
       'displayName': displayName.trim(),
       if (bio != null) 'bio': bio.trim(),
+      if (birthDate != null) 'birthDate': birthDate.toUtc().toIso8601String(),
+      if (gender != null && gender.trim().isNotEmpty) 'gender': gender.trim(),
+      if (timezone != null && timezone.trim().isNotEmpty)
+        'timezone': timezone.trim(),
+      if (language != null && language.trim().isNotEmpty)
+        'language': language.trim(),
       'searchable': searchable,
       'canReceivePartnershipRequests': canReceiveRequests,
     });
@@ -1290,6 +1304,10 @@ class UserProfile {
     this.email,
     this.emailVerifiedAt,
     this.bio,
+    this.birthDate,
+    this.gender,
+    this.timezone,
+    this.language,
   });
 
   final String id;
@@ -1298,6 +1316,10 @@ class UserProfile {
   final DateTime? emailVerifiedAt;
   final String displayName;
   final String? bio;
+  final DateTime? birthDate;
+  final String? gender;
+  final String? timezone;
+  final String? language;
   final bool searchable;
   final bool canReceiveRequests;
   bool get emailVerified => emailVerifiedAt != null;
@@ -1310,6 +1332,10 @@ class UserProfile {
       emailVerifiedAt: _optionalDate(json['emailVerifiedAt']),
       displayName: json['displayName'] as String? ?? 'مستخدم',
       bio: json['bio'] as String?,
+      birthDate: _optionalDate(json['birthDate'])?.toLocal(),
+      gender: json['gender'] as String?,
+      timezone: json['timezone'] as String?,
+      language: json['language'] as String?,
       searchable: json['searchable'] as bool? ?? true,
       canReceiveRequests:
           json['canReceivePartnershipRequests'] as bool? ?? true,

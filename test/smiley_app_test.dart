@@ -775,6 +775,10 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<void> updateProfile({
     required String displayName,
     String? bio,
+    DateTime? birthDate,
+    String? gender,
+    String? timezone,
+    String? language,
     required bool searchable,
     required bool canReceiveRequests,
   }) async {}

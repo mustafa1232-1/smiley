@@ -148,7 +148,7 @@ Returns the authenticated user's profile.
 
 ### `PATCH /me`
 
-Updates display name, bio, search visibility, and partnership request availability.
+Updates display name, bio, birth date, gender, timezone, language, search visibility, and partnership request availability.
 
 ### `POST /me/email-verification/request`
 

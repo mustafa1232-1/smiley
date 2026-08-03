@@ -2905,6 +2905,9 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   final _displayName = TextEditingController();
   final _bio = TextEditingController();
   final _emailCode = TextEditingController();
+  DateTime? _birthDate;
+  String? _gender;
+  String _language = 'ar';
   bool _searchable = true;
   bool _requests = true;
   bool _ready = false;
@@ -2931,6 +2934,9 @@ class _ProfileScreenState extends State<_ProfileScreen> {
           if (!_ready) {
             _displayName.text = profile.displayName;
             _bio.text = profile.bio ?? '';
+            _birthDate = profile.birthDate;
+            _gender = profile.gender;
+            _language = profile.language ?? 'ar';
             _searchable = profile.searchable;
             _requests = profile.canReceiveRequests;
             _ready = true;
@@ -2998,6 +3004,56 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                 maxLines: 4,
                 decoration: const InputDecoration(labelText: 'نبذة قصيرة'),
               ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _pickBirthDate,
+                icon: const Icon(Icons.cake_outlined),
+                label: Text(
+                  _birthDate == null
+                      ? 'اختر تاريخ الميلاد'
+                      : '${_birthDate!.year}-${_birthDate!.month.toString().padLeft(2, '0')}-${_birthDate!.day.toString().padLeft(2, '0')}',
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _gender,
+                decoration: const InputDecoration(
+                  labelText: 'الجنس اختياري',
+                  prefixIcon: Icon(Icons.person_outline_rounded),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'female', child: Text('أنثى')),
+                  DropdownMenuItem(value: 'male', child: Text('ذكر')),
+                  DropdownMenuItem(
+                    value: 'prefer_not_to_say',
+                    child: Text('أفضل عدم القول'),
+                  ),
+                ],
+                onChanged: (value) => setState(() => _gender = value),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _language,
+                decoration: const InputDecoration(
+                  labelText: 'اللغة',
+                  prefixIcon: Icon(Icons.language_rounded),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'ar', child: Text('العربية')),
+                  DropdownMenuItem(value: 'en', child: Text('English')),
+                ],
+                onChanged: (value) {
+                  if (value != null) setState(() => _language = value);
+                },
+              ),
+              if (profile.timezone != null) ...[
+                const SizedBox(height: 8),
+                _InfoTile(
+                  icon: Icons.schedule_outlined,
+                  title: 'المنطقة الزمنية',
+                  subtitle: profile.timezone!,
+                ),
+              ],
               SwitchListTile(
                 value: _searchable,
                 onChanged: (value) => setState(() => _searchable = value),
@@ -3019,6 +3075,19 @@ class _ProfileScreenState extends State<_ProfileScreen> {
         },
       ),
     );
+  }
+
+  Future<void> _pickBirthDate() async {
+    final now = DateTime.now();
+    final value = await showDatePicker(
+      context: context,
+      initialDate: _birthDate ?? DateTime(now.year - 20),
+      firstDate: DateTime(now.year - 100),
+      lastDate: DateTime(now.year - 13, now.month, now.day),
+    );
+    if (value != null) {
+      setState(() => _birthDate = value);
+    }
   }
 
   Future<void> _requestEmailVerification() async {
@@ -3052,6 +3121,10 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     await widget.repository.updateProfile(
       displayName: _displayName.text,
       bio: _bio.text,
+      birthDate: _birthDate,
+      gender: _gender,
+      timezone: DateTime.now().timeZoneName,
+      language: _language,
       searchable: _searchable,
       canReceiveRequests: _requests,
     );
