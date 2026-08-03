@@ -170,7 +170,7 @@ paths:
           description: Partnership ended
   /partnerships/{id}/onboarding:
     post:
-      summary: Complete relationship onboarding
+      summary: Complete relationship onboarding and seed initial world items
       security:
         - bearerAuth: []
       responses:

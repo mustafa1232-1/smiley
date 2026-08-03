@@ -438,12 +438,28 @@ class _OnboardingTab extends StatefulWidget {
 
 class _OnboardingTabState extends State<_OnboardingTab> {
   final _worldName = TextEditingController(text: 'عالمنا');
+  final _occasionTitle = TextEditingController();
+  final _favoriteThings = TextEditingController();
+  final _wishes = TextEditingController();
+  final _places = TextEditingController();
+  final _watchList = TextEditingController();
+  final _favoriteSongs = TextEditingController();
+  final _goals = TextEditingController();
   DateTime _startDate = DateTime.now();
+  DateTime _occasionDate = DateTime.now().add(const Duration(days: 30));
+  String _themeColor = '#B96B7F';
   bool _busy = false;
 
   @override
   void dispose() {
     _worldName.dispose();
+    _occasionTitle.dispose();
+    _favoriteThings.dispose();
+    _wishes.dispose();
+    _places.dispose();
+    _watchList.dispose();
+    _favoriteSongs.dispose();
+    _goals.dispose();
     super.dispose();
   }
 
@@ -467,6 +483,23 @@ class _OnboardingTabState extends State<_OnboardingTab> {
           ),
         ),
         const SizedBox(height: 14),
+        DropdownButtonFormField<String>(
+          initialValue: _themeColor,
+          decoration: const InputDecoration(
+            labelText: 'لون العالم',
+            prefixIcon: Icon(Icons.palette_outlined),
+          ),
+          items: const [
+            DropdownMenuItem(value: '#B96B7F', child: Text('وردي هادئ')),
+            DropdownMenuItem(value: '#3E7C78', child: Text('أخضر مائي')),
+            DropdownMenuItem(value: '#7A6A9E', child: Text('بنفسجي ناعم')),
+            DropdownMenuItem(value: '#C18C5D', child: Text('ذهبي دافئ')),
+          ],
+          onChanged: (value) {
+            if (value != null) setState(() => _themeColor = value);
+          },
+        ),
+        const SizedBox(height: 14),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.event_available_outlined),
@@ -477,6 +510,61 @@ class _OnboardingTabState extends State<_OnboardingTab> {
             icon: const Icon(Icons.calendar_month_rounded),
             onPressed: _pickDate,
           ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _occasionTitle,
+          decoration: const InputDecoration(
+            labelText: 'مناسبة مهمة اختيارية',
+            prefixIcon: Icon(Icons.celebration_outlined),
+          ),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.calendar_today_outlined),
+          title: const Text('تاريخ المناسبة'),
+          subtitle: Text(_date(_occasionDate)),
+          trailing: IconButton(
+            tooltip: 'اختيار التاريخ',
+            icon: const Icon(Icons.event_rounded),
+            onPressed: _pickOccasionDate,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _OnboardingListField(
+          controller: _favoriteThings,
+          icon: Icons.favorite_border_rounded,
+          label: 'أشياء تحبونها',
+        ),
+        const SizedBox(height: 12),
+        _OnboardingListField(
+          controller: _wishes,
+          icon: Icons.local_florist_outlined,
+          label: 'أمنيات البداية',
+        ),
+        const SizedBox(height: 12),
+        _OnboardingListField(
+          controller: _places,
+          icon: Icons.place_outlined,
+          label: 'أماكن تريدون زيارتها',
+        ),
+        const SizedBox(height: 12),
+        _OnboardingListField(
+          controller: _watchList,
+          icon: Icons.movie_outlined,
+          label: 'أفلام أو مسلسلات للمشاهدة',
+        ),
+        const SizedBox(height: 12),
+        _OnboardingListField(
+          controller: _favoriteSongs,
+          icon: Icons.music_note_outlined,
+          label: 'أغانٍ مفضلة',
+        ),
+        const SizedBox(height: 12),
+        _OnboardingListField(
+          controller: _goals,
+          icon: Icons.flag_outlined,
+          label: 'أهداف مشتركة',
         ),
         const SizedBox(height: 16),
         FilledButton.icon(
@@ -498,8 +586,19 @@ class _OnboardingTabState extends State<_OnboardingTab> {
     if (value != null) setState(() => _startDate = value);
   }
 
+  Future<void> _pickOccasionDate() async {
+    final value = await showDatePicker(
+      context: context,
+      initialDate: _occasionDate,
+      firstDate: DateTime(1970),
+      lastDate: DateTime.now().add(const Duration(days: 3650)),
+    );
+    if (value != null) setState(() => _occasionDate = value);
+  }
+
   Future<void> _submit() async {
     setState(() => _busy = true);
+    final occasionTitle = _occasionTitle.text.trim();
     widget.onComplete(
       OnboardingInput(
         partnershipId: widget.partnership.id,
@@ -507,8 +606,54 @@ class _OnboardingTabState extends State<_OnboardingTab> {
         worldName: _worldName.text.trim().isEmpty
             ? 'عالمنا'
             : _worldName.text.trim(),
-        themeColor: '#B96B7F',
+        themeColor: _themeColor,
+        favoriteThings: _listFrom(_favoriteThings),
+        wishes: _listFrom(_wishes),
+        places: _listFrom(_places),
+        watchList: _listFrom(_watchList),
+        favoriteSongs: _listFrom(_favoriteSongs),
+        goals: _listFrom(_goals),
+        occasions: occasionTitle.isEmpty
+            ? const []
+            : [
+                OnboardingOccasionInput(
+                  title: occasionTitle,
+                  date: _occasionDate,
+                  recurrence: 'yearly',
+                ),
+              ],
       ),
+    );
+  }
+
+  List<String> _listFrom(TextEditingController controller) {
+    return controller.text
+        .split(RegExp(r'[\n,،]+'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .take(20)
+        .toList();
+  }
+}
+
+class _OnboardingListField extends StatelessWidget {
+  const _OnboardingListField({
+    required this.controller,
+    required this.icon,
+    required this.label,
+  });
+
+  final TextEditingController controller;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      minLines: 2,
+      maxLines: 4,
+      decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
     );
   }
 }

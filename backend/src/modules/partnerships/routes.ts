@@ -25,12 +25,19 @@ const occasionSchema = z.object({
   recurrence: z.string().trim().max(40).optional()
 });
 
+const onboardingListSchema = z.array(z.string().trim().min(1).max(160)).max(20).optional();
+
 const onboardingSchema = z.object({
   startDate: z.coerce.date(),
   worldName: z.string().trim().min(1).max(80),
   themeColor: z.string().trim().min(4).max(32).optional(),
   answers: z.record(z.string(), z.unknown()).optional(),
-  occasions: z.array(occasionSchema).max(20).optional()
+  occasions: z.array(occasionSchema).max(20).optional(),
+  wishes: onboardingListSchema,
+  places: onboardingListSchema,
+  watchList: onboardingListSchema,
+  favoriteSongs: onboardingListSchema,
+  goals: onboardingListSchema
 });
 
 partnershipsRouter.post('/partnership-requests', requireAuth, async (request, response) => {
@@ -371,6 +378,55 @@ partnershipsRouter.post('/partnerships/:id/onboarding', requireAuth, async (requ
         recurrence: occasion.recurrence
       }))
     });
+
+    await tx.wish.createMany({
+      data: (input.wishes ?? []).map((title) => ({
+        partnershipId,
+        creatorId: userId,
+        title
+      }))
+    });
+
+    await tx.place.createMany({
+      data: (input.places ?? []).map((title) => ({
+        partnershipId,
+        title
+      }))
+    });
+
+    await tx.goal.createMany({
+      data: (input.goals ?? []).map((title) => ({
+        partnershipId,
+        title
+      }))
+    });
+
+    if (input.favoriteSongs?.length) {
+      const musicRoom = await tx.musicRoom.create({
+        data: { partnershipId }
+      });
+      await tx.musicQueueItem.createMany({
+        data: input.favoriteSongs.map((title, index) => ({
+          musicRoomId: musicRoom.id,
+          title,
+          source: 'manual',
+          position: index + 1
+        }))
+      });
+    }
+
+    if (input.watchList?.length) {
+      const watchRoom = await tx.watchRoom.create({
+        data: { partnershipId }
+      });
+      await tx.watchItem.createMany({
+        data: input.watchList.map((title) => ({
+          watchRoomId: watchRoom.id,
+          title,
+          source: 'manual'
+        }))
+      });
+    }
 
     await tx.treeDay.upsert({
       where: {

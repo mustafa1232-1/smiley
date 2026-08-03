@@ -199,20 +199,61 @@ class OnboardingInput {
     required this.startDate,
     required this.worldName,
     this.themeColor,
+    this.favoriteThings = const [],
+    this.wishes = const [],
+    this.places = const [],
+    this.watchList = const [],
+    this.favoriteSongs = const [],
+    this.goals = const [],
+    this.occasions = const [],
   });
 
   final String partnershipId;
   final DateTime startDate;
   final String worldName;
   final String? themeColor;
+  final List<String> favoriteThings;
+  final List<String> wishes;
+  final List<String> places;
+  final List<String> watchList;
+  final List<String> favoriteSongs;
+  final List<String> goals;
+  final List<OnboardingOccasionInput> occasions;
 
   Map<String, dynamic> toJson() {
     return {
       'startDate': startDate.toUtc().toIso8601String(),
       'worldName': worldName,
       if (themeColor != null) 'themeColor': themeColor,
-      'answers': <String, dynamic>{},
-      'occasions': <Map<String, dynamic>>[],
+      'answers': <String, dynamic>{
+        if (favoriteThings.isNotEmpty) 'favoriteThings': favoriteThings,
+      },
+      'occasions': occasions.map((occasion) => occasion.toJson()).toList(),
+      'wishes': wishes,
+      'places': places,
+      'watchList': watchList,
+      'favoriteSongs': favoriteSongs,
+      'goals': goals,
+    };
+  }
+}
+
+class OnboardingOccasionInput {
+  const OnboardingOccasionInput({
+    required this.title,
+    required this.date,
+    this.recurrence,
+  });
+
+  final String title;
+  final DateTime date;
+  final String? recurrence;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'date': date.toUtc().toIso8601String(),
+      if (recurrence != null) 'recurrence': recurrence,
     };
   }
 }

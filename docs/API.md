@@ -130,15 +130,28 @@ Ends the current partnership for the authenticated user without deleting existin
 
 ### `POST /partnerships/:id/onboarding`
 
-Completes the relationship setup and activates the shared world.
+Completes the relationship setup, activates the shared world, and seeds initial occasions, wishes, places, watch items, music items, and goals when provided.
 
 ```json
 {
   "startDate": "2026-08-03T00:00:00.000Z",
   "worldName": "عالمنا",
   "themeColor": "#B96B7F",
-  "answers": {},
-  "occasions": []
+  "answers": {
+    "favoriteThings": ["القهوة", "المشي"]
+  },
+  "occasions": [
+    {
+      "title": "مناسبة خاصة",
+      "date": "2026-09-03T00:00:00.000Z",
+      "recurrence": "yearly"
+    }
+  ],
+  "wishes": ["رحلة قصيرة"],
+  "places": ["مكان نريد زيارته"],
+  "watchList": ["فيلم للمشاهدة"],
+  "favoriteSongs": ["أغنية مفضلة"],
+  "goals": ["هدف مشترك"]
 }
 ```
 
