@@ -101,7 +101,12 @@ abstract interface class SpaceRepository {
   });
   Future<GameSessionModel> skipPromptGame({required String gameId});
   Future<List<PlaceItem>> places();
-  Future<void> createPlace(String title);
+  Future<PlaceItem> createPlace(
+    String title, {
+    double? latitude,
+    double? longitude,
+  });
+  Future<void> recordPlaceVisit(String placeId, {DateTime? visitedAt});
   Future<List<AlbumModel>> albums();
   Future<void> createAlbum(String title);
   Future<RoomModel> musicRoom();
@@ -558,8 +563,23 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<void> createPlace(String title) async {
-    await _api.postJson('/places', {'title': title.trim()});
+  Future<PlaceItem> createPlace(
+    String title, {
+    double? latitude,
+    double? longitude,
+  }) async {
+    final body = <String, dynamic>{'title': title.trim()};
+    if (latitude != null) body['latitude'] = latitude;
+    if (longitude != null) body['longitude'] = longitude;
+    final json = await _api.postJson('/places', body);
+    return PlaceItem.fromJson(json['place'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> recordPlaceVisit(String placeId, {DateTime? visitedAt}) async {
+    await _api.postJson('/places/$placeId/visits', {
+      if (visitedAt != null) 'visitedAt': visitedAt.toUtc().toIso8601String(),
+    });
   }
 
   @override
@@ -1369,13 +1389,31 @@ class GameSessionModel {
 }
 
 class PlaceItem {
-  const PlaceItem({required this.id, required this.title});
+  const PlaceItem({
+    required this.id,
+    required this.title,
+    required this.visitCount,
+    this.latitude,
+    this.longitude,
+    this.lastVisitedAt,
+  });
 
   final String id;
   final String title;
+  final double? latitude;
+  final double? longitude;
+  final int visitCount;
+  final DateTime? lastVisitedAt;
 
   factory PlaceItem.fromJson(Map<String, dynamic> json) {
-    return PlaceItem(id: json['id'] as String, title: json['title'] as String);
+    return PlaceItem(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+      visitCount: int.parse((json['visitCount'] ?? 0).toString()),
+      lastVisitedAt: _optionalDate(json['lastVisitedAt']),
+    );
   }
 }
 

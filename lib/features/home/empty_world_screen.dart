@@ -3763,30 +3763,164 @@ class _PlacesScreen extends StatefulWidget {
 class _PlacesScreenState extends State<_PlacesScreen> {
   late Future<List<PlaceItem>> _future = widget.repository.places();
   final _title = TextEditingController();
+  final _latitude = TextEditingController();
+  final _longitude = TextEditingController();
+  bool _busy = false;
 
   @override
   void dispose() {
     _title.dispose();
+    _latitude.dispose();
+    _longitude.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return _NamedListScreen<PlaceItem>(
-      title: 'خريطة الذكريات',
-      icon: Icons.map_outlined,
-      controller: _title,
-      future: _future,
-      itemTitle: (item) => item.title,
-      onCreate: _create,
+    return Scaffold(
+      appBar: AppBar(title: const Text('خريطة الذكريات')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const _SectionHeader(
+            icon: Icons.map_outlined,
+            title: 'خريطة الذكريات',
+            subtitle: 'احفظوا الأماكن المهمة وسجلوا زياراتكم لها.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(
+              labelText: 'اسم المكان',
+              prefixIcon: Icon(Icons.place_outlined),
+            ),
+            onSubmitted: (_) => _create(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _latitude,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'خط العرض'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _longitude,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'خط الطول'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _busy ? null : _create,
+            icon: const Icon(Icons.add_location_alt_outlined),
+            label: const Text('إضافة مكان'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<List<PlaceItem>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              final items = snapshot.requireData;
+              if (items.isEmpty) {
+                return const _EmptyLine(
+                  text: 'لا توجد أماكن محفوظة بعد.',
+                  color: Colors.grey,
+                );
+              }
+              return Column(
+                children: [
+                  for (final item in items)
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.place_outlined),
+                        title: Text(item.title),
+                        subtitle: Text(_placeSubtitle(item)),
+                        trailing: IconButton(
+                          tooltip: 'تسجيل زيارة',
+                          onPressed: _busy ? null : () => _visit(item.id),
+                          icon: const Icon(Icons.add_task_rounded),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
   Future<void> _create() async {
     if (_title.text.trim().isEmpty) return;
-    await widget.repository.createPlace(_title.text);
-    _title.clear();
-    setState(() => _future = widget.repository.places());
+    final latitude = _parseOptionalDouble(_latitude.text);
+    final longitude = _parseOptionalDouble(_longitude.text);
+    if ((_latitude.text.trim().isNotEmpty && latitude == null) ||
+        (_longitude.text.trim().isNotEmpty && longitude == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('أدخل الإحداثيات كأرقام صحيحة.')),
+      );
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      await widget.repository.createPlace(
+        _title.text,
+        latitude: latitude,
+        longitude: longitude,
+      );
+      _title.clear();
+      _latitude.clear();
+      _longitude.clear();
+      setState(() => _future = widget.repository.places());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _visit(String placeId) async {
+    setState(() => _busy = true);
+    try {
+      await widget.repository.recordPlaceVisit(placeId);
+      setState(() => _future = widget.repository.places());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  double? _parseOptionalDouble(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : double.tryParse(trimmed);
+  }
+
+  String _placeSubtitle(PlaceItem item) {
+    final parts = <String>[];
+    if (item.latitude != null && item.longitude != null) {
+      parts.add('${item.latitude}, ${item.longitude}');
+    }
+    parts.add('${item.visitCount} زيارة');
+    if (item.lastVisitedAt != null) {
+      parts.add('آخر زيارة ${_date(item.lastVisitedAt!)}');
+    }
+    return parts.join(' - ');
   }
 }
 

@@ -141,6 +141,10 @@ const placeSchema = z.object({
   longitude: z.number().min(-180).max(180).optional()
 });
 
+const placeVisitSchema = z.object({
+  visitedAt: z.coerce.date().optional()
+});
+
 const albumSchema = z.object({
   title: z.string().trim().min(1).max(120)
 });
@@ -1522,10 +1526,11 @@ spaceRouter.get('/places', requireAuth, async (request, response) => {
   const partnership = await requireActivePartnership(request.user!.sub);
   const items = await prisma.place.findMany({
     where: { partnershipId: partnership.id },
+    include: placeResponseInclude,
     orderBy: { createdAt: 'desc' },
     take: 100
   });
-  response.json({ items });
+  response.json({ items: items.map(serializePlace) });
 });
 
 spaceRouter.post('/places', requireAuth, async (request, response) => {
@@ -1538,7 +1543,8 @@ spaceRouter.post('/places', requireAuth, async (request, response) => {
       title: input.title,
       latitude: input.latitude,
       longitude: input.longitude
-    }
+    },
+    include: placeResponseInclude
   });
   await notifyPartner(partnership, userId, {
     type: 'place.created',
@@ -1546,7 +1552,31 @@ spaceRouter.post('/places', requireAuth, async (request, response) => {
     body: input.title,
     payload: { placeId: place.id }
   });
-  response.status(201).json({ place });
+  response.status(201).json({ place: serializePlace(place) });
+});
+
+spaceRouter.post('/places/:id/visits', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = placeVisitSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const place = await prisma.place.findFirst({
+    where: { id: routeParam(request.params.id), partnershipId: partnership.id }
+  });
+  if (!place) {
+    throw new AppError(404, 'place_not_found', 'المكان غير موجود');
+  }
+
+  const visit = await prisma.placeVisit.create({
+    data: {
+      placeId: place.id,
+      visitedAt: input.visitedAt ?? new Date()
+    }
+  });
+  emitToPartnership('place.created', userId, partnership.id, {
+    placeId: place.id,
+    visitId: visit.id
+  });
+  response.status(201).json({ visit });
 });
 
 spaceRouter.get('/albums', requireAuth, async (request, response) => {
@@ -2235,6 +2265,29 @@ function serializeGameSession(game: {
     createdById: game.createdById,
     createdAt: game.createdAt,
     updatedAt: game.updatedAt
+  };
+}
+
+const placeResponseInclude = {
+  visits: { orderBy: { visitedAt: 'desc' as const } }
+};
+
+function serializePlace(place: {
+  id: string;
+  title: string;
+  latitude: Prisma.Decimal | null;
+  longitude: Prisma.Decimal | null;
+  createdAt: Date;
+  visits?: Array<{ visitedAt: Date }>;
+}) {
+  return {
+    id: place.id,
+    title: place.title,
+    latitude: place.latitude?.toNumber() ?? null,
+    longitude: place.longitude?.toNumber() ?? null,
+    createdAt: place.createdAt,
+    visitCount: place.visits?.length ?? 0,
+    lastVisitedAt: place.visits?.[0]?.visitedAt ?? null
   };
 }
 

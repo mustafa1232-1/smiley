@@ -556,6 +556,14 @@ paths:
       responses:
         "201":
           description: Created
+  /places/{id}/visits:
+    post:
+      summary: Record place visit
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
   /albums:
     get:
       summary: List albums

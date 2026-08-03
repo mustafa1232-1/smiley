@@ -437,7 +437,22 @@ class FakeSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<void> createPlace(String title) async {}
+  Future<PlaceItem> createPlace(
+    String title, {
+    double? latitude,
+    double? longitude,
+  }) async {
+    return PlaceItem(
+      id: 'place',
+      title: title,
+      latitude: latitude,
+      longitude: longitude,
+      visitCount: 0,
+    );
+  }
+
+  @override
+  Future<void> recordPlaceVisit(String placeId, {DateTime? visitedAt}) async {}
 
   @override
   Future<void> createSharedList({

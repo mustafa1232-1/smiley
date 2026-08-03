@@ -469,11 +469,29 @@ Skips the current user's answer for a `daily_prompt` game.
 
 ### `GET /places`
 
-Lists saved places for the memory map.
+Lists saved places for the memory map, including optional coordinates, visit count, and last visit date.
 
 ### `POST /places`
 
-Creates a saved place.
+Creates a saved place. Coordinates are optional.
+
+```json
+{
+  "title": "مكان هادئ",
+  "latitude": 33.3152,
+  "longitude": 44.3661
+}
+```
+
+### `POST /places/:id/visits`
+
+Records a visit for a saved place. `visitedAt` is optional and defaults to the current time.
+
+```json
+{
+  "visitedAt": "2026-08-03T12:00:00.000Z"
+}
+```
 
 ### `POST /uploads/presign`
 
