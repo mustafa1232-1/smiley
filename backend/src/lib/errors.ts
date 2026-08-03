@@ -45,7 +45,7 @@ export function errorHandler(
   response.status(appError.status).json({
     code: appError.code,
     message: appError.message,
-    details: appError.details,
+    details: appError.details ?? null,
     requestId: request.id
   });
 }
