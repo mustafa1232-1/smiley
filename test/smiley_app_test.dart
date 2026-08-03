@@ -102,6 +102,24 @@ void main() {
 
     expect(find.text('المحادثة'), findsWidgets);
     expect(find.byIcon(Icons.chat_bubble_outline_rounded), findsOneWidget);
+    expect(find.text('إضافة شريك للمحادثة'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.favorite_border_rounded).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('عالم Smiley'), findsWidgets);
+    expect(find.text('بدء العالم'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.calendar_today_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.text('التقويم'), findsWidgets);
+    expect(find.text('إضافة شريك للتقويم'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pumpAndSettle();
+
+    expect(find.text('المزيد'), findsWidgets);
   });
 }
 
@@ -621,6 +639,20 @@ class FakeSpaceRepository implements SpaceRepository {
       body: body,
       assetIds: assetIds,
       serverTimestamp: DateTime(2026, 8, 3),
+    );
+  }
+
+  @override
+  Future<ChatMessage> reactToMessage({
+    required String messageId,
+    String value = 'heart',
+  }) async {
+    return ChatMessage(
+      id: messageId,
+      body: 'message',
+      serverTimestamp: DateTime(2026, 8, 3),
+      reactionCount: 1,
+      myReaction: value,
     );
   }
 

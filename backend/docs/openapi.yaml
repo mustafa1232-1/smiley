@@ -271,6 +271,14 @@ paths:
       responses:
         "201":
           description: Created
+  /messages/{id}/reactions:
+    post:
+      summary: React to message
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated message
   /messages/scheduled:
     get:
       summary: List scheduled conversation messages

@@ -43,6 +43,7 @@ abstract interface class SpaceRepository {
   });
   Future<List<ChatMessage>> messages();
   Future<ChatMessage> sendMessage(String body, {List<String> assetIds});
+  Future<ChatMessage> reactToMessage({required String messageId, String value});
   Future<List<ScheduledMessageModel>> scheduledMessages();
   Future<void> scheduleMessage({
     required String body,
@@ -291,6 +292,17 @@ class HttpSpaceRepository implements SpaceRepository {
       'clientMessageId': 'm-${DateTime.now().microsecondsSinceEpoch}',
       if (trimmed.isNotEmpty) 'body': trimmed,
       if (assetIds.isNotEmpty) 'assetIds': assetIds,
+    });
+    return ChatMessage.fromJson(json['message'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<ChatMessage> reactToMessage({
+    required String messageId,
+    String value = 'heart',
+  }) async {
+    final json = await _api.postJson('/messages/$messageId/reactions', {
+      'value': value,
     });
     return ChatMessage.fromJson(json['message'] as Map<String, dynamic>);
   }
@@ -981,6 +993,8 @@ class ChatMessage {
     this.senderUsername,
     this.deliveredAt,
     this.readAt,
+    this.reactionCount = 0,
+    this.myReaction,
     this.pending = false,
   });
 
@@ -991,6 +1005,8 @@ class ChatMessage {
   final String? senderUsername;
   final DateTime? deliveredAt;
   final DateTime? readAt;
+  final int reactionCount;
+  final String? myReaction;
   final bool pending;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -1006,6 +1022,8 @@ class ChatMessage {
       senderUsername: sender?['username'] as String?,
       deliveredAt: _optionalDate(json['deliveredAt']),
       readAt: _optionalDate(json['readAt']),
+      reactionCount: int.parse((json['reactionCount'] ?? 0).toString()),
+      myReaction: json['myReaction'] as String?,
     );
   }
 }

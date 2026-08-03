@@ -247,6 +247,16 @@ Creates an idempotent text or media message using `clientMessageId`. The request
 }
 ```
 
+### `POST /messages/:id/reactions`
+
+Sets the current user's reaction on a message and returns the updated message counters.
+
+```json
+{
+  "value": "heart"
+}
+```
+
 ### `GET /messages/scheduled`
 
 Lists unsent scheduled messages for the active conversation. Due messages are published before the response is returned.

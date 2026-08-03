@@ -142,6 +142,7 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
       return switch (_index) {
         0 => _NoPartnerTab(
           requests: state.requests,
+          onRefresh: _reload,
           onAddPartner: _openPartnerSearch,
           onAccept: _acceptRequest,
           onReject: _rejectRequest,
@@ -150,16 +151,25 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
         1 => _PartnerRequiredTab(
           icon: Icons.chat_bubble_outline_rounded,
           title: 'المحادثة',
+          message:
+              'المحادثة الخاصة والرسائل والوسائط تبدأ بعد قبول الشريك وإكمال إعداد العلاقة.',
+          buttonLabel: 'إضافة شريك للمحادثة',
           onAddPartner: _openPartnerSearch,
         ),
         2 => _PartnerRequiredTab(
           icon: Icons.favorite_border_rounded,
           title: 'عالم Smiley',
+          message:
+              'الذكريات، المزاج، الشجرة، الألعاب، والغرف المشتركة تظهر هنا بعد إنشاء العالم مع الشريك.',
+          buttonLabel: 'بدء العالم',
           onAddPartner: _openPartnerSearch,
         ),
         3 => _PartnerRequiredTab(
           icon: Icons.calendar_month_rounded,
           title: 'التقويم',
+          message:
+              'المواعيد والمناسبات والعدّادات لا تبدأ قبل وجود شراكة نشطة حتى لا تُنشأ بيانات وهمية.',
+          buttonLabel: 'إضافة شريك للتقويم',
           onAddPartner: _openPartnerSearch,
         ),
         _ => _MoreHubTabV2(
@@ -187,6 +197,7 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
           icon: Icons.auto_awesome_rounded,
           title: 'إعداد العلاقة',
           message: 'أكمل إعداد البداية أولاً لتفعيل هذا التبويب.',
+          buttonLabel: 'تحديث الحالة',
           onAddPartner: _reload,
         ),
       };
@@ -268,6 +279,7 @@ class _WorldState {
 class _NoPartnerTab extends StatelessWidget {
   const _NoPartnerTab({
     required this.requests,
+    required this.onRefresh,
     required this.onAddPartner,
     required this.onAccept,
     required this.onReject,
@@ -275,6 +287,7 @@ class _NoPartnerTab extends StatelessWidget {
   });
 
   final List<PartnershipRequest> requests;
+  final VoidCallback onRefresh;
   final VoidCallback onAddPartner;
   final ValueChanged<String> onAccept;
   final ValueChanged<String> onReject;
@@ -286,7 +299,7 @@ class _NoPartnerTab extends StatelessWidget {
     final scheme = theme.colorScheme;
 
     return RefreshIndicator(
-      onRefresh: () async => onAddPartner,
+      onRefresh: () async => onRefresh(),
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -355,11 +368,13 @@ class _PartnerRequiredTab extends StatelessWidget {
     required this.title,
     required this.onAddPartner,
     this.message = 'هذا التبويب يبدأ بعد إضافة الشريك وقبول الطلب.',
+    this.buttonLabel = 'إضافة شريك',
   });
 
   final IconData icon;
   final String title;
   final String message;
+  final String buttonLabel;
   final VoidCallback onAddPartner;
 
   @override
@@ -395,7 +410,7 @@ class _PartnerRequiredTab extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onAddPartner,
                 icon: const Icon(Icons.person_add_alt_1_rounded),
-                label: const Text('إضافة شريك'),
+                label: Text(buttonLabel),
               ),
             ],
           ),
@@ -871,6 +886,19 @@ class _ChatTabState extends State<_ChatTab> {
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
+                            if (!item.pending) ...[
+                              const SizedBox(height: 6),
+                              TextButton.icon(
+                                onPressed: () => _reactToMessage(item.id),
+                                icon: Icon(
+                                  item.myReaction == null
+                                      ? Icons.favorite_border_rounded
+                                      : Icons.favorite_rounded,
+                                  size: 18,
+                                ),
+                                label: Text('${item.reactionCount}'),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -1081,6 +1109,11 @@ class _ChatTabState extends State<_ChatTab> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<void> _reactToMessage(String messageId) async {
+    await widget.repository.reactToMessage(messageId: messageId);
+    setState(() => _messages = _loadMessages());
   }
 
   Future<void> _attachMedia() async {
