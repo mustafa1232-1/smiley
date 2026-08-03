@@ -796,20 +796,37 @@ spaceRouter.patch('/posts/:id', requireAuth, async (request, response) => {
     throw new AppError(422, 'empty_post_update', 'لا توجد بيانات لتعديل المنشور');
   }
 
-  const post = await prisma.post.update({
-    where: {
-      id: postId,
-      partnershipId: partnership.id,
-      authorId: userId,
-      deletedAt: null
-    },
-    data: {
-      title: input.title,
-      body: input.body,
-      memoryDate: input.memoryDate,
-      category: input.category
-    },
-    include: postResponseInclude(userId)
+  const post = await prisma.$transaction(async (tx) => {
+    const updated = await tx.post.update({
+      where: {
+        id: postId,
+        partnershipId: partnership.id,
+        authorId: userId,
+        deletedAt: null
+      },
+      data: {
+        title: input.title,
+        body: input.body,
+        memoryDate: input.memoryDate,
+        category: input.category
+      },
+      include: postResponseInclude(userId)
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: userId,
+        partnershipId: partnership.id,
+        action: 'post.updated',
+        targetType: 'post',
+        targetId: postId,
+        metadata: {
+          fields: Object.entries(input)
+            .filter(([, value]) => value !== undefined)
+            .map(([key]) => key)
+        }
+      }
+    });
+    return updated;
   });
 
   emitToPartnership('post.updated', userId, partnership.id, { postId });
@@ -821,14 +838,25 @@ spaceRouter.delete('/posts/:id', requireAuth, async (request, response) => {
   const partnership = await requireActivePartnership(userId);
   const postId = routeParam(request.params.id);
 
-  await prisma.post.update({
-    where: {
-      id: postId,
-      partnershipId: partnership.id,
-      authorId: userId,
-      deletedAt: null
-    },
-    data: { deletedAt: new Date() }
+  await prisma.$transaction(async (tx) => {
+    await tx.post.update({
+      where: {
+        id: postId,
+        partnershipId: partnership.id,
+        authorId: userId,
+        deletedAt: null
+      },
+      data: { deletedAt: new Date() }
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: userId,
+        partnershipId: partnership.id,
+        action: 'post.deleted',
+        targetType: 'post',
+        targetId: postId
+      }
+    });
   });
 
   emitToPartnership('post.updated', userId, partnership.id, { postId });
