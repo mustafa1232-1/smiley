@@ -224,7 +224,7 @@ paths:
           description: Settings
   /posts:
     get:
-      summary: List shared posts
+      summary: List shared posts with cursor pagination
       security:
         - bearerAuth: []
       responses:
@@ -305,7 +305,7 @@ paths:
           description: Created
   /messages:
     get:
-      summary: List conversation messages
+      summary: List conversation messages with cursor pagination
       security:
         - bearerAuth: []
       responses:

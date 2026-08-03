@@ -213,9 +213,9 @@ Returns the active world summary: members, world name, days together, latest moo
 
 Returns a neutral relationship summary for `week`, `month`, `year`, or `anniversary`, computed from real relationship data. The response includes counts for messages, media, tree leaves, music/watch items, places, completed goals, frequent moods, highlights, important occasion, and a timeline.
 
-### `GET /posts`
+### `GET /posts?limit=50&cursor=<postId>`
 
-Lists recent shared posts. Each post response includes `assetIds` for attached media.
+Lists recent shared posts using cursor pagination. Each post response includes `assetIds` for attached media. Responses include `nextCursor` when more posts are available.
 
 ### `POST /posts`
 
@@ -277,9 +277,9 @@ Creates a mood update.
 }
 ```
 
-### `GET /messages`
+### `GET /messages?limit=100&cursor=<messageId>`
 
-Lists the shared conversation messages, including `assetIds` for message attachments and the current user's `deliveredAt` and `readAt` receipt timestamps when present.
+Lists the shared conversation messages using cursor pagination, including `assetIds` for message attachments and the current user's `deliveredAt` and `readAt` receipt timestamps when present. Responses include `nextCursor` when older messages are available.
 
 ### `POST /messages`
 

@@ -51,6 +51,11 @@ const postCommentSchema = z.object({
   body: z.string().trim().min(1).max(1000)
 });
 
+const listQuerySchema = z.object({
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional()
+});
+
 const eventSchema = z.object({
   title: z.string().trim().min(1).max(120),
   startsAt: z.coerce.date(),
@@ -747,14 +752,21 @@ spaceRouter.post('/moods', requireAuth, async (request, response) => {
 
 spaceRouter.get('/posts', requireAuth, async (request, response) => {
   const userId = request.user!.sub;
+  const query = listQuerySchema.parse(request.query);
+  const limit = query.limit ?? 50;
   const partnership = await requireActivePartnership(userId);
   const posts = await prisma.post.findMany({
     where: { partnershipId: partnership.id, deletedAt: null },
     include: postResponseInclude(userId),
     orderBy: { createdAt: 'desc' },
-    take: 50
+    take: limit + 1,
+    ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
   });
-  response.json({ items: posts.map(serializePost) });
+  const page = posts.slice(0, limit);
+  response.json({
+    items: page.map(serializePost),
+    nextCursor: posts.length > limit ? page.at(-1)?.id : null
+  });
 });
 
 spaceRouter.post('/posts', requireAuth, async (request, response) => {
@@ -1004,13 +1016,15 @@ spaceRouter.post('/occasions', requireAuth, async (request, response) => {
 
 spaceRouter.get('/messages', requireAuth, async (request, response) => {
   const userId = request.user!.sub;
+  const query = listQuerySchema.parse(request.query);
+  const limit = query.limit ?? 100;
   const partnership = await requireActivePartnership(userId);
   const conversation = await prisma.conversation.findFirst({
     where: { partnershipId: partnership.id }
   });
 
   if (!conversation) {
-    response.json({ items: [] });
+    response.json({ items: [], nextCursor: null });
     return;
   }
 
@@ -1020,10 +1034,15 @@ spaceRouter.get('/messages', requireAuth, async (request, response) => {
     where: { conversationId: conversation.id, deletedAt: null },
     include: messageResponseInclude(userId),
     orderBy: { serverTimestamp: 'desc' },
-    take: 100
+    take: limit + 1,
+    ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
   });
+  const page = messages.slice(0, limit);
 
-  response.json({ items: messages.reverse().map(serializeMessage) });
+  response.json({
+    items: page.reverse().map(serializeMessage),
+    nextCursor: messages.length > limit ? page.at(-1)?.id : null
+  });
 });
 
 spaceRouter.get('/messages/scheduled', requireAuth, async (request, response) => {

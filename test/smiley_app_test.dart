@@ -600,6 +600,14 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<List<ChatMessage>> messages() async => [];
 
   @override
+  Future<PagedResult<ChatMessage>> messagesPage({
+    String? cursor,
+    int limit = 100,
+  }) async {
+    return const PagedResult(items: []);
+  }
+
+  @override
   Future<RoomModel> musicRoom() async {
     return const RoomModel(id: 'music', status: 'idle', items: []);
   }
@@ -648,6 +656,14 @@ class FakeSpaceRepository implements SpaceRepository {
 
   @override
   Future<List<SpacePost>> posts() async => [];
+
+  @override
+  Future<PagedResult<SpacePost>> postsPage({
+    String? cursor,
+    int limit = 50,
+  }) async {
+    return const PagedResult(items: []);
+  }
 
   @override
   Future<void> readAllNotifications() async {}

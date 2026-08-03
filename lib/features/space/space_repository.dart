@@ -30,6 +30,7 @@ abstract interface class SpaceRepository {
     DateTime? referenceDate,
   });
   Future<List<SpacePost>> posts();
+  Future<PagedResult<SpacePost>> postsPage({String? cursor, int limit});
   Future<SpacePost> createPost({
     String? title,
     required String body,
@@ -53,6 +54,7 @@ abstract interface class SpaceRepository {
     String? note,
   });
   Future<List<ChatMessage>> messages();
+  Future<PagedResult<ChatMessage>> messagesPage({String? cursor, int limit});
   Future<ChatMessage> sendMessage(String body, {List<String> assetIds});
   Future<ChatMessage> editMessage({
     required String messageId,
@@ -260,8 +262,16 @@ class HttpSpaceRepository implements SpaceRepository {
 
   @override
   Future<List<SpacePost>> posts() async {
-    final json = await _api.getJson('/posts');
-    return _items(json).map(SpacePost.fromJson).toList();
+    return (await postsPage()).items;
+  }
+
+  @override
+  Future<PagedResult<SpacePost>> postsPage({
+    String? cursor,
+    int limit = 50,
+  }) async {
+    final json = await _api.getJson(_pagedPath('/posts', cursor, limit));
+    return PagedResult.fromJson(json, SpacePost.fromJson);
   }
 
   @override
@@ -362,8 +372,16 @@ class HttpSpaceRepository implements SpaceRepository {
 
   @override
   Future<List<ChatMessage>> messages() async {
-    final json = await _api.getJson('/messages');
-    return _items(json).map(ChatMessage.fromJson).toList();
+    return (await messagesPage()).items;
+  }
+
+  @override
+  Future<PagedResult<ChatMessage>> messagesPage({
+    String? cursor,
+    int limit = 100,
+  }) async {
+    final json = await _api.getJson(_pagedPath('/messages', cursor, limit));
+    return PagedResult.fromJson(json, ChatMessage.fromJson);
   }
 
   @override
@@ -816,6 +834,33 @@ class HttpSpaceRepository implements SpaceRepository {
 
   List<Map<String, dynamic>> _items(Map<String, dynamic> json) {
     return (json['items'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+  }
+
+  String _pagedPath(String path, String? cursor, int limit) {
+    final params = <String, String>{
+      'limit': limit.clamp(1, 100).toString(),
+      if (cursor != null && cursor.trim().isNotEmpty) 'cursor': cursor.trim(),
+    };
+    return Uri(path: path, queryParameters: params).toString();
+  }
+}
+
+class PagedResult<T> {
+  const PagedResult({required this.items, this.nextCursor});
+
+  final List<T> items;
+  final String? nextCursor;
+  bool get hasMore => nextCursor != null;
+
+  factory PagedResult.fromJson(
+    Map<String, dynamic> json,
+    T Function(Map<String, dynamic>) fromJson,
+  ) {
+    final items = (json['items'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(fromJson)
+        .toList();
+    return PagedResult(items: items, nextCursor: json['nextCursor'] as String?);
   }
 }
 
