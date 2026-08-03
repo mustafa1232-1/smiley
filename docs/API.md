@@ -603,6 +603,16 @@ Returns or creates today's memory tree day.
 
 Creates a daily tree leaf.
 
+### `POST /tree/leaves/:id/contributions`
+
+Adds a contribution to an existing tree leaf.
+
+```json
+{
+  "body": "مساهمة اليوم"
+}
+```
+
 ### `GET /time-capsules`
 
 Lists time capsules for the active partnership.

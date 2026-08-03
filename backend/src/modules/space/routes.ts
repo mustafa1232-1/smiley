@@ -210,6 +210,10 @@ const treeLeafSchema = z.object({
   body: z.string().trim().min(1).max(2000)
 });
 
+const treeLeafContributionSchema = z.object({
+  body: z.string().trim().min(1).max(2000)
+});
+
 const timeCapsuleSchema = z.object({
   title: z.string().trim().min(1).max(160),
   body: z.string().trim().max(4000).optional(),
@@ -1805,6 +1809,34 @@ spaceRouter.post('/tree/leaves', requireAuth, async (request, response) => {
     payload: { leafId: leaf.id }
   });
   response.status(201).json({ leaf });
+});
+
+spaceRouter.post('/tree/leaves/:id/contributions', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = treeLeafContributionSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const leaf = await prisma.treeLeaf.findFirst({
+    where: {
+      id: routeParam(request.params.id),
+      treeDay: { partnershipId: partnership.id }
+    }
+  });
+  if (!leaf) {
+    throw new AppError(404, 'tree_leaf_not_found', 'الورقة غير موجودة');
+  }
+
+  const contribution = await prisma.treeLeafContribution.create({
+    data: {
+      treeLeafId: leaf.id,
+      userId,
+      body: input.body
+    }
+  });
+  emitToPartnership('tree.leaf.created', userId, partnership.id, {
+    leafId: leaf.id,
+    contributionId: contribution.id
+  });
+  response.status(201).json({ contribution });
 });
 
 spaceRouter.get('/time-capsules', requireAuth, async (request, response) => {

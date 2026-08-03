@@ -651,6 +651,14 @@ paths:
       responses:
         "201":
           description: Created
+  /tree/leaves/{id}/contributions:
+    post:
+      summary: Add tree leaf contribution
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
   /time-capsules:
     get:
       summary: List time capsules

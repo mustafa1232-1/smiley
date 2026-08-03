@@ -128,6 +128,10 @@ abstract interface class SpaceRepository {
   });
   Future<TreeDayModel> todayTree();
   Future<void> createTreeLeaf({String? title, required String body});
+  Future<void> addTreeLeafContribution({
+    required String leafId,
+    required String body,
+  });
   Future<List<TimeCapsuleItem>> timeCapsules();
   Future<void> createTimeCapsule({
     required String title,
@@ -673,6 +677,16 @@ class HttpSpaceRepository implements SpaceRepository {
   Future<void> createTreeLeaf({String? title, required String body}) async {
     await _api.postJson('/tree/leaves', {
       if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+      'body': body.trim(),
+    });
+  }
+
+  @override
+  Future<void> addTreeLeafContribution({
+    required String leafId,
+    required String body,
+  }) async {
+    await _api.postJson('/tree/leaves/$leafId/contributions', {
       'body': body.trim(),
     });
   }
@@ -1593,17 +1607,51 @@ class TreeDayModel {
 }
 
 class TreeLeafItem {
-  const TreeLeafItem({required this.id, required this.body, this.title});
+  const TreeLeafItem({
+    required this.id,
+    required this.body,
+    required this.contributions,
+    this.title,
+  });
 
   final String id;
   final String? title;
   final String body;
+  final List<TreeLeafContributionItem> contributions;
 
   factory TreeLeafItem.fromJson(Map<String, dynamic> json) {
+    final contributions = (json['contributions'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(TreeLeafContributionItem.fromJson)
+        .toList();
     return TreeLeafItem(
       id: json['id'] as String,
       title: json['title'] as String?,
       body: json['body'] as String? ?? '',
+      contributions: contributions,
+    );
+  }
+}
+
+class TreeLeafContributionItem {
+  const TreeLeafContributionItem({
+    required this.id,
+    required this.userId,
+    required this.body,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String userId;
+  final String body;
+  final DateTime createdAt;
+
+  factory TreeLeafContributionItem.fromJson(Map<String, dynamic> json) {
+    return TreeLeafContributionItem(
+      id: json['id'] as String,
+      userId: json['userId'] as String,
+      body: json['body'] as String? ?? '',
+      createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }
 }

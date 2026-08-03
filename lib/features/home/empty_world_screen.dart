@@ -2373,6 +2373,7 @@ class _TreeScreenState extends State<_TreeScreen> {
   late Future<TreeDayModel> _future = widget.repository.todayTree();
   final _title = TextEditingController();
   final _body = TextEditingController();
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -2407,7 +2408,7 @@ class _TreeScreenState extends State<_TreeScreen> {
           ),
           const SizedBox(height: 8),
           FilledButton.icon(
-            onPressed: _create,
+            onPressed: _busy ? null : _create,
             icon: const Icon(Icons.add_rounded),
             label: const Text('إضافة ورقة'),
           ),
@@ -2422,10 +2423,38 @@ class _TreeScreenState extends State<_TreeScreen> {
                 children: [
                   for (final leaf in leaves)
                     Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.eco_outlined),
-                        title: Text(leaf.title ?? 'ورقة'),
-                        subtitle: Text(leaf.body),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.eco_outlined),
+                              title: Text(leaf.title ?? 'ورقة'),
+                              subtitle: Text(
+                                '${leaf.contributions.length} مساهمة',
+                              ),
+                              trailing: IconButton(
+                                tooltip: 'إضافة مساهمة',
+                                onPressed: _busy
+                                    ? null
+                                    : () => _addContribution(leaf.id),
+                                icon: const Icon(Icons.add_comment_outlined),
+                              ),
+                            ),
+                            Text(leaf.body),
+                            if (leaf.contributions.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              for (final contribution
+                                  in leaf.contributions.take(3))
+                                _EmptyLine(
+                                  text: contribution.body,
+                                  color: Colors.grey,
+                                ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                 ],
@@ -2439,13 +2468,43 @@ class _TreeScreenState extends State<_TreeScreen> {
 
   Future<void> _create() async {
     if (_body.text.trim().isEmpty) return;
-    await widget.repository.createTreeLeaf(
-      title: _title.text,
-      body: _body.text,
-    );
-    _title.clear();
-    _body.clear();
-    setState(() => _future = widget.repository.todayTree());
+    setState(() => _busy = true);
+    try {
+      await widget.repository.createTreeLeaf(
+        title: _title.text,
+        body: _body.text,
+      );
+      _title.clear();
+      _body.clear();
+      setState(() => _future = widget.repository.todayTree());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _addContribution(String leafId) async {
+    final body = await _promptText(context, 'مساهمة جديدة');
+    if (body == null || body.trim().isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      await widget.repository.addTreeLeafContribution(
+        leafId: leafId,
+        body: body,
+      );
+      setState(() => _future = widget.repository.todayTree());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 

@@ -487,6 +487,12 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<void> createTreeLeaf({String? title, required String body}) async {}
 
   @override
+  Future<void> addTreeLeafContribution({
+    required String leafId,
+    required String body,
+  }) async {}
+
+  @override
   Future<void> deleteAccount() async {}
 
   @override
