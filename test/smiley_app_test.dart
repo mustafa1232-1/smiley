@@ -643,6 +643,22 @@ class FakeSpaceRepository implements SpaceRepository {
   }
 
   @override
+  Future<ChatMessage> editMessage({
+    required String messageId,
+    required String body,
+  }) async {
+    return ChatMessage(
+      id: messageId,
+      body: body,
+      serverTimestamp: DateTime(2026, 8, 3),
+      editedAt: DateTime(2026, 8, 3, 1),
+    );
+  }
+
+  @override
+  Future<void> deleteMessage(String messageId) async {}
+
+  @override
   Future<ChatMessage> reactToMessage({
     required String messageId,
     String value = 'heart',

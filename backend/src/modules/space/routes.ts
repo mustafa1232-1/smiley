@@ -66,6 +66,10 @@ const messageReactionSchema = z.object({
   value: z.string().trim().min(1).max(24).default('heart')
 });
 
+const messageUpdateSchema = z.object({
+  body: z.string().trim().min(1).max(4000)
+});
+
 const messagePinSchema = z.object({
   pinned: z.boolean().default(true)
 });
@@ -869,6 +873,68 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
   });
 
   response.status(201).json({ message: serializeMessage(message) });
+});
+
+spaceRouter.patch('/messages/:id', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = messageUpdateSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const messageId = routeParam(request.params.id);
+
+  const message = await prisma.$transaction(async (tx) => {
+    const existing = await tx.message.findFirst({
+      where: {
+        id: messageId,
+        deletedAt: null,
+        conversation: { partnershipId: partnership.id }
+      }
+    });
+    if (!existing) {
+      throw new AppError(404, 'message_not_found', 'الرسالة غير موجودة');
+    }
+    if (existing.senderId !== userId) {
+      throw new AppError(403, 'message_not_owned', 'يمكن تعديل رسائلك فقط');
+    }
+
+    return tx.message.update({
+      where: { id: messageId },
+      data: { body: input.body, editedAt: new Date() },
+      include: messageResponseInclude(userId)
+    });
+  });
+
+  emitToPartnership('message.updated', userId, partnership.id, { messageId });
+  response.json({ message: serializeMessage(message) });
+});
+
+spaceRouter.delete('/messages/:id', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const partnership = await requireActivePartnership(userId);
+  const messageId = routeParam(request.params.id);
+
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.message.findFirst({
+      where: {
+        id: messageId,
+        deletedAt: null,
+        conversation: { partnershipId: partnership.id }
+      }
+    });
+    if (!existing) {
+      throw new AppError(404, 'message_not_found', 'الرسالة غير موجودة');
+    }
+    if (existing.senderId !== userId) {
+      throw new AppError(403, 'message_not_owned', 'يمكن حذف رسائلك فقط');
+    }
+
+    await tx.message.update({
+      where: { id: messageId },
+      data: { deletedAt: new Date() }
+    });
+  });
+
+  emitToPartnership('message.deleted', userId, partnership.id, { messageId });
+  response.status(204).send();
 });
 
 spaceRouter.post('/messages/:id/reactions', requireAuth, async (request, response) => {
@@ -2248,6 +2314,7 @@ function serializeMessage(message: {
   clientMessageId: string;
   body: string | null;
   serverTimestamp: Date;
+  editedAt: Date | null;
   attachments?: Array<{ assetId: string | null }>;
   receipts?: Array<{
     deliveredAt: Date | null;
@@ -2266,6 +2333,7 @@ function serializeMessage(message: {
     clientMessageId: message.clientMessageId,
     body: message.body,
     serverTimestamp: message.serverTimestamp,
+    editedAt: message.editedAt,
     assetIds: (message.attachments ?? [])
       .map((item) => item.assetId)
       .filter((assetId): assetId is string => Boolean(assetId)),

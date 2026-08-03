@@ -43,6 +43,11 @@ abstract interface class SpaceRepository {
   });
   Future<List<ChatMessage>> messages();
   Future<ChatMessage> sendMessage(String body, {List<String> assetIds});
+  Future<ChatMessage> editMessage({
+    required String messageId,
+    required String body,
+  });
+  Future<void> deleteMessage(String messageId);
   Future<ChatMessage> reactToMessage({required String messageId, String value});
   Future<ChatMessage> pinMessage({
     required String messageId,
@@ -298,6 +303,22 @@ class HttpSpaceRepository implements SpaceRepository {
       if (assetIds.isNotEmpty) 'assetIds': assetIds,
     });
     return ChatMessage.fromJson(json['message'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<ChatMessage> editMessage({
+    required String messageId,
+    required String body,
+  }) async {
+    final json = await _api.patchJson('/messages/$messageId', {
+      'body': body.trim(),
+    });
+    return ChatMessage.fromJson(json['message'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> deleteMessage(String messageId) async {
+    await _api.deleteJson('/messages/$messageId');
   }
 
   @override
@@ -1005,6 +1026,7 @@ class ChatMessage {
     required this.body,
     required this.serverTimestamp,
     this.assetIds = const [],
+    this.editedAt,
     this.senderUsername,
     this.deliveredAt,
     this.readAt,
@@ -1019,6 +1041,7 @@ class ChatMessage {
   final String body;
   final DateTime serverTimestamp;
   final List<String> assetIds;
+  final DateTime? editedAt;
   final String? senderUsername;
   final DateTime? deliveredAt;
   final DateTime? readAt;
@@ -1038,6 +1061,7 @@ class ChatMessage {
       body: json['body'] as String? ?? '',
       serverTimestamp: DateTime.parse(json['serverTimestamp'] as String),
       assetIds: assetIds,
+      editedAt: _optionalDate(json['editedAt']),
       senderUsername: sender?['username'] as String?,
       deliveredAt: _optionalDate(json['deliveredAt']),
       readAt: _optionalDate(json['readAt']),

@@ -257,6 +257,20 @@ Sets the current user's reaction on a message and returns the updated message co
 }
 ```
 
+### `PATCH /messages/:id`
+
+Updates the body of a message sent by the current user and marks it as edited.
+
+```json
+{
+  "body": "النص بعد التعديل"
+}
+```
+
+### `DELETE /messages/:id`
+
+Soft-deletes a message sent by the current user.
+
 ### `POST /messages/:id/pin`
 
 Pins or unpins a message for the current user and returns the updated message counters.

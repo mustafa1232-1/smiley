@@ -911,7 +911,30 @@ class _ChatTabState extends State<_ChatTab> {
                                     ),
                                     label: Text('${item.pinCount}'),
                                   ),
+                                  IconButton(
+                                    tooltip: 'تعديل',
+                                    onPressed: () => _editMessage(item),
+                                    icon: const Icon(
+                                      Icons.edit_outlined,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'حذف',
+                                    onPressed: () => _deleteMessage(item.id),
+                                    icon: const Icon(
+                                      Icons.delete_outline_rounded,
+                                      size: 18,
+                                    ),
+                                  ),
                                 ],
+                              ),
+                            ],
+                            if (item.editedAt != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                'تم التعديل',
+                                style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
                           ],
@@ -1137,6 +1160,56 @@ class _ChatTabState extends State<_ChatTab> {
       pinned: !message.pinnedByMe,
     );
     setState(() => _messages = _loadMessages());
+  }
+
+  Future<void> _editMessage(ChatMessage message) async {
+    final body = await _promptText(
+      context,
+      'تعديل الرسالة',
+      initial: message.body,
+    );
+    if (body == null || body.trim().isEmpty || body.trim() == message.body) {
+      return;
+    }
+    try {
+      await widget.repository.editMessage(messageId: message.id, body: body);
+      setState(() => _messages = _loadMessages());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
+  Future<void> _deleteMessage(String messageId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف الرسالة'),
+        content: const Text('سيتم حذف الرسالة من المحادثة.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.repository.deleteMessage(messageId);
+      setState(() => _messages = _loadMessages());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
   }
 
   Future<void> _attachMedia() async {
@@ -4105,8 +4178,12 @@ class _NamedListScreen<T> extends StatelessWidget {
   }
 }
 
-Future<String?> _promptText(BuildContext context, String title) {
-  final controller = TextEditingController();
+Future<String?> _promptText(
+  BuildContext context,
+  String title, {
+  String? initial,
+}) {
+  final controller = TextEditingController(text: initial);
   return showDialog<String>(
     context: context,
     builder: (context) {
