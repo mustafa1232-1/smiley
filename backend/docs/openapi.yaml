@@ -201,7 +201,7 @@ paths:
         "200":
           description: Profile
     patch:
-      summary: Update authenticated profile
+      summary: Update authenticated profile, including favorites
       security:
         - bearerAuth: []
       responses:

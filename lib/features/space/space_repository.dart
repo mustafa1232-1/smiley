@@ -13,6 +13,7 @@ abstract interface class SpaceRepository {
     String? gender,
     String? timezone,
     String? language,
+    ProfileFavorites? favorites,
     required bool searchable,
     required bool canReceiveRequests,
   });
@@ -172,6 +173,7 @@ class HttpSpaceRepository implements SpaceRepository {
     String? gender,
     String? timezone,
     String? language,
+    ProfileFavorites? favorites,
     required bool searchable,
     required bool canReceiveRequests,
   }) async {
@@ -184,6 +186,7 @@ class HttpSpaceRepository implements SpaceRepository {
         'timezone': timezone.trim(),
       if (language != null && language.trim().isNotEmpty)
         'language': language.trim(),
+      if (favorites != null) 'favorites': favorites.toJson(),
       'searchable': searchable,
       'canReceivePartnershipRequests': canReceiveRequests,
     });
@@ -1330,6 +1333,7 @@ class UserProfile {
     this.gender,
     this.timezone,
     this.language,
+    this.favorites,
   });
 
   final String id;
@@ -1344,6 +1348,7 @@ class UserProfile {
   final String? gender;
   final String? timezone;
   final String? language;
+  final ProfileFavorites? favorites;
   final bool searchable;
   final bool canReceiveRequests;
   bool get emailVerified => emailVerifiedAt != null;
@@ -1363,10 +1368,59 @@ class UserProfile {
       gender: json['gender'] as String?,
       timezone: json['timezone'] as String?,
       language: json['language'] as String?,
+      favorites: ProfileFavorites.fromOptionalJson(json['favorites']),
       searchable: json['searchable'] as bool? ?? true,
       canReceiveRequests:
           json['canReceivePartnershipRequests'] as bool? ?? true,
     );
+  }
+}
+
+class ProfileFavorites {
+  const ProfileFavorites({
+    this.color,
+    this.food,
+    this.song,
+    this.movie,
+    this.place,
+    this.note,
+  });
+
+  final String? color;
+  final String? food;
+  final String? song;
+  final String? movie;
+  final String? place;
+  final String? note;
+
+  static ProfileFavorites? fromOptionalJson(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    return ProfileFavorites(
+      color: value['color'] as String?,
+      food: value['food'] as String?,
+      song: value['song'] as String?,
+      movie: value['movie'] as String?,
+      place: value['place'] as String?,
+      note: value['note'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    void add(String key, String? value) {
+      final trimmed = value?.trim();
+      if (trimmed != null && trimmed.isNotEmpty) {
+        json[key] = trimmed;
+      }
+    }
+
+    add('color', color);
+    add('food', food);
+    add('song', song);
+    add('movie', movie);
+    add('place', place);
+    add('note', note);
+    return json;
   }
 }
 

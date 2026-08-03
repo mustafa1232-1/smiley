@@ -84,6 +84,17 @@ const messageReceiptSchema = z.object({
   messageId: z.string().uuid()
 });
 
+const favoritesSchema = z
+  .object({
+    color: z.string().trim().max(80).optional(),
+    food: z.string().trim().max(120).optional(),
+    song: z.string().trim().max(160).optional(),
+    movie: z.string().trim().max(160).optional(),
+    place: z.string().trim().max(160).optional(),
+    note: z.string().trim().max(500).optional()
+  })
+  .optional();
+
 const profileSchema = z.object({
   displayName: z.string().trim().min(1).max(80),
   bio: z.string().trim().max(240).optional(),
@@ -91,6 +102,7 @@ const profileSchema = z.object({
   gender: z.string().trim().max(40).optional(),
   timezone: z.string().trim().min(1).max(80).optional(),
   language: z.string().trim().min(2).max(12).optional(),
+  favorites: favoritesSchema,
   searchable: z.boolean().optional(),
   canReceivePartnershipRequests: z.boolean().optional()
 });
@@ -269,6 +281,7 @@ spaceRouter.get('/me', requireAuth, async (request, response) => {
       gender: user.profile?.gender,
       timezone: user.profile?.timezone,
       language: user.profile?.language,
+      favorites: user.profile?.favorites,
       searchable: user.profile?.searchable ?? true,
       canReceivePartnershipRequests:
         user.profile?.canReceivePartnershipRequests ?? true
@@ -287,6 +300,7 @@ spaceRouter.patch('/me', requireAuth, async (request, response) => {
       gender: input.gender,
       timezone: input.timezone,
       language: input.language,
+      favorites: input.favorites as Prisma.InputJsonValue | undefined,
       searchable: input.searchable,
       canReceivePartnershipRequests: input.canReceivePartnershipRequests
     }

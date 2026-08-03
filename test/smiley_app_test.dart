@@ -788,6 +788,7 @@ class FakeSpaceRepository implements SpaceRepository {
     String? gender,
     String? timezone,
     String? language,
+    ProfileFavorites? favorites,
     required bool searchable,
     required bool canReceiveRequests,
   }) async {}

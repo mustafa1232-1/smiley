@@ -152,7 +152,7 @@ Returns the authenticated user's profile.
 
 ### `PATCH /me`
 
-Updates display name, bio, birth date, gender, timezone, language, search visibility, and partnership request availability.
+Updates display name, bio, birth date, gender, timezone, language, favorites, search visibility, and partnership request availability.
 
 ### `PATCH /me/username`
 

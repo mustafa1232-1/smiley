@@ -2919,6 +2919,12 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   final _bio = TextEditingController();
   final _emailCode = TextEditingController();
   final _phoneCode = TextEditingController();
+  final _favoriteColor = TextEditingController();
+  final _favoriteFood = TextEditingController();
+  final _favoriteSong = TextEditingController();
+  final _favoriteMovie = TextEditingController();
+  final _favoritePlace = TextEditingController();
+  final _favoriteNote = TextEditingController();
   DateTime? _birthDate;
   String? _gender;
   String _language = 'ar';
@@ -2933,6 +2939,12 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     _bio.dispose();
     _emailCode.dispose();
     _phoneCode.dispose();
+    _favoriteColor.dispose();
+    _favoriteFood.dispose();
+    _favoriteSong.dispose();
+    _favoriteMovie.dispose();
+    _favoritePlace.dispose();
+    _favoriteNote.dispose();
     super.dispose();
   }
 
@@ -2954,6 +2966,13 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             _birthDate = profile.birthDate;
             _gender = profile.gender;
             _language = profile.language ?? 'ar';
+            final favorites = profile.favorites;
+            _favoriteColor.text = favorites?.color ?? '';
+            _favoriteFood.text = favorites?.food ?? '';
+            _favoriteSong.text = favorites?.song ?? '';
+            _favoriteMovie.text = favorites?.movie ?? '';
+            _favoritePlace.text = favorites?.place ?? '';
+            _favoriteNote.text = favorites?.note ?? '';
             _searchable = profile.searchable;
             _requests = profile.canReceiveRequests;
             _ready = true;
@@ -3122,6 +3141,63 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                   subtitle: profile.timezone!,
                 ),
               ],
+              const SizedBox(height: 16),
+              const _SectionHeader(
+                icon: Icons.favorite_border_rounded,
+                title: 'المفضلات',
+                subtitle: 'أشياء يحبها صاحب الحساب وتظهر ضمن ملفه الشخصي.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _favoriteColor,
+                decoration: const InputDecoration(
+                  labelText: 'اللون المفضل',
+                  prefixIcon: Icon(Icons.palette_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _favoriteFood,
+                decoration: const InputDecoration(
+                  labelText: 'الأكلة المفضلة',
+                  prefixIcon: Icon(Icons.restaurant_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _favoriteSong,
+                decoration: const InputDecoration(
+                  labelText: 'الأغنية المفضلة',
+                  prefixIcon: Icon(Icons.music_note_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _favoriteMovie,
+                decoration: const InputDecoration(
+                  labelText: 'الفيلم أو المسلسل المفضل',
+                  prefixIcon: Icon(Icons.movie_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _favoritePlace,
+                decoration: const InputDecoration(
+                  labelText: 'المكان المفضل',
+                  prefixIcon: Icon(Icons.place_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _favoriteNote,
+                minLines: 2,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'ملاحظة مفضلة',
+                  prefixIcon: Icon(Icons.notes_outlined),
+                ),
+              ),
+              const SizedBox(height: 4),
               SwitchListTile(
                 value: _searchable,
                 onChanged: (value) => setState(() => _searchable = value),
@@ -3221,6 +3297,14 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       gender: _gender,
       timezone: DateTime.now().timeZoneName,
       language: _language,
+      favorites: ProfileFavorites(
+        color: _favoriteColor.text,
+        food: _favoriteFood.text,
+        song: _favoriteSong.text,
+        movie: _favoriteMovie.text,
+        place: _favoritePlace.text,
+        note: _favoriteNote.text,
+      ),
       searchable: _searchable,
       canReceiveRequests: _requests,
     );
