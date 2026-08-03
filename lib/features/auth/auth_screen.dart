@@ -33,6 +33,7 @@ class _AuthScreenState extends State<AuthScreen>
   final _username = TextEditingController();
   final _email = TextEditingController();
   final _phone = TextEditingController();
+  final _avatarUrl = TextEditingController();
   final _password = TextEditingController();
   final _resetId = TextEditingController();
   final _resetToken = TextEditingController();
@@ -53,6 +54,7 @@ class _AuthScreenState extends State<AuthScreen>
     _username.dispose();
     _email.dispose();
     _phone.dispose();
+    _avatarUrl.dispose();
     _password.dispose();
     _resetId.dispose();
     _resetToken.dispose();
@@ -83,6 +85,7 @@ class _AuthScreenState extends State<AuthScreen>
           username: _username.text.trim(),
           email: _email.text.trim(),
           phone: _phone.text.trim(),
+          avatarUrl: _avatarUrl.text.trim(),
           password: _password.text,
           birthDate: _birthDate!,
           gender: _gender,
@@ -235,6 +238,7 @@ class _AuthScreenState extends State<AuthScreen>
                           username: _username,
                           email: _email,
                           phone: _phone,
+                          avatarUrl: _avatarUrl,
                           password: _password,
                           birthDate: _birthDate,
                           gender: _gender,
@@ -334,6 +338,7 @@ class _RegisterForm extends StatelessWidget {
     required this.username,
     required this.email,
     required this.phone,
+    required this.avatarUrl,
     required this.password,
     required this.birthDate,
     required this.gender,
@@ -351,6 +356,7 @@ class _RegisterForm extends StatelessWidget {
   final TextEditingController username;
   final TextEditingController email;
   final TextEditingController phone;
+  final TextEditingController avatarUrl;
   final TextEditingController password;
   final DateTime? birthDate;
   final String? gender;
@@ -399,6 +405,15 @@ class _RegisterForm extends StatelessWidget {
           decoration: const InputDecoration(
             labelText: 'رقم الهاتف اختياري',
             prefixIcon: Icon(Icons.phone_outlined),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: avatarUrl,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            labelText: 'رابط الصورة الشخصية اختياري',
+            prefixIcon: Icon(Icons.image_outlined),
           ),
         ),
         const SizedBox(height: 12),

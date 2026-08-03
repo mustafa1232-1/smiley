@@ -8,6 +8,7 @@ abstract interface class SpaceRepository {
   Future<UserProfile> me();
   Future<void> updateProfile({
     required String displayName,
+    String? avatarUrl,
     String? bio,
     DateTime? birthDate,
     String? gender,
@@ -170,6 +171,7 @@ class HttpSpaceRepository implements SpaceRepository {
   @override
   Future<void> updateProfile({
     required String displayName,
+    String? avatarUrl,
     String? bio,
     DateTime? birthDate,
     String? gender,
@@ -181,6 +183,8 @@ class HttpSpaceRepository implements SpaceRepository {
   }) async {
     await _api.patchJson('/me', {
       'displayName': displayName.trim(),
+      if (avatarUrl != null && avatarUrl.trim().isNotEmpty)
+        'avatarUrl': avatarUrl.trim(),
       if (bio != null) 'bio': bio.trim(),
       if (birthDate != null) 'birthDate': birthDate.toUtc().toIso8601String(),
       if (gender != null && gender.trim().isNotEmpty) 'gender': gender.trim(),
@@ -1344,6 +1348,7 @@ class UserProfile {
     this.phone,
     this.emailVerifiedAt,
     this.phoneVerifiedAt,
+    this.avatarUrl,
     this.bio,
     this.birthDate,
     this.gender,
@@ -1358,6 +1363,7 @@ class UserProfile {
   final String? phone;
   final DateTime? emailVerifiedAt;
   final DateTime? phoneVerifiedAt;
+  final String? avatarUrl;
   final String displayName;
   final String? bio;
   final DateTime? birthDate;
@@ -1378,6 +1384,7 @@ class UserProfile {
       phone: json['phone'] as String?,
       emailVerifiedAt: _optionalDate(json['emailVerifiedAt']),
       phoneVerifiedAt: _optionalDate(json['phoneVerifiedAt']),
+      avatarUrl: json['avatarUrl'] as String?,
       displayName: json['displayName'] as String? ?? 'مستخدم',
       bio: json['bio'] as String?,
       birthDate: _optionalDate(json['birthDate'])?.toLocal(),

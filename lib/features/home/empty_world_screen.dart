@@ -3103,6 +3103,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   late Future<UserProfile> _future = widget.repository.me();
   final _username = TextEditingController();
   final _displayName = TextEditingController();
+  final _avatarUrl = TextEditingController();
   final _bio = TextEditingController();
   final _emailCode = TextEditingController();
   final _phoneCode = TextEditingController();
@@ -3123,6 +3124,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   void dispose() {
     _username.dispose();
     _displayName.dispose();
+    _avatarUrl.dispose();
     _bio.dispose();
     _emailCode.dispose();
     _phoneCode.dispose();
@@ -3149,6 +3151,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
           if (!_ready) {
             _username.text = profile.username;
             _displayName.text = profile.displayName;
+            _avatarUrl.text = profile.avatarUrl ?? '';
             _bio.text = profile.bio ?? '';
             _birthDate = profile.birthDate;
             _gender = profile.gender;
@@ -3270,6 +3273,15 @@ class _ProfileScreenState extends State<_ProfileScreen> {
               TextField(
                 controller: _displayName,
                 decoration: const InputDecoration(labelText: 'اسم العرض'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _avatarUrl,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: 'رابط الصورة الشخصية',
+                  prefixIcon: Icon(Icons.image_outlined),
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -3479,6 +3491,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     await widget.repository.updateUsername(_username.text);
     await widget.repository.updateProfile(
       displayName: _displayName.text,
+      avatarUrl: _avatarUrl.text,
       bio: _bio.text,
       birthDate: _birthDate,
       gender: _gender,

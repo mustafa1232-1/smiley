@@ -801,6 +801,7 @@ class FakeSpaceRepository implements SpaceRepository {
   @override
   Future<void> updateProfile({
     required String displayName,
+    String? avatarUrl,
     String? bio,
     DateTime? birthDate,
     String? gender,

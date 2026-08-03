@@ -31,6 +31,7 @@ class RegisterRequest {
     required this.username,
     required this.email,
     required this.phone,
+    required this.avatarUrl,
     required this.password,
     required this.birthDate,
     this.gender,
@@ -43,6 +44,7 @@ class RegisterRequest {
   final String username;
   final String email;
   final String phone;
+  final String avatarUrl;
   final String password;
   final DateTime birthDate;
   final String? gender;
@@ -55,6 +57,7 @@ class RegisterRequest {
     'username': username,
     if (email.trim().isNotEmpty) 'email': email.trim(),
     if (phone.trim().isNotEmpty) 'phone': phone.trim(),
+    if (avatarUrl.trim().isNotEmpty) 'avatarUrl': avatarUrl.trim(),
     'password': password,
     'birthDate': birthDate.toUtc().toIso8601String(),
     if (gender != null && gender!.trim().isNotEmpty) 'gender': gender,

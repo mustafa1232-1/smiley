@@ -7,7 +7,7 @@ servers:
 paths:
   /auth/register:
     post:
-      summary: Register a user
+      summary: Register a user with optional avatar URL
       responses:
         "201":
           description: Created
@@ -201,7 +201,7 @@ paths:
         "200":
           description: Profile
     patch:
-      summary: Update authenticated profile, including favorites
+      summary: Update authenticated profile, avatar URL, and favorites
       security:
         - bearerAuth: []
       responses:

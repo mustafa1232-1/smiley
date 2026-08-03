@@ -16,6 +16,7 @@ Creates a user and returns an auth session.
   "username": "user.name",
   "email": "user@example.com",
   "phone": "+9647000000000",
+  "avatarUrl": "https://example.com/avatar.jpg",
   "password": "strong-password",
   "birthDate": "2000-01-01T00:00:00.000Z",
   "gender": "prefer_not_to_say",
@@ -165,7 +166,7 @@ Returns the authenticated user's profile.
 
 ### `PATCH /me`
 
-Updates display name, bio, birth date, gender, timezone, language, favorites, search visibility, and partnership request availability.
+Updates display name, avatar URL, bio, birth date, gender, timezone, language, favorites, search visibility, and partnership request availability.
 
 ### `PATCH /me/username`
 

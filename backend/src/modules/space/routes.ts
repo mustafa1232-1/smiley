@@ -102,8 +102,14 @@ const favoritesSchema = z
   })
   .optional();
 
+const optionalUrlSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().trim().url().max(500).optional()
+);
+
 const profileSchema = z.object({
   displayName: z.string().trim().min(1).max(80),
+  avatarUrl: optionalUrlSchema,
   bio: z.string().trim().max(240).optional(),
   birthDate: z.coerce.date().optional(),
   gender: z.string().trim().max(40).optional(),
@@ -302,6 +308,7 @@ spaceRouter.patch('/me', requireAuth, async (request, response) => {
     where: { userId: request.user!.sub },
     data: {
       displayName: input.displayName,
+      avatarUrl: input.avatarUrl,
       bio: input.bio,
       birthDate: input.birthDate,
       gender: input.gender,

@@ -23,12 +23,18 @@ const optionalPhoneSchema = z.preprocess(
   z.string().trim().min(7).max(32).optional()
 );
 
+const optionalUrlSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().trim().url().max(500).optional()
+);
+
 const registerSchema = z
   .object({
     displayName: z.string().trim().min(1).max(80),
     username: z.string().trim().regex(usernameRegex),
     email: optionalEmailSchema,
     phone: optionalPhoneSchema,
+    avatarUrl: optionalUrlSchema,
     password: z.string().min(10).max(200),
     birthDate: z.string().datetime(),
     gender: z.string().trim().max(40).optional(),
@@ -107,6 +113,7 @@ authRouter.post('/auth/register', async (request, response) => {
         profile: {
           create: {
             displayName: input.displayName,
+            avatarUrl: input.avatarUrl,
             birthDate: new Date(input.birthDate),
             gender: input.gender,
             timezone: input.timezone,
