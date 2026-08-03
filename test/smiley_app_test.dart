@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smiley/core/offline_outbox.dart';
+import 'package:smiley/core/push_service.dart';
 import 'package:smiley/core/secure_stores.dart';
 import 'package:smiley/core/realtime_client.dart';
 import 'package:smiley/features/auth/auth_models.dart';
@@ -32,6 +33,7 @@ void main() {
         spaceRepository: FakeSpaceRepository(),
         offlineOutbox: MemoryOfflineOutbox(),
         realtimeClient: RealtimeClient.disabled(),
+        pushService: PushService(registerToken: (_, _) async {}),
       ),
     );
     await tester.pump();
@@ -59,6 +61,7 @@ void main() {
         spaceRepository: FakeSpaceRepository(),
         offlineOutbox: MemoryOfflineOutbox(),
         realtimeClient: RealtimeClient.disabled(),
+        pushService: PushService(registerToken: (_, _) async {}),
       ),
     );
     await tester.pump();
@@ -90,6 +93,7 @@ void main() {
         spaceRepository: FakeSpaceRepository(),
         offlineOutbox: MemoryOfflineOutbox(),
         realtimeClient: RealtimeClient.disabled(),
+        pushService: PushService(registerToken: (_, _) async {}),
       ),
     );
     await tester.pump();
@@ -174,10 +178,11 @@ class MemoryOfflineOutbox implements OfflineOutbox {
   Future<void> enqueueMessage(
     String body, {
     List<String> assetIds = const [],
+    String? id,
   }) async {
     _messages.add(
       QueuedMessage(
-        id: 'message-${_messages.length}',
+        id: id ?? 'message-${_messages.length}',
         body: body,
         assetIds: assetIds,
         createdAt: DateTime(2026, 8, 3),
@@ -520,7 +525,7 @@ class FakeSpaceRepository implements SpaceRepository {
   }) async {}
 
   @override
-  Future<void> deleteAccount() async {}
+  Future<void> deleteAccount(String password) async {}
 
   @override
   Future<Map<String, dynamic>> exportAccount() async => {};
@@ -674,6 +679,12 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<void> readAllNotifications() async {}
 
   @override
+  Future<void> registerPushToken({
+    required String token,
+    required String platform,
+  }) async {}
+
+  @override
   Future<void> readAllMessages() async {}
 
   @override
@@ -718,6 +729,7 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<ChatMessage> sendMessage(
     String body, {
     List<String> assetIds = const [],
+    String? clientMessageId,
   }) async {
     return ChatMessage(
       id: 'message',

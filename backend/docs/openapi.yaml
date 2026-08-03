@@ -208,12 +208,24 @@ paths:
         "200":
           description: Updated profile
     delete:
-      summary: Soft-delete account
+      summary: Soft-delete account (requires password re-authentication)
       security:
         - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
       responses:
         "204":
           description: Deleted
+        "401":
+          description: Invalid password
   /partnerships/current/settings:
     patch:
       summary: Update active partnership settings
@@ -271,11 +283,18 @@ paths:
   /uploads/presign:
     post:
       summary: Create a signed media upload URL
+      description: >-
+        mimeType must be an allowed media type (image/jpeg, image/png,
+        image/webp, image/gif, image/heic, image/heif, video/mp4,
+        video/quicktime, video/webm, audio/mpeg, audio/mp4, audio/aac,
+        audio/wav, audio/webm, audio/ogg, application/pdf). Others are rejected.
       security:
         - bearerAuth: []
       responses:
         "201":
           description: Pending upload and signed PUT URL
+        "422":
+          description: Unsupported upload type
         "503":
           description: Storage is not configured
   /uploads/{id}/complete:

@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/animations.dart';
 import '../../core/api_client.dart';
 import '../../core/offline_outbox.dart';
 import '../../core/realtime_client.dart';
@@ -46,7 +48,10 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
     widget.realtimeClient.connect();
     _realtimeSubscription = widget.realtimeClient.events.listen((event) {
       final type = event['type']?.toString() ?? '';
-      if (type.startsWith('partnership.') || type == 'notification.created') {
+      if (type == 'notification.created') {
+        _showIncomingNotification(event);
+        _reload();
+      } else if (type.startsWith('partnership.')) {
         _reload();
       }
     });
@@ -56,6 +61,36 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
   void dispose() {
     _realtimeSubscription?.cancel();
     super.dispose();
+  }
+
+  // Shows a floating in-app banner when a realtime notification arrives, with a
+  // shortcut to open the conversation.
+  void _showIncomingNotification(Map<String, dynamic> event) {
+    if (!mounted) return;
+    final payload = event['payload'];
+    final notification = payload is Map ? payload['notification'] : null;
+    final title = notification is Map
+        ? notification['title']?.toString()
+        : null;
+    final body = notification is Map ? notification['body']?.toString() : null;
+    final text = [
+      title,
+      body,
+    ].where((value) => value != null && value.isNotEmpty).join(' — ');
+    if (text.isEmpty) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(text),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'عرض',
+            onPressed: () => setState(() => _index = 1),
+          ),
+        ),
+      );
   }
 
   Future<_WorldState> _load() async {
@@ -97,13 +132,35 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
                 )
               : !snapshot.hasData
               ? const Center(child: CircularProgressIndicator())
-              : _pageFor(state!),
+              : AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.03),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: KeyedSubtree(
+                    key: ValueKey<int>(_index),
+                    child: _pageFor(state!),
+                  ),
+                ),
           floatingActionButton: active
               ? null
-              : FloatingActionButton(
-                  onPressed: _openPartnerSearch,
-                  tooltip: 'إضافة شريك',
-                  child: const Icon(Icons.person_add_alt_1_rounded),
+              : PopIn(
+                  child: FloatingActionButton(
+                    onPressed: _openPartnerSearch,
+                    tooltip: 'إضافة شريك',
+                    child: const Icon(Icons.person_add_alt_1_rounded),
+                  ),
                 ),
           bottomNavigationBar: NavigationBar(
             selectedIndex: _index,
@@ -211,13 +268,21 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
       0 => _HomeTab(
         repository: widget.spaceRepository,
         offlineOutbox: widget.offlineOutbox,
+        events: widget.realtimeClient.events,
       ),
       1 => _ChatTab(
         repository: widget.spaceRepository,
         offlineOutbox: widget.offlineOutbox,
+        events: widget.realtimeClient.events,
       ),
-      2 => _WorldTab(repository: widget.spaceRepository),
-      3 => _CalendarTab(repository: widget.spaceRepository),
+      2 => _WorldTab(
+        repository: widget.spaceRepository,
+        events: widget.realtimeClient.events,
+      ),
+      3 => _CalendarTab(
+        repository: widget.spaceRepository,
+        events: widget.realtimeClient.events,
+      ),
       _ => _MoreHubTabV2(
         repository: widget.spaceRepository,
         partnershipRepository: widget.partnershipRepository,
@@ -391,34 +456,38 @@ class _PartnerRequiredTab extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 520),
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Icon(icon, size: 48, color: theme.colorScheme.primary),
-              const SizedBox(height: 14),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+          child: FadeSlideIn(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                PopIn(
+                  child: Icon(icon, size: 48, color: theme.colorScheme.primary),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                const SizedBox(height: 14),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                onPressed: onAddPartner,
-                icon: const Icon(Icons.person_add_alt_1_rounded),
-                label: Text(buttonLabel),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  onPressed: onAddPartner,
+                  icon: const Icon(Icons.person_add_alt_1_rounded),
+                  label: Text(buttonLabel),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -658,17 +727,48 @@ class _OnboardingListField extends StatelessWidget {
   }
 }
 
+// Live-refresh helper: rebuilds a tab's data when a matching realtime event
+// arrives, without touching text controllers (so typing is never interrupted).
+mixin _RealtimeRefreshMixin<T extends StatefulWidget> on State<T> {
+  StreamSubscription<Map<String, dynamic>>? _realtimeRefreshSub;
+
+  Stream<Map<String, dynamic>> get realtimeEvents;
+  List<String> get refreshOnEventTypes;
+  void onRealtimeRefresh();
+
+  void startRealtimeRefresh() {
+    _realtimeRefreshSub = realtimeEvents.listen((event) {
+      final type = event['type']?.toString() ?? '';
+      final matches = refreshOnEventTypes.any(
+        (prefix) => type == prefix || type.startsWith(prefix),
+      );
+      if (matches && mounted) onRealtimeRefresh();
+    });
+  }
+
+  void stopRealtimeRefresh() {
+    _realtimeRefreshSub?.cancel();
+    _realtimeRefreshSub = null;
+  }
+}
+
 class _HomeTab extends StatefulWidget {
-  const _HomeTab({required this.repository, required this.offlineOutbox});
+  const _HomeTab({
+    required this.repository,
+    required this.offlineOutbox,
+    required this.events,
+  });
 
   final SpaceRepository repository;
   final OfflineOutbox offlineOutbox;
+  final Stream<Map<String, dynamic>> events;
 
   @override
   State<_HomeTab> createState() => _HomeTabState();
 }
 
-class _HomeTabState extends State<_HomeTab> {
+class _HomeTabState extends State<_HomeTab>
+    with _RealtimeRefreshMixin<_HomeTab> {
   late Future<SpaceSummary> _summary = _loadSummary();
   final _post = TextEditingController();
   final List<MediaAssetModel> _attachments = [];
@@ -676,7 +776,32 @@ class _HomeTabState extends State<_HomeTab> {
   bool _uploading = false;
 
   @override
+  void initState() {
+    super.initState();
+    startRealtimeRefresh();
+  }
+
+  @override
+  Stream<Map<String, dynamic>> get realtimeEvents => widget.events;
+
+  @override
+  List<String> get refreshOnEventTypes => const [
+    'post.',
+    'mood.',
+    'message.',
+    'tree.',
+    'goal.',
+    'occasion.',
+  ];
+
+  @override
+  void onRealtimeRefresh() {
+    setState(() => _summary = _loadSummary());
+  }
+
+  @override
   void dispose() {
+    stopRealtimeRefresh();
     _post.dispose();
     super.dispose();
   }
@@ -886,20 +1011,40 @@ class _HomeTabState extends State<_HomeTab> {
 }
 
 class _WorldTab extends StatefulWidget {
-  const _WorldTab({required this.repository});
+  const _WorldTab({required this.repository, required this.events});
 
   final SpaceRepository repository;
+  final Stream<Map<String, dynamic>> events;
 
   @override
   State<_WorldTab> createState() => _WorldTabState();
 }
 
-class _WorldTabState extends State<_WorldTab> {
+class _WorldTabState extends State<_WorldTab>
+    with _RealtimeRefreshMixin<_WorldTab> {
   late Future<List<SpacePost>> _posts = widget.repository.posts();
   final _moodNote = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    startRealtimeRefresh();
+  }
+
+  @override
+  Stream<Map<String, dynamic>> get realtimeEvents => widget.events;
+
+  @override
+  List<String> get refreshOnEventTypes => const ['post.', 'mood.', 'tree.'];
+
+  @override
+  void onRealtimeRefresh() {
+    setState(() => _posts = widget.repository.posts());
+  }
+
+  @override
   void dispose() {
+    stopRealtimeRefresh();
     _moodNote.dispose();
     super.dispose();
   }
@@ -1004,16 +1149,22 @@ class _WorldTabState extends State<_WorldTab> {
 }
 
 class _ChatTab extends StatefulWidget {
-  const _ChatTab({required this.repository, required this.offlineOutbox});
+  const _ChatTab({
+    required this.repository,
+    required this.offlineOutbox,
+    required this.events,
+  });
 
   final SpaceRepository repository;
   final OfflineOutbox offlineOutbox;
+  final Stream<Map<String, dynamic>> events;
 
   @override
   State<_ChatTab> createState() => _ChatTabState();
 }
 
-class _ChatTabState extends State<_ChatTab> {
+class _ChatTabState extends State<_ChatTab>
+    with _RealtimeRefreshMixin<_ChatTab> {
   late Future<List<ChatMessage>> _messages = _loadMessages();
   late Future<List<ScheduledMessageModel>> _scheduled = _loadScheduled();
   final _message = TextEditingController();
@@ -1021,190 +1172,331 @@ class _ChatTabState extends State<_ChatTab> {
   bool _sending = false;
   bool _uploading = false;
 
+  static const _chatColorPrefsKey = 'smiley.chat.bg_color';
+  Color? _chatColor;
+
+  @override
+  void initState() {
+    super.initState();
+    startRealtimeRefresh();
+    _loadChatColor();
+  }
+
+  Future<void> _loadChatColor() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getInt(_chatColorPrefsKey);
+    if (!mounted || value == null) return;
+    setState(() => _chatColor = Color(value));
+  }
+
+  Future<void> _setChatColor(Color? color) async {
+    setState(() => _chatColor = color);
+    final prefs = await SharedPreferences.getInstance();
+    if (color == null) {
+      await prefs.remove(_chatColorPrefsKey);
+    } else {
+      await prefs.setInt(_chatColorPrefsKey, color.toARGB32());
+    }
+  }
+
+  Future<void> _pickChatColor() async {
+    const options = <Color?>[
+      null,
+      Color(0xFFF3E9FF),
+      Color(0xFFFFE9F3),
+      Color(0xFFE9FFF4),
+      Color(0xFFFFF3E0),
+      Color(0xFFE9F1FF),
+      Color(0xFFFDF6E3),
+    ];
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return AlertDialog(
+          title: const Text('لون خلفية المحادثة'),
+          content: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: options.map((color) {
+              final selected = _chatColor?.toARGB32() == color?.toARGB32();
+              return InkResponse(
+                onTap: () {
+                  _setChatColor(color);
+                  Navigator.of(context).pop();
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: color ?? scheme.surface,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected ? scheme.primary : scheme.outlineVariant,
+                      width: selected ? 3 : 1,
+                    ),
+                  ),
+                  child: color == null
+                      ? const Icon(Icons.format_color_reset_outlined, size: 20)
+                      : null,
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Stream<Map<String, dynamic>> get realtimeEvents => widget.events;
+
+  @override
+  List<String> get refreshOnEventTypes => const ['message.'];
+
+  @override
+  void onRealtimeRefresh() {
+    setState(() {
+      _messages = _loadMessages();
+      _scheduled = _loadScheduled();
+    });
+  }
+
   @override
   void dispose() {
+    stopRealtimeRefresh();
     _message.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: FutureBuilder<List<ChatMessage>>(
-            future: _messages,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final items = snapshot.requireData;
-              if (items.isEmpty) {
-                return const Center(child: Text('لا توجد رسائل بعد.'));
-              }
-              return ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: items.length,
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  return Align(
-                    alignment: AlignmentDirectional.centerEnd,
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (item.body.isNotEmpty) Text(item.body),
-                            if (item.assetIds.isNotEmpty) ...[
-                              if (item.body.isNotEmpty)
+    return Container(
+      color: _chatColor,
+      child: Column(
+        children: [
+          Expanded(
+            child: FutureBuilder<List<ChatMessage>>(
+              future: _messages,
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final items = snapshot.requireData;
+                if (items.isEmpty) {
+                  return const Center(child: Text('لا توجد رسائل بعد.'));
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final scheme = Theme.of(context).colorScheme;
+                    return Align(
+                      alignment: item.isMine
+                          ? AlignmentDirectional.centerStart
+                          : AlignmentDirectional.centerEnd,
+                      child: Card(
+                        color: item.isMine
+                            ? scheme.primaryContainer
+                            : scheme.surfaceContainerHighest,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (!item.isMine &&
+                                  item.senderUsername != null) ...[
+                                Text(
+                                  item.senderUsername!,
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: scheme.primary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                const SizedBox(height: 2),
+                              ],
+                              if (item.body.isNotEmpty) Text(item.body),
+                              if (item.assetIds.isNotEmpty) ...[
+                                if (item.body.isNotEmpty)
+                                  const SizedBox(height: 6),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.attach_file_rounded,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text('مرفقات: ${item.assetIds.length}'),
+                                  ],
+                                ),
+                              ],
+                              if (item.pending) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'بانتظار المزامنة',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                              if (!item.pending) ...[
                                 const SizedBox(height: 6),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.attach_file_rounded,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text('مرفقات: ${item.assetIds.length}'),
-                                ],
-                              ),
-                            ],
-                            if (item.pending) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                'بانتظار المزامنة',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                            if (!item.pending) ...[
-                              const SizedBox(height: 6),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  TextButton.icon(
-                                    onPressed: () => _reactToMessage(item.id),
-                                    icon: Icon(
-                                      item.myReaction == null
-                                          ? Icons.favorite_border_rounded
-                                          : Icons.favorite_rounded,
-                                      size: 18,
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: () => _reactToMessage(item.id),
+                                      icon: Icon(
+                                        item.myReaction == null
+                                            ? Icons.favorite_border_rounded
+                                            : Icons.favorite_rounded,
+                                        size: 18,
+                                      ),
+                                      label: Text('${item.reactionCount}'),
                                     ),
-                                    label: Text('${item.reactionCount}'),
-                                  ),
-                                  TextButton.icon(
-                                    onPressed: () => _pinMessage(item),
-                                    icon: Icon(
-                                      item.pinnedByMe
-                                          ? Icons.push_pin
-                                          : Icons.push_pin_outlined,
-                                      size: 18,
+                                    TextButton.icon(
+                                      onPressed: () => _pinMessage(item),
+                                      icon: Icon(
+                                        item.pinnedByMe
+                                            ? Icons.push_pin
+                                            : Icons.push_pin_outlined,
+                                        size: 18,
+                                      ),
+                                      label: Text('${item.pinCount}'),
                                     ),
-                                    label: Text('${item.pinCount}'),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'تعديل',
-                                    onPressed: () => _editMessage(item),
-                                    icon: const Icon(
-                                      Icons.edit_outlined,
-                                      size: 18,
+                                    IconButton(
+                                      tooltip: 'تعديل',
+                                      onPressed: () => _editMessage(item),
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        size: 18,
+                                      ),
                                     ),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'حذف',
-                                    onPressed: () => _deleteMessage(item.id),
-                                    icon: const Icon(
-                                      Icons.delete_outline_rounded,
-                                      size: 18,
+                                    IconButton(
+                                      tooltip: 'حذف',
+                                      onPressed: () => _deleteMessage(item.id),
+                                      icon: const Icon(
+                                        Icons.delete_outline_rounded,
+                                        size: 18,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
+                                  ],
+                                ),
+                              ],
+                              if (item.editedAt != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  'تم التعديل',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
                             ],
-                            if (item.editedAt != null) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                'تم التعديل',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          FutureBuilder<List<ScheduledMessageModel>>(
+            future: _scheduled,
+            builder: (context, snapshot) {
+              final items = snapshot.data ?? const <ScheduledMessageModel>[];
+              if (items.isEmpty) return const SizedBox.shrink();
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: _InfoTile(
+                  icon: Icons.schedule_send_rounded,
+                  title: 'رسائل مجدولة',
+                  subtitle:
+                      '${items.length} قادمة - التالية ${_date(items.first.sendAt)}',
+                ),
               );
             },
           ),
-        ),
-        FutureBuilder<List<ScheduledMessageModel>>(
-          future: _scheduled,
-          builder: (context, snapshot) {
-            final items = snapshot.data ?? const <ScheduledMessageModel>[];
-            if (items.isEmpty) return const SizedBox.shrink();
-            return Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: _InfoTile(
-                icon: Icons.schedule_send_rounded,
-                title: 'رسائل مجدولة',
-                subtitle:
-                    '${items.length} قادمة - التالية ${_date(items.first.sendAt)}',
-              ),
-            );
-          },
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
+          SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton.outlined(
-                  tooltip: 'إرفاق ملف',
-                  onPressed: (_sending || _uploading) ? null : _attachMedia,
-                  icon: _uploading
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Badge.count(
-                          count: _attachments.length,
-                          isLabelVisible: _attachments.isNotEmpty,
-                          child: const Icon(Icons.attach_file_rounded),
+                _EmojiBar(onSelect: _insertEmoji),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'لون المحادثة',
+                        onPressed: _pickChatColor,
+                        icon: const Icon(Icons.palette_outlined),
+                      ),
+                      IconButton.outlined(
+                        tooltip: 'إرفاق ملف',
+                        onPressed: (_sending || _uploading)
+                            ? null
+                            : _attachMedia,
+                        icon: _uploading
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Badge.count(
+                                count: _attachments.length,
+                                isLabelVisible: _attachments.isNotEmpty,
+                                child: const Icon(Icons.attach_file_rounded),
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _message,
+                          decoration: InputDecoration(
+                            hintText: 'اكتب رسالة',
+                            prefixIcon: const Icon(
+                              Icons.chat_bubble_outline_rounded,
+                            ),
+                          ),
+                          onSubmitted: (_) => _send(),
                         ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _message,
-                    decoration: InputDecoration(
-                      hintText: 'اكتب رسالة',
-                      prefixIcon: const Icon(Icons.chat_bubble_outline_rounded),
-                    ),
-                    onSubmitted: (_) => _send(),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.outlined(
+                        tooltip: 'جدولة الرسالة',
+                        onPressed: (_sending || _uploading) ? null : _schedule,
+                        icon: const Icon(Icons.schedule_send_rounded),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filled(
+                        tooltip: 'إرسال',
+                        onPressed: (_sending || _uploading) ? null : _send,
+                        icon: const Icon(Icons.send_rounded),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.outlined(
-                  tooltip: 'جدولة الرسالة',
-                  onPressed: (_sending || _uploading) ? null : _schedule,
-                  icon: const Icon(Icons.schedule_send_rounded),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  tooltip: 'إرسال',
-                  onPressed: (_sending || _uploading) ? null : _send,
-                  icon: const Icon(Icons.send_rounded),
                 ),
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  void _insertEmoji(String emoji) {
+    final text = _message.text;
+    final selection = _message.selection;
+    final start = selection.start >= 0 ? selection.start : text.length;
+    final end = selection.end >= 0 ? selection.end : text.length;
+    final updated = text.replaceRange(start, end, emoji);
+    _message.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: start + emoji.length),
     );
   }
 
@@ -1213,14 +1505,25 @@ class _ChatTabState extends State<_ChatTab> {
     final assetIds = _attachments.map((asset) => asset.id).toList();
     if (body.trim().isEmpty && assetIds.isEmpty) return;
     setState(() => _sending = true);
+    // Stable id shared between the live attempt and the offline retry so the
+    // server de-duplicates if the first attempt actually reached it.
+    final clientMessageId = 'm-${DateTime.now().microsecondsSinceEpoch}';
     try {
-      await widget.repository.sendMessage(body, assetIds: assetIds);
+      await widget.repository.sendMessage(
+        body,
+        assetIds: assetIds,
+        clientMessageId: clientMessageId,
+      );
       _message.clear();
       _attachments.clear();
       setState(() => _messages = _loadMessages());
     } on ApiException catch (error) {
       if (error.code != 'network_error') rethrow;
-      await widget.offlineOutbox.enqueueMessage(body, assetIds: assetIds);
+      await widget.offlineOutbox.enqueueMessage(
+        body,
+        assetIds: assetIds,
+        id: clientMessageId,
+      );
       _message.clear();
       _attachments.clear();
       if (!mounted) return;
@@ -1258,6 +1561,7 @@ class _ChatTabState extends State<_ChatTab> {
           assetIds: item.assetIds,
           serverTimestamp: item.createdAt,
           pending: true,
+          isMine: true,
         ),
       ),
     ];
@@ -1279,6 +1583,7 @@ class _ChatTabState extends State<_ChatTab> {
         await widget.repository.sendMessage(
           message.body,
           assetIds: message.assetIds,
+          clientMessageId: message.id,
         );
         await widget.offlineOutbox.removeMessage(message.id);
       } on ApiException catch (error) {
@@ -1430,22 +1735,106 @@ class _ChatTabState extends State<_ChatTab> {
   }
 }
 
+const _quickEmojis = [
+  '❤️',
+  '😘',
+  '😍',
+  '🥰',
+  '😊',
+  '😉',
+  '😂',
+  '🤣',
+  '👍',
+  '🙏',
+  '🌹',
+  '🎉',
+  '🥺',
+  '😭',
+  '😅',
+  '🔥',
+  '💯',
+  '😎',
+  '🤗',
+  '💕',
+  '💖',
+  '💗',
+  '🌟',
+  '✨',
+  '🎶',
+  '☕',
+  '🌙',
+  '🎁',
+  '💐',
+  '😴',
+];
+
+class _EmojiBar extends StatelessWidget {
+  const _EmojiBar({required this.onSelect});
+
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        itemCount: _quickEmojis.length,
+        itemBuilder: (context, index) {
+          final emoji = _quickEmojis[index];
+          return InkResponse(
+            onTap: () => onSelect(emoji),
+            radius: 22,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Center(
+                child: Text(emoji, style: const TextStyle(fontSize: 24)),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _CalendarTab extends StatefulWidget {
-  const _CalendarTab({required this.repository});
+  const _CalendarTab({required this.repository, required this.events});
 
   final SpaceRepository repository;
+  final Stream<Map<String, dynamic>> events;
 
   @override
   State<_CalendarTab> createState() => _CalendarTabState();
 }
 
-class _CalendarTabState extends State<_CalendarTab> {
+class _CalendarTabState extends State<_CalendarTab>
+    with _RealtimeRefreshMixin<_CalendarTab> {
   late Future<List<CalendarItem>> _events = widget.repository.calendarEvents();
   final _title = TextEditingController();
   DateTime _dateValue = DateTime.now();
 
   @override
+  void initState() {
+    super.initState();
+    startRealtimeRefresh();
+  }
+
+  @override
+  Stream<Map<String, dynamic>> get realtimeEvents => widget.events;
+
+  @override
+  List<String> get refreshOnEventTypes => const ['calendar.', 'occasion.'];
+
+  @override
+  void onRealtimeRefresh() {
+    setState(() => _events = widget.repository.calendarEvents());
+  }
+
+  @override
   void dispose() {
+    stopRealtimeRefresh();
     _title.dispose();
     super.dispose();
   }
@@ -1773,10 +2162,10 @@ class _MoreHubTabV2 extends StatelessWidget {
         ),
       ),
       _MoreItem(
-        'Ø§Ù„Ø£Ù„Ø¹Ø§Ø¨',
+        'الألعاب',
         Icons.grid_3x3_rounded,
         () => guarded(
-          'Ø§Ù„Ø£Ù„Ø¹Ø§Ø¨',
+          'الألعاب',
           Icons.grid_3x3_rounded,
           () => _GamesScreen(repository: repository),
         ),
@@ -2248,7 +2637,7 @@ class _RelationshipSummaryScreenState
                 const SizedBox(height: 16),
                 GridView.count(
                   crossAxisCount: 2,
-                  childAspectRatio: 2.6,
+                  childAspectRatio: 2.1,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   mainAxisSpacing: 8,
@@ -2348,18 +2737,31 @@ class _SummaryMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               value.toString(),
-              style: Theme.of(context).textTheme.titleLarge,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.primary,
+              ),
             ),
-            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
           ],
         ),
       ),
@@ -3044,27 +3446,57 @@ class _SafetyScreenState extends State<_SafetyScreen> {
   }
 
   Future<void> _delete() async {
-    final confirmed = await showDialog<bool>(
+    final passwordController = TextEditingController();
+    final password = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('حذف الحساب'),
-        content: const Text('سيتم تعطيل الحساب وإبطال الجلسات.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('إلغاء'),
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('حذف الحساب'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'سيتم تعطيل الحساب وإبطال الجلسات. أدخل كلمة المرور للتأكيد.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'كلمة المرور'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('حذف'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = passwordController.text.trim();
+                if (value.isEmpty) return;
+                Navigator.of(context).pop(value);
+              },
+              child: const Text('حذف'),
+            ),
+          ],
+        );
+      },
     );
-    if (confirmed != true) return;
-    await widget.repository.deleteAccount();
-    if (!mounted) return;
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    passwordController.dispose();
+    if (password == null) return;
+    try {
+      await widget.repository.deleteAccount(password);
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 }
 
@@ -5206,9 +5638,7 @@ class _PostComposer extends StatelessWidget {
                 )
               : const Icon(Icons.attach_file_rounded),
           label: Text(
-            attachmentCount == 0
-                ? 'Ø¥Ø±ÙØ§Ù‚ Ù…Ù„Ù'
-                : 'Ø§Ù„Ù…Ø±ÙÙ‚Ø§Øª: $attachmentCount',
+            attachmentCount == 0 ? 'إرفاق ملف' : 'المرفقات: $attachmentCount',
           ),
         ),
         const SizedBox(height: 10),

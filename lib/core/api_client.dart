@@ -20,7 +20,8 @@ class ApiClient {
   final Future<void> Function({
     required String accessToken,
     required String refreshToken,
-  })? tokenSaver;
+  })?
+  tokenSaver;
   final Future<void> Function()? onAuthFailed;
   final http.Client _client;
   Future<bool>? _refreshInFlight;
@@ -43,8 +44,11 @@ class ApiClient {
     return _requestJson('PATCH', path, body: body);
   }
 
-  Future<Map<String, dynamic>> deleteJson(String path) {
-    return _requestJson('DELETE', path);
+  Future<Map<String, dynamic>> deleteJson(
+    String path, {
+    Map<String, dynamic>? body,
+  }) {
+    return _requestJson('DELETE', path, body: body);
   }
 
   Future<Map<String, dynamic>> _requestJson(
@@ -110,14 +114,20 @@ class ApiClient {
       final uri = _uri(path);
       final encodedBody = body == null ? null : jsonEncode(body);
       return switch (method) {
-        'GET' => await _client.get(uri, headers: headers).timeout(_requestTimeout),
-        'POST' => await _client
-            .post(uri, headers: headers, body: encodedBody)
-            .timeout(_requestTimeout),
-        'PATCH' => await _client
-            .patch(uri, headers: headers, body: encodedBody)
-            .timeout(_requestTimeout),
-        'DELETE' => await _client.delete(uri, headers: headers).timeout(_requestTimeout),
+        'GET' =>
+          await _client.get(uri, headers: headers).timeout(_requestTimeout),
+        'POST' =>
+          await _client
+              .post(uri, headers: headers, body: encodedBody)
+              .timeout(_requestTimeout),
+        'PATCH' =>
+          await _client
+              .patch(uri, headers: headers, body: encodedBody)
+              .timeout(_requestTimeout),
+        'DELETE' =>
+          await _client
+              .delete(uri, headers: headers, body: encodedBody)
+              .timeout(_requestTimeout),
         _ => throw StateError('Unsupported HTTP method $method'),
       };
     } catch (error) {

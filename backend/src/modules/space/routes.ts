@@ -13,8 +13,9 @@ import {
 } from '../../lib/access.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
+import { isNowInsideQuietHours } from '../../lib/quiet-hours.js';
 import { encryptPushToken, hashPushToken, sendPushToUser } from '../../lib/push.js';
-import { createPutUploadUrl } from '../../lib/storage.js';
+import { createPutUploadUrl, maxUploadBytesForMime } from '../../lib/storage.js';
 import { requireAuth } from '../../middleware/auth.js';
 import type { RealtimeEventType } from '../../realtime/events.js';
 import { emitToPartnership, emitToUser } from '../../realtime/server.js';
@@ -193,10 +194,43 @@ const albumAssetSchema = z.object({
   caption: z.string().trim().max(240).optional()
 });
 
+// Only media types the app actually renders are accepted. This blocks storing
+// HTML/SVG/executables that would otherwise be served from the public R2 URL
+// (a stored-XSS / content-type abuse vector).
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/heic',
+  'image/heif',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/aac',
+  'audio/wav',
+  'audio/webm',
+  'audio/ogg',
+  'application/pdf'
+]);
+
 const uploadPresignSchema = z.object({
-  mimeType: z.string().trim().min(3).max(120),
+  mimeType: z
+    .string()
+    .trim()
+    .min(3)
+    .max(120)
+    .refine((value) => ALLOWED_UPLOAD_MIME_TYPES.has(value.toLowerCase()), {
+      message: 'unsupported_mime_type'
+    }),
   sizeBytes: z.number().int().positive(),
   fileName: z.string().trim().min(1).max(180).optional()
+});
+
+const accountDeleteSchema = z.object({
+  password: z.string().min(1)
 });
 
 const uploadCompleteSchema = z.object({
@@ -554,7 +588,8 @@ spaceRouter.post('/uploads/presign', requireAuth, async (request, response) => {
   const signed = await createPutUploadUrl({
     objectKey,
     mimeType: input.mimeType,
-    sizeBytes: input.sizeBytes
+    sizeBytes: input.sizeBytes,
+    maxBytes: maxUploadBytesForMime(input.mimeType)
   });
 
   const upload = await prisma.upload.create({
@@ -1073,7 +1108,7 @@ spaceRouter.get('/messages', requireAuth, async (request, response) => {
   const page = messages.slice(0, limit);
 
   response.json({
-    items: page.reverse().map(serializeMessage),
+    items: page.reverse().map((message) => serializeMessage(message, userId)),
     nextCursor: messages.length > limit ? page.at(-1)?.id : null
   });
 });
@@ -1197,7 +1232,7 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
     payload: { messageId: message.id }
   });
 
-  response.status(201).json({ message: serializeMessage(message) });
+  response.status(201).json({ message: serializeMessage(message, userId) });
 });
 
 spaceRouter.patch('/messages/:id', requireAuth, async (request, response) => {
@@ -1229,7 +1264,7 @@ spaceRouter.patch('/messages/:id', requireAuth, async (request, response) => {
   });
 
   emitToPartnership('message.updated', userId, partnership.id, { messageId });
-  response.json({ message: serializeMessage(message) });
+  response.json({ message: serializeMessage(message, userId) });
 });
 
 spaceRouter.delete('/messages/:id', requireAuth, async (request, response) => {
@@ -1292,7 +1327,7 @@ spaceRouter.post('/messages/:id/reactions', requireAuth, async (request, respons
   });
 
   emitToPartnership('message.updated', userId, partnership.id, { messageId });
-  response.json({ message: serializeMessage(message) });
+  response.json({ message: serializeMessage(message, userId) });
 });
 
 spaceRouter.post('/messages/:id/pin', requireAuth, async (request, response) => {
@@ -1325,7 +1360,7 @@ spaceRouter.post('/messages/:id/pin', requireAuth, async (request, response) => 
   });
 
   emitToPartnership('message.updated', userId, partnership.id, { messageId });
-  response.json({ message: serializeMessage(message) });
+  response.json({ message: serializeMessage(message, userId) });
 });
 
 spaceRouter.post('/messages/:id/delivered', requireAuth, async (request, response) => {
@@ -1734,16 +1769,16 @@ spaceRouter.post('/games/:id/moves', requireAuth, async (request, response) => {
       }
     });
     if (!existing) {
-      throw new AppError(404, 'game_not_found', 'Ø§Ù„Ù„Ø¹Ø¨Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©');
+      throw new AppError(404, 'game_not_found', 'اللعبة غير موجودة');
     }
     if (existing.gameType !== 'tic_tac_toe') {
       throw new AppError(409, 'unsupported_game_move', 'هذه اللعبة لا تستخدم خانات X/O');
     }
     if (existing.status !== 'active') {
-      throw new AppError(409, 'game_finished', 'Ø§Ù†ØªÙ‡Øª Ø§Ù„Ù„Ø¹Ø¨Ø©');
+      throw new AppError(409, 'game_finished', 'انتهت اللعبة');
     }
     if (existing.currentTurnUserId !== userId) {
-      throw new AppError(409, 'not_your_turn', 'Ù„ÙŠØ³ Ø¯ÙˆØ±Ùƒ Ø§Ù„Ø¢Ù†');
+      throw new AppError(409, 'not_your_turn', 'ليس دورك الآن');
     }
 
     const next = applyTicTacToeMove(
@@ -2356,18 +2391,46 @@ spaceRouter.delete('/blocks/:blockedId', requireAuth, async (request, response) 
 });
 
 spaceRouter.delete('/me', requireAuth, async (request, response) => {
-  await prisma.user.update({
-    where: { id: request.user!.sub },
-    data: {
-      deletedAt: new Date(),
-      refreshTokens: {
-        updateMany: {
-          where: { revokedAt: null },
-          data: { revokedAt: new Date() }
-        }
-      }
-    }
+  const userId = request.user!.sub;
+  const input = accountDeleteSchema.parse(request.body);
+
+  // Re-authenticate before a destructive, hard-to-reverse action so a stolen
+  // access token alone cannot delete the account.
+  const user = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+    select: { passwordHash: true }
   });
+  if (!user) {
+    throw new AppError(404, 'user_not_found', 'الحساب غير موجود');
+  }
+  const valid = await bcrypt.compare(input.password, user.passwordHash);
+  if (!valid) {
+    throw new AppError(401, 'invalid_credentials', 'كلمة المرور غير صحيحة');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: userId },
+      data: { deletedAt: new Date() }
+    });
+    await tx.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+    await tx.userSession.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: userId,
+        action: 'account.deleted',
+        targetType: 'user',
+        targetId: userId
+      }
+    });
+  });
+
   response.status(204).send();
 });
 
@@ -2421,24 +2484,18 @@ async function shouldSendPush(userId: string, type: string) {
   if (!preference) return true;
   if (!preference.enabled) return false;
   if (preference.quietFrom && preference.quietTo) {
-    return !isNowInsideQuietHours(preference.quietFrom, preference.quietTo);
+    // Evaluate quiet hours in the recipient's own timezone, not server UTC.
+    const profile = await prisma.userProfile.findUnique({
+      where: { userId },
+      select: { timezone: true }
+    });
+    return !isNowInsideQuietHours(
+      preference.quietFrom,
+      preference.quietTo,
+      profile?.timezone
+    );
   }
   return true;
-}
-
-function isNowInsideQuietHours(quietFrom: string, quietTo: string) {
-  const now = new Date();
-  const current = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const from = minutesFromClock(quietFrom);
-  const to = minutesFromClock(quietTo);
-  if (from === to) return false;
-  if (from < to) return current >= from && current < to;
-  return current >= from || current < to;
-}
-
-function minutesFromClock(value: string) {
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours * 60 + minutes;
 }
 
 function serializeNotificationPreference(preference: {
@@ -2474,10 +2531,10 @@ async function markMessageReceipt(
     }
   });
   if (!message) {
-    throw new AppError(404, 'message_not_found', 'Ø§Ù„Ø±Ø³Ø§Ù„Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©');
+    throw new AppError(404, 'message_not_found', 'الرسالة غير موجودة');
   }
   if (message.senderId === userId) {
-    throw new AppError(409, 'own_message_receipt', 'Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ­Ø¯ÙŠØ« Ø¥ÙŠØµØ§Ù„ Ø±Ø³Ø§Ù„ØªÙƒ');
+    throw new AppError(409, 'own_message_receipt', 'لا يمكن تحديث إيصال رسالتك');
   }
 
   const now = new Date();
@@ -2637,10 +2694,10 @@ function applyTicTacToeMove(
 ) {
   const symbol = state.symbols[userId];
   if (!symbol) {
-    throw new AppError(403, 'not_game_player', 'Ù„Ø³Øª Ù„Ø§Ø¹Ø¨Ø§Ù‹ ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„Ù„Ø¹Ø¨Ø©');
+    throw new AppError(403, 'not_game_player', 'لست لاعباً في هذه اللعبة');
   }
   if (state.board[position]) {
-    throw new AppError(409, 'cell_taken', 'Ø§Ù„Ø®Ø§Ù†Ø© Ù…Ø­Ø¬ÙˆØ²Ø©');
+    throw new AppError(409, 'cell_taken', 'الخانة محجوزة');
   }
 
   const board = [...state.board];
@@ -2844,28 +2901,33 @@ function messageResponseInclude(userId: string) {
   };
 }
 
-function serializeMessage(message: {
-  id: string;
-  clientMessageId: string;
-  body: string | null;
-  serverTimestamp: Date;
-  editedAt: Date | null;
-  attachments?: Array<{ assetId: string | null }>;
-  receipts?: Array<{
-    deliveredAt: Date | null;
-    readAt: Date | null;
-  }>;
-  reactions?: Array<{ value: string }>;
-  pins?: Array<{ id: string }>;
-  _count?: { reactions: number; pins: number };
-  sender?: {
-    username: string;
-    profile: { displayName: string } | null;
-  };
-}) {
+function serializeMessage(
+  message: {
+    id: string;
+    clientMessageId: string;
+    senderId: string;
+    body: string | null;
+    serverTimestamp: Date;
+    editedAt: Date | null;
+    attachments?: Array<{ assetId: string | null }>;
+    receipts?: Array<{
+      deliveredAt: Date | null;
+      readAt: Date | null;
+    }>;
+    reactions?: Array<{ value: string }>;
+    pins?: Array<{ id: string }>;
+    _count?: { reactions: number; pins: number };
+    sender?: {
+      username: string;
+      profile: { displayName: string } | null;
+    };
+  },
+  currentUserId: string
+) {
   return {
     id: message.id,
     clientMessageId: message.clientMessageId,
+    mine: message.senderId === currentUserId,
     body: message.body,
     serverTimestamp: message.serverTimestamp,
     editedAt: message.editedAt,

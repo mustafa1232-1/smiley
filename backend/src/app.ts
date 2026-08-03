@@ -17,7 +17,7 @@ export function createApp() {
 
   app.set('trust proxy', 1);
   app.use(helmet());
-  app.use(cors({ origin: config.corsOrigin === '*' ? true : config.corsOrigin }));
+  app.use(cors({ origin: config.corsOrigins === '*' ? true : config.corsOrigins }));
   app.use(express.json({ limit: '1mb' }));
   app.use((request, _response, next) => {
     request.id = request.headers['x-request-id']?.toString() ?? randomUUID();

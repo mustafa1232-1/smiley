@@ -12,7 +12,7 @@ let ioInstance: Server | null = null;
 
 export function configureRealtime(server: HttpServer) {
   const io = new Server(server, {
-    cors: { origin: config.corsOrigin === '*' ? true : config.corsOrigin }
+    cors: { origin: config.corsOrigins === '*' ? true : config.corsOrigins }
   });
   ioInstance = io;
 

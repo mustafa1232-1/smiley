@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import '../../core/api_client.dart';
+import '../../core/media_validation.dart';
 
 abstract interface class SpaceRepository {
   Future<UserProfile> me();
@@ -55,7 +56,11 @@ abstract interface class SpaceRepository {
   });
   Future<List<ChatMessage>> messages();
   Future<PagedResult<ChatMessage>> messagesPage({String? cursor, int limit});
-  Future<ChatMessage> sendMessage(String body, {List<String> assetIds});
+  Future<ChatMessage> sendMessage(
+    String body, {
+    List<String> assetIds,
+    String? clientMessageId,
+  });
   Future<ChatMessage> editMessage({
     required String messageId,
     required String body,
@@ -81,6 +86,10 @@ abstract interface class SpaceRepository {
   Future<void> createOccasion({required String title, required DateTime date});
   Future<List<NotificationItem>> notifications();
   Future<void> readAllNotifications();
+  Future<void> registerPushToken({
+    required String token,
+    required String platform,
+  });
   Future<List<NotificationPreferenceModel>> notificationPreferences();
   Future<NotificationPreferenceModel> updateNotificationPreference({
     required String type,
@@ -158,7 +167,7 @@ abstract interface class SpaceRepository {
   Future<List<BlockedUserModel>> blockedUsers();
   Future<void> blockPartner({String? reason});
   Future<void> unblockUser(String blockedUserId);
-  Future<void> deleteAccount();
+  Future<void> deleteAccount(String password);
 }
 
 class HttpSpaceRepository implements SpaceRepository {
@@ -331,9 +340,15 @@ class HttpSpaceRepository implements SpaceRepository {
     required String mimeType,
     required Uint8List bytes,
   }) async {
+    // Verify the real content type from the file's bytes (defends against a
+    // disguised/oversized file) and send the authoritative type to the server.
+    final resolvedMimeType = resolveUploadMimeType(
+      bytes: bytes,
+      declaredMimeType: mimeType,
+    );
     final presignJson = await _api.postJson('/uploads/presign', {
       'fileName': fileName,
-      'mimeType': mimeType,
+      'mimeType': resolvedMimeType,
       'sizeBytes': bytes.length,
     });
 
@@ -389,10 +404,14 @@ class HttpSpaceRepository implements SpaceRepository {
   Future<ChatMessage> sendMessage(
     String body, {
     List<String> assetIds = const [],
+    String? clientMessageId,
   }) async {
     final trimmed = body.trim();
     final json = await _api.postJson('/messages', {
-      'clientMessageId': 'm-${DateTime.now().microsecondsSinceEpoch}',
+      // A stable id makes retries (e.g. after an offline queue flush)
+      // idempotent: the server de-duplicates on clientMessageId.
+      'clientMessageId':
+          clientMessageId ?? 'm-${DateTime.now().microsecondsSinceEpoch}',
       if (trimmed.isNotEmpty) 'body': trimmed,
       if (assetIds.isNotEmpty) 'assetIds': assetIds,
     });
@@ -503,6 +522,17 @@ class HttpSpaceRepository implements SpaceRepository {
   @override
   Future<void> readAllNotifications() async {
     await _api.postJson('/notifications/read-all', {});
+  }
+
+  @override
+  Future<void> registerPushToken({
+    required String token,
+    required String platform,
+  }) async {
+    await _api.postJson('/notifications/push-tokens', {
+      'token': token,
+      'platform': platform,
+    });
   }
 
   @override
@@ -835,8 +865,8 @@ class HttpSpaceRepository implements SpaceRepository {
   }
 
   @override
-  Future<void> deleteAccount() async {
-    await _api.deleteJson('/me');
+  Future<void> deleteAccount(String password) async {
+    await _api.deleteJson('/me', body: {'password': password});
   }
 
   List<Map<String, dynamic>> _items(Map<String, dynamic> json) {
@@ -1319,6 +1349,7 @@ class ChatMessage {
     this.pinCount = 0,
     this.pinnedByMe = false,
     this.pending = false,
+    this.isMine = false,
   });
 
   final String id;
@@ -1334,6 +1365,7 @@ class ChatMessage {
   final int pinCount;
   final bool pinnedByMe;
   final bool pending;
+  final bool isMine;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final sender = json['sender'] as Map<String, dynamic>?;
@@ -1353,6 +1385,7 @@ class ChatMessage {
       myReaction: json['myReaction'] as String?,
       pinCount: int.parse((json['pinCount'] ?? 0).toString()),
       pinnedByMe: json['pinnedByMe'] as bool? ?? false,
+      isMine: json['mine'] as bool? ?? false,
     );
   }
 }

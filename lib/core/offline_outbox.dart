@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 abstract interface class OfflineOutbox {
   Future<List<QueuedMessage>> messages();
   Future<List<QueuedPost>> posts();
-  Future<void> enqueueMessage(String body, {List<String> assetIds});
+  Future<void> enqueueMessage(String body, {List<String> assetIds, String? id});
   Future<void> enqueuePost({required String body, List<String> assetIds});
   Future<void> removeMessage(String id);
   Future<void> removePost(String id);
@@ -33,11 +33,14 @@ class SharedPreferencesOfflineOutbox implements OfflineOutbox {
   Future<void> enqueueMessage(
     String body, {
     List<String> assetIds = const [],
+    String? id,
   }) async {
     final items = await messages();
+    // A caller-supplied id keeps the client message id stable across the
+    // online attempt and the queued retry, so the server de-duplicates.
     items.add(
       QueuedMessage(
-        id: _id(),
+        id: id ?? _id(),
         body: body.trim(),
         assetIds: assetIds,
         createdAt: DateTime.now().toUtc(),

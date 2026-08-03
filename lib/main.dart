@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/api_client.dart';
 import 'core/offline_outbox.dart';
+import 'core/push_service.dart';
 import 'core/realtime_client.dart';
 import 'core/secure_stores.dart';
-import 'features/auth/auth_models.dart';
 import 'features/auth/auth_repository.dart';
 import 'features/auth/auth_screen.dart';
 import 'features/gate/date_gate_screen.dart';
@@ -13,7 +14,9 @@ import 'features/home/empty_world_screen.dart';
 import 'features/partnerships/partnership_repository.dart';
 import 'features/space/space_repository.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'https://smiley-smiley.up.railway.app/api/v1',
@@ -32,6 +35,16 @@ void main() {
     serverUrl: realtimeUrl,
     tokenProvider: tokenStore.readAccessToken,
   );
+  final spaceRepository = HttpSpaceRepository(apiClient);
+
+  await initializeFirebaseForPush();
+  final pushService = PushService(
+    registerToken: (token, platform) async {
+      // Only register once the user is signed in (endpoint is authenticated).
+      if (await tokenStore.readAccessToken() == null) return;
+      await spaceRepository.registerPushToken(token: token, platform: platform);
+    },
+  );
 
   runApp(
     SmileyApp(
@@ -39,9 +52,10 @@ void main() {
       tokenStore: tokenStore,
       authRepository: HttpAuthRepository(apiClient),
       partnershipRepository: HttpPartnershipRepository(apiClient),
-      spaceRepository: HttpSpaceRepository(apiClient),
+      spaceRepository: spaceRepository,
       offlineOutbox: const SharedPreferencesOfflineOutbox(),
       realtimeClient: realtimeClient,
+      pushService: pushService,
     ),
   );
 }
@@ -55,6 +69,7 @@ class SmileyApp extends StatelessWidget {
     required this.spaceRepository,
     required this.offlineOutbox,
     required this.realtimeClient,
+    required this.pushService,
     super.key,
   });
 
@@ -65,6 +80,7 @@ class SmileyApp extends StatelessWidget {
   final SpaceRepository spaceRepository;
   final OfflineOutbox offlineOutbox;
   final RealtimeClient realtimeClient;
+  final PushService pushService;
 
   @override
   Widget build(BuildContext context) {
@@ -74,6 +90,15 @@ class SmileyApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
+      // Arabic locale so built-in Material widgets (date pickers, tooltips,
+      // dialogs) render in Arabic with correct right-to-left layout.
+      locale: const Locale('ar'),
+      supportedLocales: const [Locale('ar'), Locale('en')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       builder: (context, child) {
         return Directionality(
           textDirection: TextDirection.rtl,
@@ -88,46 +113,120 @@ class SmileyApp extends StatelessWidget {
         spaceRepository: spaceRepository,
         offlineOutbox: offlineOutbox,
         realtimeClient: realtimeClient,
+        pushService: pushService,
       ),
     );
   }
 
   ThemeData _buildTheme(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
+    // Vibrant lavender theme with playful pink/amber accents.
     final scheme =
         ColorScheme.fromSeed(
-          seedColor: const Color(0xFFB96B7F),
+          seedColor: const Color(0xFF7C4DFF),
           brightness: brightness,
         ).copyWith(
-          primary: const Color(0xFFB96B7F),
-          secondary: const Color(0xFF4B9A8D),
-          tertiary: const Color(0xFFD5A021),
-          surface: isDark ? const Color(0xFF181416) : const Color(0xFFFFFBFB),
+          primary: const Color(0xFF7C4DFF),
+          secondary: const Color(0xFFFF5FA2),
+          tertiary: const Color(0xFFFFB300),
+          surface: isDark ? const Color(0xFF181425) : const Color(0xFFFDFAFF),
         );
+
+    const transitions = PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: _LivelyPageTransitionsBuilder(),
+        TargetPlatform.iOS: _LivelyPageTransitionsBuilder(),
+        TargetPlatform.macOS: _LivelyPageTransitionsBuilder(),
+        TargetPlatform.windows: _LivelyPageTransitionsBuilder(),
+        TargetPlatform.linux: _LivelyPageTransitionsBuilder(),
+      },
+    );
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: isDark
-          ? const Color(0xFF120F11)
-          : const Color(0xFFFFF8F8),
+          ? const Color(0xFF120E1C)
+          : const Color(0xFFF4EEFF),
+      // Animated sparkle ripple on every tap for a livelier feel.
+      splashFactory: InkSparkle.splashFactory,
+      pageTransitionsTheme: transitions,
+      appBarTheme: AppBarTheme(
+        backgroundColor: scheme.surface,
+        foregroundColor: scheme.primary,
+        elevation: 0,
+        scrolledUnderElevation: 3,
+        centerTitle: true,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        elevation: 3,
+        indicatorColor: scheme.primary.withValues(alpha: 0.16),
+        labelTextStyle: WidgetStateProperty.all(
+          const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+        fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          minimumSize: const Size.fromHeight(48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          minimumSize: const Size.fromHeight(52),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: scheme.secondary,
+        foregroundColor: Colors.white,
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
       cardTheme: CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        elevation: 1,
+        shadowColor: scheme.primary.withValues(alpha: 0.18),
+        surfaceTintColor: scheme.surfaceTint,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+    );
+  }
+}
+
+/// A livelier default page transition: fade combined with a gentle upward
+/// slide, applied to every route push across all platforms.
+class _LivelyPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _LivelyPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return FadeTransition(
+      opacity: curved,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.05),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
       ),
     );
   }
@@ -142,6 +241,7 @@ class _Bootstrap extends StatefulWidget {
     required this.spaceRepository,
     required this.offlineOutbox,
     required this.realtimeClient,
+    required this.pushService,
   });
 
   final GateStore gateStore;
@@ -151,105 +251,81 @@ class _Bootstrap extends StatefulWidget {
   final SpaceRepository spaceRepository;
   final OfflineOutbox offlineOutbox;
   final RealtimeClient realtimeClient;
+  final PushService pushService;
 
   @override
   State<_Bootstrap> createState() => _BootstrapState();
 }
 
 class _BootstrapState extends State<_Bootstrap> {
-  late final Future<_BootstrapStateModel> _stateFuture = _load();
-
-  Future<_BootstrapStateModel> _load() async {
-    final gateUnlocked = await widget.gateStore.isUnlocked();
-    final accessToken = await widget.tokenStore.readAccessToken();
-    return _BootstrapStateModel(gateUnlocked, accessToken != null);
-  }
+  bool? _gateUnlocked;
+  bool _authenticated = false;
 
   @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final gateUnlocked = await widget.gateStore.isUnlocked();
+    final accessToken = await widget.tokenStore.readAccessToken();
+    if (!mounted) return;
+    setState(() {
+      _gateUnlocked = gateUnlocked;
+      _authenticated = accessToken != null;
+    });
+    if (accessToken != null) _registerPush();
+  }
+
+  // Sets up push (idempotent) and registers the device token now that the user
+  // is authenticated.
+  Future<void> _registerPush() async {
+    await widget.pushService.initialize();
+    await widget.pushService.registerCurrentToken();
+  }
+
+  void _onAuthenticated() {
+    setState(() => _authenticated = true);
+    _registerPush();
+  }
+
+  // Declarative routing: flipping state rebuilds into the right screen
+  // immediately, so login/logout/gate transitions happen without relying on
+  // an imperative Navigator call from a possibly-stale context.
+  @override
   Widget build(BuildContext context) {
-    return FutureBuilder<_BootstrapStateModel>(
-      future: _stateFuture,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const _BootScreen();
-        }
+    final gateUnlocked = _gateUnlocked;
+    if (gateUnlocked == null) {
+      return const _BootScreen();
+    }
 
-        final state = snapshot.requireData;
-        if (!state.gateUnlocked) {
-          return DateGateScreen(
-            store: widget.gateStore,
-            validator: const GateValidator(),
-            onUnlocked: () => Navigator.of(context).pushReplacement(
-              MaterialPageRoute<void>(
-                builder: (_) => AuthScreen(
-                  repository: widget.authRepository,
-                  tokenStore: widget.tokenStore,
-                  onAuthenticated: _openWorld,
-                ),
-              ),
-            ),
-          );
-        }
+    if (!gateUnlocked) {
+      return DateGateScreen(
+        store: widget.gateStore,
+        validator: const GateValidator(),
+        onUnlocked: () => setState(() => _gateUnlocked = true),
+      );
+    }
 
-        if (!state.authenticated) {
-          return AuthScreen(
-            repository: widget.authRepository,
-            tokenStore: widget.tokenStore,
-            onAuthenticated: _openWorld,
-          );
-        }
+    if (!_authenticated) {
+      return AuthScreen(
+        repository: widget.authRepository,
+        tokenStore: widget.tokenStore,
+        onAuthenticated: (_) => _onAuthenticated(),
+      );
+    }
 
-        return EmptyWorldScreen(
-          partnershipRepository: widget.partnershipRepository,
-          spaceRepository: widget.spaceRepository,
-          offlineOutbox: widget.offlineOutbox,
-          authRepository: widget.authRepository,
-          realtimeClient: widget.realtimeClient,
-          tokenStore: widget.tokenStore,
-          onSignedOut: () => Navigator.of(context).pushReplacement(
-            MaterialPageRoute<void>(
-              builder: (_) => AuthScreen(
-                repository: widget.authRepository,
-                tokenStore: widget.tokenStore,
-                onAuthenticated: _openWorld,
-              ),
-            ),
-          ),
-        );
-      },
+    return EmptyWorldScreen(
+      partnershipRepository: widget.partnershipRepository,
+      spaceRepository: widget.spaceRepository,
+      offlineOutbox: widget.offlineOutbox,
+      authRepository: widget.authRepository,
+      realtimeClient: widget.realtimeClient,
+      tokenStore: widget.tokenStore,
+      onSignedOut: () => setState(() => _authenticated = false),
     );
   }
-
-  void _openWorld(AuthSession session) {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => EmptyWorldScreen(
-          partnershipRepository: widget.partnershipRepository,
-          spaceRepository: widget.spaceRepository,
-          offlineOutbox: widget.offlineOutbox,
-          authRepository: widget.authRepository,
-          realtimeClient: widget.realtimeClient,
-          tokenStore: widget.tokenStore,
-          onSignedOut: () => Navigator.of(context).pushReplacement(
-            MaterialPageRoute<void>(
-              builder: (_) => AuthScreen(
-                repository: widget.authRepository,
-                tokenStore: widget.tokenStore,
-                onAuthenticated: _openWorld,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BootstrapStateModel {
-  const _BootstrapStateModel(this.gateUnlocked, this.authenticated);
-
-  final bool gateUnlocked;
-  final bool authenticated;
 }
 
 class _BootScreen extends StatelessWidget {
@@ -257,6 +333,36 @@ class _BootScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: Center(
+        child: TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0.6, end: 1),
+          duration: const Duration(milliseconds: 700),
+          curve: Curves.easeOutBack,
+          builder: (context, value, child) {
+            return Opacity(
+              opacity: value.clamp(0.0, 1.0),
+              child: Transform.scale(scale: value, child: child),
+            );
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.favorite_rounded, size: 76, color: scheme.secondary),
+              const SizedBox(height: 16),
+              Text(
+                'Smiley',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -1,4 +1,4 @@
-package com.example.smiley
+package com.smiley.user
 
 import io.flutter.embedding.android.FlutterActivity
 

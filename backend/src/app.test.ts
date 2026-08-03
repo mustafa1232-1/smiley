@@ -18,10 +18,16 @@ const mockPrisma = {
 vi.mock('./lib/prisma.js', () => ({ prisma: mockPrisma }));
 
 const { createApp } = await import('./app.js');
+const { _resetThrottle } = await import('./lib/login-throttle.js');
+
+function accessTokenFor(sub: string, username = 'tester') {
+  return jwt.sign({ sub, username }, 'dev-access-secret');
+}
 
 describe('api app contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetThrottle();
     mockPrisma.user.findFirst.mockResolvedValue(null);
     mockPrisma.partnership.findFirst.mockResolvedValue(null);
     mockPrisma.timeCapsule.findFirst.mockResolvedValue(null);
@@ -122,5 +128,43 @@ describe('api app contract', () => {
     });
     expect(response.text).not.toContain('secret');
     expect(mockPrisma.timeCapsule.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects presign requests for disallowed upload types', async () => {
+    const response = await request(createApp())
+      .post('/api/v1/uploads/presign')
+      .set('authorization', `Bearer ${accessTokenFor('44444444-4444-4444-8444-444444444444')}`)
+      .send({ mimeType: 'text/html', sizeBytes: 1024 });
+
+    expect(response.status).toBe(422);
+    expect(response.body).toMatchObject({ code: 'validation_failed' });
+  });
+
+  it('requires a password to delete the account', async () => {
+    const response = await request(createApp())
+      .delete('/api/v1/me')
+      .set('authorization', `Bearer ${accessTokenFor('55555555-5555-4555-8555-555555555555')}`)
+      .send({});
+
+    expect(response.status).toBe(422);
+    expect(response.body).toMatchObject({ code: 'validation_failed' });
+    expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('locks the account after repeated failed login attempts', async () => {
+    const app = createApp();
+    const attempt = () =>
+      request(app)
+        .post('/api/v1/auth/login')
+        .send({ identifier: 'locktest', password: 'wrong-password' });
+
+    for (let i = 0; i < 8; i += 1) {
+      const failed = await attempt();
+      expect(failed.status).toBe(401);
+    }
+
+    const locked = await attempt();
+    expect(locked.status).toBe(429);
+    expect(locked.body).toMatchObject({ code: 'account_locked' });
   });
 });

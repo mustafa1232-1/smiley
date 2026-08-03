@@ -6,6 +6,23 @@ import { AppError } from './errors.js';
 
 let client: S3Client | null = null;
 
+// Returns the max upload size for a given content type, per the configured
+// per-media-type ceilings (image/audio/video), falling back to the general cap.
+export function maxUploadBytesForMime(mimeType: string): number {
+  const type = mimeType.toLowerCase();
+  if (type.startsWith('image/')) return config.storage.maxImageBytes;
+  if (type.startsWith('audio/')) return config.storage.maxAudioBytes;
+  if (type.startsWith('video/')) return config.storage.maxVideoBytes;
+  return config.storage.maxUploadBytes;
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} غيغابايت`;
+  }
+  return `${Math.round(bytes / 1024 / 1024)} ميغابايت`;
+}
+
 export function isStorageConfigured() {
   return Boolean(
     config.storage.r2AccountId &&
@@ -19,6 +36,7 @@ export async function createPutUploadUrl(input: {
   objectKey: string;
   mimeType: string;
   sizeBytes: number;
+  maxBytes?: number;
 }) {
   if (!isStorageConfigured()) {
     throw new AppError(
@@ -27,8 +45,13 @@ export async function createPutUploadUrl(input: {
       'لم يتم إعداد تخزين الوسائط بعد'
     );
   }
-  if (input.sizeBytes > config.storage.maxUploadBytes) {
-    throw new AppError(413, 'upload_too_large', 'حجم الملف أكبر من الحد المسموح');
+  const maxBytes = input.maxBytes ?? config.storage.maxUploadBytes;
+  if (input.sizeBytes > maxBytes) {
+    throw new AppError(
+      413,
+      'upload_too_large',
+      `حجم الملف أكبر من الحد المسموح (${formatBytes(maxBytes)})`
+    );
   }
 
   const command = new PutObjectCommand({

@@ -1,4 +1,5 @@
 import { Router, type Request } from 'express';
+import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { createHash, randomBytes } from 'node:crypto';
@@ -7,11 +8,31 @@ import type { Prisma } from '@prisma/client';
 
 import { config } from '../../config.js';
 import { AppError } from '../../lib/errors.js';
+import { lockedUntil, recordFailure, recordSuccess } from '../../lib/login-throttle.js';
 import { prisma } from '../../lib/prisma.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { isReservedUsername, normalizeUsername, usernameRegex } from './username.js';
 
 export const authRouter = Router();
+
+// Strict brute-force limiter for credential endpoints, on top of the global
+// API limiter. Disabled under test so the suite is deterministic.
+const sensitiveAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => config.nodeEnv === 'test',
+  message: {
+    code: 'too_many_requests',
+    message: 'عدد كبير من المحاولات. حاول مرة أخرى بعد قليل',
+    details: null
+  }
+});
+
+// Precomputed hash used to equalize response time when an account does not
+// exist, so login timing cannot be used to enumerate usernames.
+const TIMING_SAFE_HASH = bcrypt.hashSync('smiley-timing-guard', config.bcryptCost);
 
 const optionalEmailSchema = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
@@ -79,7 +100,7 @@ const passwordResetConfirmSchema = z.object({
 
 const sessionParamSchema = z.string().uuid();
 
-authRouter.post('/auth/register', async (request, response) => {
+authRouter.post('/auth/register', sensitiveAuthLimiter, async (request, response) => {
   const input = registerSchema.parse(request.body);
   const usernameNormalized = normalizeUsername(input.username);
   const emailNormalized = input.email?.toLowerCase();
@@ -142,9 +163,18 @@ authRouter.post('/auth/register', async (request, response) => {
   response.status(201).json(session);
 });
 
-authRouter.post('/auth/login', async (request, response) => {
+authRouter.post('/auth/login', sensitiveAuthLimiter, async (request, response) => {
   const input = loginSchema.parse(request.body);
   const identifier = input.identifier.toLowerCase();
+  const throttleKey = `login:${identifier}`;
+
+  const lockExpiry = lockedUntil(throttleKey);
+  if (lockExpiry) {
+    throw new AppError(429, 'account_locked', 'تم إيقاف المحاولات مؤقتًا لحماية الحساب. حاول لاحقًا', {
+      retryAfter: new Date(lockExpiry).toISOString()
+    });
+  }
+
   const identityFilters = identityWhereFilters(identifier);
   const user = await prisma.user.findFirst({
     where: {
@@ -153,10 +183,19 @@ authRouter.post('/auth/login', async (request, response) => {
     },
     include: { profile: true }
   });
-  if (!user) throw new AppError(401, 'invalid_credentials', 'بيانات الدخول غير صحيحة');
+  if (!user) {
+    // Compare against a dummy hash so timing does not reveal account existence.
+    await bcrypt.compare(input.password, TIMING_SAFE_HASH);
+    recordFailure(throttleKey);
+    throw new AppError(401, 'invalid_credentials', 'بيانات الدخول غير صحيحة');
+  }
 
   const valid = await bcrypt.compare(input.password, user.passwordHash);
-  if (!valid) throw new AppError(401, 'invalid_credentials', 'بيانات الدخول غير صحيحة');
+  if (!valid) {
+    recordFailure(throttleKey);
+    throw new AppError(401, 'invalid_credentials', 'بيانات الدخول غير صحيحة');
+  }
+  recordSuccess(throttleKey);
 
   const session = await issueSession(
     user.id,
@@ -168,7 +207,7 @@ authRouter.post('/auth/login', async (request, response) => {
   response.json(session);
 });
 
-authRouter.post('/auth/password-reset/request', async (request, response) => {
+authRouter.post('/auth/password-reset/request', sensitiveAuthLimiter, async (request, response) => {
   const input = passwordResetRequestSchema.parse(request.body);
   const identifier = input.identifier.toLowerCase();
   const identityFilters = identityWhereFilters(identifier);
@@ -198,7 +237,7 @@ authRouter.post('/auth/password-reset/request', async (request, response) => {
   });
 });
 
-authRouter.post('/auth/password-reset/confirm', async (request, response) => {
+authRouter.post('/auth/password-reset/confirm', sensitiveAuthLimiter, async (request, response) => {
   const input = passwordResetConfirmSchema.parse(request.body);
   const candidates = await prisma.passwordResetToken.findMany({
     where: {
