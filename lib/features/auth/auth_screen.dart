@@ -492,7 +492,7 @@ class _ResetForm extends StatelessWidget {
         TextField(
           controller: identifier,
           decoration: const InputDecoration(
-            labelText: 'اسم المستخدم أو البريد',
+            labelText: 'اسم المستخدم أو البريد أو الهاتف',
             prefixIcon: Icon(Icons.mark_email_unread_outlined),
           ),
         ),
