@@ -1277,6 +1277,7 @@ class SpacePost {
     required this.commentCount,
     this.title,
     this.myReaction,
+    this.attachments = const [],
   });
 
   final String id;
@@ -1287,6 +1288,7 @@ class SpacePost {
   final int reactionCount;
   final int commentCount;
   final String? myReaction;
+  final List<MediaRef> attachments;
 
   factory SpacePost.fromJson(Map<String, dynamic> json) {
     final assetIds = (json['assetIds'] as List<dynamic>? ?? [])
@@ -1301,6 +1303,7 @@ class SpacePost {
       reactionCount: int.parse((json['reactionCount'] ?? 0).toString()),
       commentCount: int.parse((json['commentCount'] ?? 0).toString()),
       myReaction: json['myReaction'] as String?,
+      attachments: MediaRef.listFrom(json['attachments']),
     );
   }
 }
@@ -1355,6 +1358,43 @@ class MediaAssetModel {
   }
 }
 
+class MediaRef {
+  const MediaRef({required this.url, this.mimeType});
+
+  final String url;
+  final String? mimeType;
+
+  bool get isImage =>
+      (mimeType?.startsWith('image/') ?? false) || _looksLikeImage(url);
+  bool get isVideo => mimeType?.startsWith('video/') ?? false;
+  bool get isAudio => mimeType?.startsWith('audio/') ?? false;
+
+  static bool _looksLikeImage(String url) {
+    final lower = url.toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.webp') ||
+        lower.endsWith('.gif') ||
+        lower.endsWith('.heic');
+  }
+
+  factory MediaRef.fromJson(Map<String, dynamic> json) {
+    return MediaRef(
+      url: json['url'] as String,
+      mimeType: json['mimeType'] as String?,
+    );
+  }
+
+  static List<MediaRef> listFrom(dynamic value) {
+    return (value as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>()
+        .where((item) => item['url'] != null)
+        .map(MediaRef.fromJson)
+        .toList();
+  }
+}
+
 class ChatMessage {
   const ChatMessage({
     required this.id,
@@ -1371,6 +1411,7 @@ class ChatMessage {
     this.pinnedByMe = false,
     this.pending = false,
     this.isMine = false,
+    this.attachments = const [],
   });
 
   final String id;
@@ -1387,6 +1428,7 @@ class ChatMessage {
   final bool pinnedByMe;
   final bool pending;
   final bool isMine;
+  final List<MediaRef> attachments;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final sender = json['sender'] as Map<String, dynamic>?;
@@ -1407,6 +1449,7 @@ class ChatMessage {
       pinCount: int.parse((json['pinCount'] ?? 0).toString()),
       pinnedByMe: json['pinnedByMe'] as bool? ?? false,
       isMine: json['mine'] as bool? ?? false,
+      attachments: MediaRef.listFrom(json['attachments']),
     );
   }
 }

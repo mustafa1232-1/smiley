@@ -725,6 +725,10 @@ spaceRouter.get('/space', requireAuth, async (request, response) => {
     })
   ]);
 
+  const latestPostsSerialized = await Promise.all(
+    latestPosts.map(serializePostWithMedia)
+  );
+
   response.json({
     partnership: {
       id: partnership.id,
@@ -752,7 +756,7 @@ spaceRouter.get('/space', requireAuth, async (request, response) => {
           }
         }
       : null,
-    latestPosts: latestPosts.map(serializePost),
+    latestPosts: latestPostsSerialized,
     nextEvent,
     unreadNotifications
   });
@@ -839,8 +843,11 @@ spaceRouter.get('/posts', requireAuth, async (request, response) => {
     ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
   });
   const page = posts.slice(0, limit);
+  const postMediaMap = await resolveMediaMap(
+    page.flatMap((post) => post.media.map((item) => item.assetId))
+  );
   response.json({
-    items: page.map(serializePost),
+    items: page.map((post) => serializePost(post, postMediaMap)),
     nextCursor: posts.length > limit ? page.at(-1)?.id : null
   });
 });
@@ -874,7 +881,7 @@ spaceRouter.post('/posts', requireAuth, async (request, response) => {
     payload: { postId: post.id }
   });
 
-  response.status(201).json({ post: serializePost(post) });
+  response.status(201).json({ post: await serializePostWithMedia(post) });
 });
 
 spaceRouter.patch('/posts/:id', requireAuth, async (request, response) => {
@@ -925,7 +932,7 @@ spaceRouter.patch('/posts/:id', requireAuth, async (request, response) => {
   });
 
   emitToPartnership('post.updated', userId, partnership.id, { postId });
-  response.json({ post: serializePost(post) });
+  response.json({ post: await serializePostWithMedia(post) });
 });
 
 spaceRouter.delete('/posts/:id', requireAuth, async (request, response) => {
@@ -984,7 +991,7 @@ spaceRouter.post('/posts/:id/reactions', requireAuth, async (request, response) 
   });
 
   emitToPartnership('post.updated', userId, partnership.id, { postId });
-  response.json({ post: serializePost(post) });
+  response.json({ post: await serializePostWithMedia(post) });
 });
 
 spaceRouter.post('/posts/:id/comments', requireAuth, async (request, response) => {
@@ -1018,7 +1025,7 @@ spaceRouter.post('/posts/:id/comments', requireAuth, async (request, response) =
     body: input.body,
     payload: { postId }
   });
-  response.status(201).json({ post: serializePost(post) });
+  response.status(201).json({ post: await serializePostWithMedia(post) });
 });
 
 spaceRouter.get('/calendar-events', requireAuth, async (request, response) => {
@@ -1114,9 +1121,14 @@ spaceRouter.get('/messages', requireAuth, async (request, response) => {
     ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
   });
   const page = messages.slice(0, limit);
+  const messageMediaMap = await resolveMediaMap(
+    page.flatMap((message) => message.attachments.map((a) => a.assetId))
+  );
 
   response.json({
-    items: page.reverse().map((message) => serializeMessage(message, userId)),
+    items: page
+      .reverse()
+      .map((message) => serializeMessage(message, userId, messageMediaMap)),
     nextCursor: messages.length > limit ? page.at(-1)?.id : null
   });
 });
@@ -1240,7 +1252,7 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
     payload: { messageId: message.id }
   });
 
-  response.status(201).json({ message: serializeMessage(message, userId) });
+  response.status(201).json({ message: await serializeMessageWithMedia(message, userId) });
 });
 
 spaceRouter.patch('/messages/:id', requireAuth, async (request, response) => {
@@ -1272,7 +1284,7 @@ spaceRouter.patch('/messages/:id', requireAuth, async (request, response) => {
   });
 
   emitToPartnership('message.updated', userId, partnership.id, { messageId });
-  response.json({ message: serializeMessage(message, userId) });
+  response.json({ message: await serializeMessageWithMedia(message, userId) });
 });
 
 spaceRouter.delete('/messages/:id', requireAuth, async (request, response) => {
@@ -1335,7 +1347,7 @@ spaceRouter.post('/messages/:id/reactions', requireAuth, async (request, respons
   });
 
   emitToPartnership('message.updated', userId, partnership.id, { messageId });
-  response.json({ message: serializeMessage(message, userId) });
+  response.json({ message: await serializeMessageWithMedia(message, userId) });
 });
 
 spaceRouter.post('/messages/:id/pin', requireAuth, async (request, response) => {
@@ -1368,7 +1380,7 @@ spaceRouter.post('/messages/:id/pin', requireAuth, async (request, response) => 
   });
 
   emitToPartnership('message.updated', userId, partnership.id, { messageId });
-  response.json({ message: serializeMessage(message, userId) });
+  response.json({ message: await serializeMessageWithMedia(message, userId) });
 });
 
 spaceRouter.post('/messages/:id/delivered', requireAuth, async (request, response) => {
@@ -2867,7 +2879,7 @@ function serializePost(post: {
     username: string;
     profile: { displayName: string } | null;
   };
-}) {
+}, mediaMap: Map<string, MediaInfo> = new Map()) {
   return {
     id: post.id,
     title: post.title,
@@ -2876,6 +2888,7 @@ function serializePost(post: {
     category: post.category,
     createdAt: post.createdAt,
     assetIds: post.media?.map((item) => item.assetId) ?? [],
+    attachments: serializeAttachments(post.media, mediaMap),
     reactionCount: post._count?.reactions ?? 0,
     commentCount: post._count?.comments ?? 0,
     myReaction: post.reactions?.[0]?.value ?? null,
@@ -2915,6 +2928,57 @@ function messageResponseInclude(userId: string) {
   };
 }
 
+type MediaInfo = { url: string | null; mimeType: string };
+
+// Resolves asset ids to their public URL + content type in a single query.
+async function resolveMediaMap(
+  assetIds: Array<string | null | undefined>
+): Promise<Map<string, MediaInfo>> {
+  const unique = [...new Set(assetIds.filter((id): id is string => Boolean(id)))];
+  if (unique.length === 0) return new Map();
+  const assets = await prisma.mediaAsset.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, objectKey: true, mimeType: true }
+  });
+  return new Map(
+    assets.map((asset) => [
+      asset.id,
+      { url: mediaPublicUrl(asset.objectKey), mimeType: asset.mimeType }
+    ])
+  );
+}
+
+function serializeAttachments(
+  attachments: Array<{ assetId: string | null; url?: string | null }> | undefined,
+  mediaMap: Map<string, MediaInfo>
+) {
+  return (attachments ?? []).map((attachment) => {
+    const info = attachment.assetId ? mediaMap.get(attachment.assetId) : undefined;
+    return {
+      assetId: attachment.assetId,
+      url: info?.url ?? attachment.url ?? null,
+      mimeType: info?.mimeType ?? null
+    };
+  });
+}
+
+async function serializeMessageWithMedia(
+  message: Parameters<typeof serializeMessage>[0],
+  currentUserId: string
+) {
+  const mediaMap = await resolveMediaMap(
+    (message.attachments ?? []).map((attachment) => attachment.assetId)
+  );
+  return serializeMessage(message, currentUserId, mediaMap);
+}
+
+async function serializePostWithMedia(post: Parameters<typeof serializePost>[0]) {
+  const mediaMap = await resolveMediaMap(
+    (post.media ?? []).map((item) => item.assetId)
+  );
+  return serializePost(post, mediaMap);
+}
+
 function serializeMessage(
   message: {
     id: string;
@@ -2923,7 +2987,7 @@ function serializeMessage(
     body: string | null;
     serverTimestamp: Date;
     editedAt: Date | null;
-    attachments?: Array<{ assetId: string | null }>;
+    attachments?: Array<{ assetId: string | null; url?: string | null }>;
     receipts?: Array<{
       deliveredAt: Date | null;
       readAt: Date | null;
@@ -2936,7 +3000,8 @@ function serializeMessage(
       profile: { displayName: string } | null;
     };
   },
-  currentUserId: string
+  currentUserId: string,
+  mediaMap: Map<string, MediaInfo> = new Map()
 ) {
   return {
     id: message.id,
@@ -2948,6 +3013,7 @@ function serializeMessage(
     assetIds: (message.attachments ?? [])
       .map((item) => item.assetId)
       .filter((assetId): assetId is string => Boolean(assetId)),
+    attachments: serializeAttachments(message.attachments, mediaMap),
     deliveredAt: message.receipts?.[0]?.deliveredAt ?? null,
     readAt: message.receipts?.[0]?.readAt ?? null,
     reactionCount: message._count?.reactions ?? 0,

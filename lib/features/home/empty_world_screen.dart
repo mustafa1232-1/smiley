@@ -1408,7 +1408,9 @@ class _ChatTabState extends State<_ChatTab>
                                 const SizedBox(height: 2),
                               ],
                               if (item.body.isNotEmpty) Text(item.body),
-                              if (item.assetIds.isNotEmpty) ...[
+                              if (item.attachments.isNotEmpty)
+                                _MediaGallery(attachments: item.attachments)
+                              else if (item.assetIds.isNotEmpty) ...[
                                 if (item.body.isNotEmpty)
                                   const SizedBox(height: 6),
                                 Row(
@@ -6905,6 +6907,87 @@ class _MoodBanner extends StatelessWidget {
   }
 }
 
+class _MediaGallery extends StatelessWidget {
+  const _MediaGallery({required this.attachments});
+
+  final List<MediaRef> attachments;
+
+  @override
+  Widget build(BuildContext context) {
+    if (attachments.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final media in attachments)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: media.isImage
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: 240,
+                        maxHeight: 260,
+                      ),
+                      child: Image.network(
+                        media.url,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, progress) =>
+                            progress == null
+                            ? child
+                            : const SizedBox(
+                                width: 240,
+                                height: 140,
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              ),
+                        errorBuilder: (context, error, stack) =>
+                            _chip(context, media, 'تعذر تحميل الصورة'),
+                      ),
+                    ),
+                  )
+                : _chip(
+                    context,
+                    media,
+                    media.isVideo
+                        ? 'فيديو'
+                        : media.isAudio
+                        ? 'صوت'
+                        : 'ملف',
+                  ),
+          ),
+      ],
+    );
+  }
+
+  Widget _chip(BuildContext context, MediaRef media, String label) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            media.isVideo
+                ? Icons.videocam_rounded
+                : media.isAudio
+                ? Icons.audiotrack_rounded
+                : Icons.insert_drive_file_rounded,
+            size: 18,
+          ),
+          const SizedBox(width: 6),
+          Text(label),
+        ],
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.icon,
@@ -7050,6 +7133,14 @@ class _PostTile extends StatelessWidget {
                       ],
                     ),
             ),
+            if (post.attachments.isNotEmpty)
+              Padding(
+                padding: const EdgeInsetsDirectional.only(start: 12, end: 12),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: _MediaGallery(attachments: post.attachments),
+                ),
+              ),
             Padding(
               padding: const EdgeInsetsDirectional.only(
                 start: 12,
