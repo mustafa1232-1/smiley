@@ -16,6 +16,13 @@ export function maxUploadBytesForMime(mimeType: string): number {
   return config.storage.maxUploadBytes;
 }
 
+/** Public URL for a stored object, or null when no public base URL is set. */
+export function mediaPublicUrl(objectKey: string): string | null {
+  const base = config.storage.r2PublicBaseUrl;
+  if (!base) return null;
+  return `${base.replace(/\/$/, '')}/${objectKey}`;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) {
     return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} غيغابايت`;

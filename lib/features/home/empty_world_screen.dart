@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/animations.dart';
@@ -5270,6 +5271,7 @@ class _RoomScreen extends StatefulWidget {
   const _RoomScreen.music({required this.repository})
     : title = 'الموسيقى',
       icon = Icons.music_note_rounded,
+      isAudio = true,
       load = repositoryMusicRoom,
       add = repositoryAddMusicItem,
       playback = repositoryUpdateMusicPlayback;
@@ -5277,6 +5279,7 @@ class _RoomScreen extends StatefulWidget {
   const _RoomScreen.watch({required this.repository})
     : title = 'السينما',
       icon = Icons.movie_outlined,
+      isAudio = false,
       load = repositoryWatchRoom,
       add = repositoryAddWatchItem,
       playback = repositoryUpdateWatchPlayback;
@@ -5284,6 +5287,7 @@ class _RoomScreen extends StatefulWidget {
   final SpaceRepository repository;
   final String title;
   final IconData icon;
+  final bool isAudio;
   final Future<RoomModel> Function(SpaceRepository repository) load;
   final Future<void> Function(
     SpaceRepository repository,
@@ -5353,11 +5357,16 @@ class _RoomScreenState extends State<_RoomScreen> {
   final _title = TextEditingController();
   final _sourceUrl = TextEditingController();
   bool _busy = false;
+  bool _uploading = false;
+
+  final AudioPlayer _player = AudioPlayer();
+  RoomItem? _current;
 
   @override
   void dispose() {
     _title.dispose();
     _sourceUrl.dispose();
+    _player.dispose();
     super.dispose();
   }
 
@@ -5371,7 +5380,9 @@ class _RoomScreenState extends State<_RoomScreen> {
           _SectionHeader(
             icon: widget.icon,
             title: widget.title,
-            subtitle: 'مساحة مشتركة تحفظ ما تريدان سماعه أو مشاهدته.',
+            subtitle: widget.isAudio
+                ? 'ارفعا أغنية أو أضيفا رابطًا، واستمعا معًا.'
+                : 'مساحة مشتركة تحفظ ما تريدان مشاهدته.',
           ),
           const SizedBox(height: 16),
           TextField(
@@ -5390,12 +5401,46 @@ class _RoomScreenState extends State<_RoomScreen> {
             onSubmitted: (_) => _create(),
           ),
           const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _busy ? null : _create,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('إضافة'),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _create,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('إضافة'),
+                ),
+              ),
+              if (widget.isAudio) ...[
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: (_busy || _uploading) ? null : _uploadAudio,
+                  icon: _uploading
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.upload_rounded),
+                  label: const Text('رفع أغنية'),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 16),
+          if (widget.isAudio && _current != null)
+            _AudioPlayerBar(
+              player: _player,
+              title: _current!.title,
+              onToggle: _togglePlay,
+              onSeek: (position) {
+                _player.seek(position);
+                widget.playback(
+                  widget.repository,
+                  'seek',
+                  position.inMilliseconds,
+                );
+              },
+            ),
+          const SizedBox(height: 12),
           FutureBuilder<RoomModel>(
             future: _future,
             builder: (context, snapshot) {
@@ -5405,23 +5450,39 @@ class _RoomScreenState extends State<_RoomScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _RoomPlaybackPanel(
-                    room: room,
-                    busy: _busy,
-                    onPlayback: _playback,
-                  ),
+                  if (!widget.isAudio)
+                    _RoomPlaybackPanel(
+                      room: room,
+                      busy: _busy,
+                      onPlayback: _playback,
+                    ),
                   const SizedBox(height: 12),
                   if (items.isEmpty)
                     const Text('لا توجد عناصر بعد.')
                   else
                     for (final item in items)
                       ListTile(
-                        leading: Icon(widget.icon),
+                        leading: Icon(
+                          _current?.id == item.id
+                              ? Icons.graphic_eq_rounded
+                              : widget.icon,
+                          color: _current?.id == item.id
+                              ? Theme.of(context).colorScheme.primary
+                              : null,
+                        ),
                         title: Text(item.title),
                         subtitle: Text(item.sourceUrl ?? item.source),
-                        trailing: item.sourceUrl == null
-                            ? null
-                            : const Icon(Icons.open_in_new_rounded),
+                        trailing: widget.isAudio && item.sourceUrl != null
+                            ? IconButton(
+                                icon: const Icon(Icons.play_circle_fill_rounded),
+                                onPressed: () => _playItem(item),
+                              )
+                            : (item.sourceUrl == null
+                                  ? null
+                                  : const Icon(Icons.open_in_new_rounded)),
+                        onTap: widget.isAudio && item.sourceUrl != null
+                            ? () => _playItem(item)
+                            : null,
                       ),
                 ],
               );
@@ -5430,6 +5491,79 @@ class _RoomScreenState extends State<_RoomScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _playItem(RoomItem item) async {
+    final url = item.sourceUrl;
+    if (url == null || url.isEmpty) return;
+    try {
+      if (_current?.id != item.id) {
+        setState(() => _current = item);
+        await _player.setUrl(url);
+      }
+      await _player.play();
+      await widget.playback(
+        widget.repository,
+        'play',
+        _player.position.inMilliseconds,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تعذر تشغيل هذا المقطع.')));
+    }
+  }
+
+  Future<void> _togglePlay() async {
+    if (_player.playing) {
+      await _player.pause();
+      await widget.playback(
+        widget.repository,
+        'pause',
+        _player.position.inMilliseconds,
+      );
+    } else {
+      await _player.play();
+      await widget.playback(
+        widget.repository,
+        'play',
+        _player.position.inMilliseconds,
+      );
+    }
+  }
+
+  Future<void> _uploadAudio() async {
+    final result = await FilePicker.pickFiles(withData: true, type: FileType.audio);
+    final file = result?.files.single;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null) return;
+
+    setState(() => _uploading = true);
+    try {
+      final asset = await widget.repository.uploadMedia(
+        fileName: file.name,
+        mimeType: _mimeTypeFromName(file.name),
+        bytes: bytes,
+      );
+      final url = asset.url;
+      if (url == null) {
+        throw const ApiException(
+          code: 'no_public_url',
+          message: 'تعذر الحصول على رابط الملف. تأكد من إعداد التخزين العام.',
+        );
+      }
+      await widget.add(widget.repository, file.name, url);
+      if (!mounted) return;
+      setState(() => _future = widget.load(widget.repository));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
   }
 
   Future<void> _create() async {
@@ -5463,6 +5597,112 @@ class _RoomScreenState extends State<_RoomScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+}
+
+class _AudioPlayerBar extends StatelessWidget {
+  const _AudioPlayerBar({
+    required this.player,
+    required this.title,
+    required this.onToggle,
+    required this.onSeek,
+  });
+
+  final AudioPlayer player;
+  final String title;
+  final VoidCallback onToggle;
+  final ValueChanged<Duration> onSeek;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.music_note_rounded, color: scheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          StreamBuilder<Duration?>(
+            stream: player.durationStream,
+            builder: (context, durationSnapshot) {
+              final duration = durationSnapshot.data ?? Duration.zero;
+              return StreamBuilder<Duration>(
+                stream: player.positionStream,
+                builder: (context, positionSnapshot) {
+                  final position = positionSnapshot.data ?? Duration.zero;
+                  final maxMs = duration.inMilliseconds.toDouble();
+                  final value = position.inMilliseconds
+                      .clamp(0, duration.inMilliseconds)
+                      .toDouble();
+                  return Column(
+                    children: [
+                      Slider(
+                        value: maxMs == 0 ? 0 : value,
+                        max: maxMs == 0 ? 1 : maxMs,
+                        onChanged: maxMs == 0
+                            ? null
+                            : (v) => onSeek(Duration(milliseconds: v.round())),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(_fmt(position), style: const TextStyle(fontSize: 12)),
+                          Text(_fmt(duration), style: const TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+          StreamBuilder<PlayerState>(
+            stream: player.playerStateStream,
+            builder: (context, snapshot) {
+              final playing = snapshot.data?.playing ?? false;
+              final processing = snapshot.data?.processingState;
+              final loading =
+                  processing == ProcessingState.loading ||
+                  processing == ProcessingState.buffering;
+              return Center(
+                child: IconButton.filled(
+                  iconSize: 34,
+                  onPressed: loading ? null : onToggle,
+                  icon: Icon(
+                    playing
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _fmt(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
 }
 

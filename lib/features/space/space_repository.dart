@@ -1317,12 +1317,14 @@ class MediaAssetModel {
     required this.objectKey,
     required this.mimeType,
     required this.sizeBytes,
+    this.url,
   });
 
   final String id;
   final String objectKey;
   final String mimeType;
   final int sizeBytes;
+  final String? url;
 
   factory MediaAssetModel.fromJson(Map<String, dynamic> json) {
     return MediaAssetModel(
@@ -1330,6 +1332,7 @@ class MediaAssetModel {
       objectKey: json['objectKey'] as String,
       mimeType: json['mimeType'] as String,
       sizeBytes: int.parse(json['sizeBytes'].toString()),
+      url: json['url'] as String?,
     );
   }
 }

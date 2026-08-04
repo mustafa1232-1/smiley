@@ -15,7 +15,11 @@ import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 import { isNowInsideQuietHours } from '../../lib/quiet-hours.js';
 import { encryptPushToken, hashPushToken, sendPushToUser } from '../../lib/push.js';
-import { createPutUploadUrl, maxUploadBytesForMime } from '../../lib/storage.js';
+import {
+  createPutUploadUrl,
+  maxUploadBytesForMime,
+  mediaPublicUrl
+} from '../../lib/storage.js';
 import { requireAuth } from '../../middleware/auth.js';
 import type { RealtimeEventType } from '../../realtime/events.js';
 import { emitToPartnership, emitToUser } from '../../realtime/server.js';
@@ -3369,6 +3373,7 @@ function serializeMediaAsset(asset: {
     mimeType: asset.mimeType,
     sizeBytes: asset.sizeBytes.toString(),
     checksum: asset.checksum,
+    url: mediaPublicUrl(asset.objectKey),
     createdAt: asset.createdAt
   };
 }
