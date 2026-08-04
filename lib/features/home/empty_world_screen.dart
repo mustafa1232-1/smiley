@@ -269,6 +269,7 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
         repository: widget.spaceRepository,
         offlineOutbox: widget.offlineOutbox,
         events: widget.realtimeClient.events,
+        onOpenTab: (index) => setState(() => _index = index),
       ),
       1 => _ChatTab(
         repository: widget.spaceRepository,
@@ -757,11 +758,13 @@ class _HomeTab extends StatefulWidget {
     required this.repository,
     required this.offlineOutbox,
     required this.events,
+    required this.onOpenTab,
   });
 
   final SpaceRepository repository;
   final OfflineOutbox offlineOutbox;
   final Stream<Map<String, dynamic>> events;
+  final void Function(int index) onOpenTab;
 
   @override
   State<_HomeTab> createState() => _HomeTabState();
@@ -827,14 +830,23 @@ class _HomeTabState extends State<_HomeTab>
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              _SectionHeader(
-                icon: Icons.favorite_rounded,
-                title: summary.worldName ?? 'عالمنا',
-                subtitle: summary.daysTogether == null
-                    ? 'العلاقة مفعلة'
-                    : 'اليوم ${summary.daysTogether} معاً',
+              _HomeHeroCard(
+                worldName: summary.worldName ?? 'عالمنا',
+                daysTogether: summary.daysTogether,
+                nextEvent: summary.nextEvent,
               ),
               const SizedBox(height: 16),
+              _HomeQuickActions(
+                onHeart: _sendHeart,
+                onMood: _quickMood,
+                onChat: () => widget.onOpenTab(1),
+                onWorld: () => widget.onOpenTab(2),
+              ),
+              const SizedBox(height: 16),
+              if (summary.latestMood != null) ...[
+                _MoodBanner(mood: summary.latestMood!),
+                const SizedBox(height: 16),
+              ],
               _PostComposer(
                 controller: _post,
                 busy: _posting,
@@ -859,21 +871,6 @@ class _HomeTabState extends State<_HomeTab>
                 },
               ),
               const SizedBox(height: 20),
-              if (summary.latestMood != null)
-                _InfoTile(
-                  icon: Icons.mood_rounded,
-                  title: 'آخر مزاج',
-                  subtitle:
-                      summary.latestMood!.note ?? summary.latestMood!.kind,
-                ),
-              if (summary.nextEvent != null)
-                _InfoTile(
-                  icon: Icons.event_rounded,
-                  title: 'الموعد القادم',
-                  subtitle:
-                      '${summary.nextEvent!.title} - ${_date(summary.nextEvent!.startsAt)}',
-                ),
-              const SizedBox(height: 10),
               Text(
                 'آخر الذكريات',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -903,6 +900,93 @@ class _HomeTabState extends State<_HomeTab>
   void _reload() {
     setState(() => _summary = _loadSummary());
   }
+
+  Future<void> _sendHeart() async {
+    try {
+      await widget.repository.sendMessage(
+        '❤️',
+        clientMessageId: 'heart-${DateTime.now().microsecondsSinceEpoch}',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('أرسلت قلبًا ❤️')));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
+  Future<void> _quickMood() async {
+    const moods = <(String, String)>[
+      ('happy', '😊'),
+      ('love', '🥰'),
+      ('calm', '😌'),
+      ('excited', '🤩'),
+      ('tired', '😴'),
+      ('miss_you', '🥺'),
+    ];
+    final selected = await showModalBottomSheet<(String, String)>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'كيف مزاجك الآن؟',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final mood in moods)
+                    ActionChip(
+                      avatar: Text(
+                        mood.$2,
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                      label: Text(_moodLabel(mood.$1)),
+                      onPressed: () => Navigator.of(context).pop(mood),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected == null) return;
+    try {
+      await widget.repository.createMood(kind: selected.$1, emoji: selected.$2);
+      _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('تم تحديث مزاجك ${selected.$2}')));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
+  String _moodLabel(String kind) => switch (kind) {
+    'happy' => 'سعيد',
+    'love' => 'عاشق',
+    'calm' => 'هادئ',
+    'excited' => 'متحمّس',
+    'tired' => 'متعب',
+    'miss_you' => 'مشتاق',
+    _ => kind,
+  };
 
   Future<SpaceSummary> _loadSummary() async {
     await _syncPendingPosts();
@@ -5549,6 +5633,273 @@ class _MoreTab extends StatelessWidget {
           onTap: onSignOut,
         ),
       ],
+    );
+  }
+}
+
+class _HomeHeroCard extends StatelessWidget {
+  const _HomeHeroCard({
+    required this.worldName,
+    required this.daysTogether,
+    required this.nextEvent,
+  });
+
+  final String worldName;
+  final int? daysTogether;
+  final CalendarItem? nextEvent;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final event = nextEvent;
+    final daysToEvent = event?.startsAt.difference(DateTime.now()).inDays;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [scheme.primary, scheme.secondary],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.favorite_rounded, color: Colors.white, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  worldName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              if (daysTogether != null)
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: daysTogether!.toDouble()),
+                  duration: const Duration(milliseconds: 900),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, _) => Text(
+                    '${value.round()}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 40,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                )
+              else
+                const Text(
+                  '—',
+                  style: TextStyle(color: Colors.white, fontSize: 40),
+                ),
+              const SizedBox(width: 8),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'يومًا معًا',
+                  style: TextStyle(color: Colors.white70, fontSize: 15),
+                ),
+              ),
+            ],
+          ),
+          if (event != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.event_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      event.title,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (daysToEvent != null)
+                    Text(
+                      daysToEvent <= 0 ? 'اليوم!' : 'بعد $daysToEvent يوم',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeQuickActions extends StatelessWidget {
+  const _HomeQuickActions({
+    required this.onHeart,
+    required this.onMood,
+    required this.onChat,
+    required this.onWorld,
+  });
+
+  final VoidCallback onHeart;
+  final VoidCallback onMood;
+  final VoidCallback onChat;
+  final VoidCallback onWorld;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _QuickAction(
+            icon: Icons.favorite_rounded,
+            label: 'قلب',
+            color: const Color(0xFFFF5FA2),
+            onTap: onHeart,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _QuickAction(
+            icon: Icons.mood_rounded,
+            label: 'مزاجي',
+            color: const Color(0xFFFFB300),
+            onTap: onMood,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _QuickAction(
+            icon: Icons.chat_bubble_rounded,
+            label: 'محادثة',
+            color: const Color(0xFF7C4DFF),
+            onTap: onChat,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _QuickAction(
+            icon: Icons.auto_awesome_rounded,
+            label: 'العالم',
+            color: const Color(0xFF4B9A8D),
+            onTap: onWorld,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickAction extends StatelessWidget {
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MoodBanner extends StatelessWidget {
+  const _MoodBanner({required this.mood});
+
+  final SpaceMood mood;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Text(mood.emoji ?? '🙂', style: const TextStyle(fontSize: 28)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'آخر مزاج',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                Text(
+                  mood.note ?? mood.kind,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
