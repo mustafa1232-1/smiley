@@ -4433,84 +4433,111 @@ class _WishesGoalsScreenState extends State<_WishesGoalsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('الأمنيات والأهداف')),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         children: [
-          TextField(
-            controller: _wish,
-            decoration: const InputDecoration(
-              labelText: 'أمنية جديدة',
-              prefixIcon: Icon(Icons.star_border_rounded),
-            ),
-            onSubmitted: (_) => _createWish(),
+          _SectionHeader(
+            icon: Icons.star_rounded,
+            title: 'حديقة الأمنيات',
+            subtitle: 'اكتبا أمنياتكما وحقّقاها معًا.',
           ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _createWish,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('إضافة أمنية'),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _wish,
+                  decoration: const InputDecoration(
+                    hintText: 'أمنية جديدة…',
+                    prefixIcon: Icon(Icons.star_border_rounded),
+                  ),
+                  onSubmitted: (_) => _createWish(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: _createWish,
+                icon: const Icon(Icons.add_rounded),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           FutureBuilder<List<WishItem>>(
             future: _wishes,
             builder: (context, snapshot) {
               if (!snapshot.hasData) return const LinearProgressIndicator();
+              final wishes = snapshot.requireData;
+              if (wishes.isEmpty) {
+                return const _EmptyLine(
+                  text: 'لا أمنيات بعد.',
+                  color: Colors.grey,
+                );
+              }
               return Column(
                 children: [
-                  for (final wish in snapshot.requireData)
-                    CheckboxListTile(
-                      value: wish.completed,
-                      onChanged: (_) => _toggleWish(wish.id),
-                      title: Text(wish.title),
+                  for (final wish in wishes)
+                    FadeSlideIn(
+                      child: _WishCard(
+                        wish: wish,
+                        onToggle: () => _toggleWish(wish.id),
+                      ),
                     ),
                 ],
               );
             },
           ),
-          const Divider(height: 32),
+          const SizedBox(height: 24),
+          _SectionHeader(
+            icon: Icons.flag_rounded,
+            title: 'الأهداف المشتركة',
+            subtitle: 'خطوة بخطوة نحو أحلامنا.',
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _goal,
             decoration: const InputDecoration(
-              labelText: 'هدف جديد',
+              hintText: 'هدف جديد…',
               prefixIcon: Icon(Icons.flag_outlined),
             ),
           ),
           const SizedBox(height: 8),
-          TextField(
-            controller: _steps,
-            decoration: const InputDecoration(
-              labelText: 'خطوات الهدف مفصولة بفواصل',
-              prefixIcon: Icon(Icons.playlist_add_check_rounded),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _steps,
+                  decoration: const InputDecoration(
+                    hintText: 'خطوات مفصولة بفواصل',
+                    prefixIcon: Icon(Icons.playlist_add_check_rounded),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: _createGoal,
+                icon: const Icon(Icons.add_rounded),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _createGoal,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('إضافة هدف'),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           FutureBuilder<List<GoalItem>>(
             future: _goals,
             builder: (context, snapshot) {
               if (!snapshot.hasData) return const LinearProgressIndicator();
+              final goals = snapshot.requireData;
+              if (goals.isEmpty) {
+                return const _EmptyLine(
+                  text: 'لا أهداف بعد.',
+                  color: Colors.grey,
+                );
+              }
               return Column(
                 children: [
-                  for (final goal in snapshot.requireData)
-                    Card(
-                      child: ExpansionTile(
-                        leading: Checkbox(
-                          value: goal.completed,
-                          onChanged: (_) => _toggleGoal(goal.id),
-                        ),
-                        title: Text(goal.title),
-                        children: [
-                          for (final step in goal.steps)
-                            CheckboxListTile(
-                              value: step.completed,
-                              onChanged: (_) => _toggleStep(step.id),
-                              title: Text(step.title),
-                            ),
-                        ],
+                  for (final goal in goals)
+                    FadeSlideIn(
+                      child: _GoalCard(
+                        goal: goal,
+                        onToggleGoal: () => _toggleGoal(goal.id),
+                        onToggleStep: _toggleStep,
                       ),
                     ),
                 ],
@@ -4551,6 +4578,217 @@ class _WishesGoalsScreenState extends State<_WishesGoalsScreen> {
   Future<void> _toggleStep(String id) async {
     await widget.repository.toggleGoalStep(id);
     setState(() => _goals = widget.repository.goals());
+  }
+}
+
+class _WishCard extends StatelessWidget {
+  const _WishCard({required this.wish, required this.onToggle});
+
+  final WishItem wish;
+  final VoidCallback onToggle;
+
+  static const _gold = Color(0xFFFFB300);
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final done = wish.completed;
+    return InkWell(
+      onTap: onToggle,
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: done
+              ? _gold.withValues(alpha: 0.14)
+              : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: done ? _gold : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 1, end: done ? 1.15 : 1),
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutBack,
+              builder: (context, scale, child) =>
+                  Transform.scale(scale: scale, child: child),
+              child: Icon(
+                done ? Icons.star_rounded : Icons.star_border_rounded,
+                color: _gold,
+                size: 26,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 250),
+                style: TextStyle(
+                  fontSize: 15,
+                  decoration: done ? TextDecoration.lineThrough : null,
+                  color: done ? scheme.onSurfaceVariant : scheme.onSurface,
+                ),
+                child: Text(wish.title),
+              ),
+            ),
+            if (done) const Text('🌟', style: TextStyle(fontSize: 18)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalCard extends StatefulWidget {
+  const _GoalCard({
+    required this.goal,
+    required this.onToggleGoal,
+    required this.onToggleStep,
+  });
+
+  final GoalItem goal;
+  final VoidCallback onToggleGoal;
+  final ValueChanged<String> onToggleStep;
+
+  @override
+  State<_GoalCard> createState() => _GoalCardState();
+}
+
+class _GoalCardState extends State<_GoalCard> {
+  bool _expanded = false;
+
+  static const _teal = Color(0xFF4B9A8D);
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final goal = widget.goal;
+    final total = goal.steps.length;
+    final doneSteps = goal.steps.where((step) => step.completed).length;
+    final progress = goal.completed
+        ? 1.0
+        : (total == 0 ? 0.0 : doneSteps / total);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              GestureDetector(
+                onTap: widget.onToggleGoal,
+                child: SizedBox(
+                  width: 52,
+                  height: 52,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      TweenAnimationBuilder<double>(
+                        tween: Tween<double>(begin: 0, end: progress),
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, value, _) => SizedBox.expand(
+                          child: CircularProgressIndicator(
+                            value: value,
+                            strokeWidth: 5,
+                            backgroundColor: scheme.surfaceContainerHighest,
+                            color: goal.completed ? _teal : scheme.primary,
+                          ),
+                        ),
+                      ),
+                      if (goal.completed)
+                        const Icon(Icons.check_rounded, color: _teal)
+                      else
+                        Text(
+                          '${(progress * 100).round()}%',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      goal.title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        decoration: goal.completed
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      total == 0
+                          ? (goal.completed ? 'مكتمل 🎉' : 'بلا خطوات')
+                          : '$doneSteps / $total خطوات',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (total > 0)
+                IconButton(
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  icon: AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(Icons.expand_more_rounded),
+                  ),
+                ),
+            ],
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Column(
+              children: [
+                const SizedBox(height: 6),
+                for (final step in goal.steps)
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    value: step.completed,
+                    onChanged: (_) => widget.onToggleStep(step.id),
+                    title: Text(
+                      step.title,
+                      style: TextStyle(
+                        decoration: step.completed
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            crossFadeState: _expanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 250),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -5474,7 +5712,9 @@ class _RoomScreenState extends State<_RoomScreen> {
                         subtitle: Text(item.sourceUrl ?? item.source),
                         trailing: widget.isAudio && item.sourceUrl != null
                             ? IconButton(
-                                icon: const Icon(Icons.play_circle_fill_rounded),
+                                icon: const Icon(
+                                  Icons.play_circle_fill_rounded,
+                                ),
                                 onPressed: () => _playItem(item),
                               )
                             : (item.sourceUrl == null
@@ -5534,7 +5774,10 @@ class _RoomScreenState extends State<_RoomScreen> {
   }
 
   Future<void> _uploadAudio() async {
-    final result = await FilePicker.pickFiles(withData: true, type: FileType.audio);
+    final result = await FilePicker.pickFiles(
+      withData: true,
+      type: FileType.audio,
+    );
     final file = result?.files.single;
     final bytes = file?.bytes;
     if (file == null || bytes == null) return;
@@ -5663,8 +5906,14 @@ class _AudioPlayerBar extends StatelessWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(_fmt(position), style: const TextStyle(fontSize: 12)),
-                          Text(_fmt(duration), style: const TextStyle(fontSize: 12)),
+                          Text(
+                            _fmt(position),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          Text(
+                            _fmt(duration),
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         ],
                       ),
                     ],
@@ -5686,9 +5935,7 @@ class _AudioPlayerBar extends StatelessWidget {
                   iconSize: 34,
                   onPressed: loading ? null : onToggle,
                   icon: Icon(
-                    playing
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
+                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
                   ),
                 ),
               );
