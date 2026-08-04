@@ -9,6 +9,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart'
+    hide PlayerState;
 
 import '../../core/animations.dart';
 import '../../core/api_client.dart';
@@ -6100,8 +6102,10 @@ class _RoomScreenState extends State<_RoomScreen> {
 
   final AudioPlayer _player = AudioPlayer();
   VideoPlayerController? _video;
+  YoutubePlayerController? _youtube;
   RoomItem? _current;
   StreamSubscription<Map<String, dynamic>>? _sync;
+  bool _applyingRemote = false;
 
   @override
   void initState() {
@@ -6139,6 +6143,7 @@ class _RoomScreenState extends State<_RoomScreen> {
     String? sourceUrl,
     String? title,
   }) async {
+    _applyingRemote = true;
     try {
       // Switch to the partner's track first if it differs from ours.
       if (sourceUrl != null &&
@@ -6154,19 +6159,37 @@ class _RoomScreenState extends State<_RoomScreen> {
           setState(() => _current = remoteItem);
           await _player.setUrl(sourceUrl);
         } else {
-          await _video?.dispose();
-          final controller = VideoPlayerController.networkUrl(
-            Uri.parse(sourceUrl),
-          );
-          await controller.initialize();
-          if (!mounted) {
-            await controller.dispose();
-            return;
+          final youtubeId = YoutubePlayer.convertUrlToId(sourceUrl);
+          if (youtubeId != null) {
+            await _video?.dispose();
+            _video = null;
+            _youtube?.dispose();
+            final controller = YoutubePlayerController(
+              initialVideoId: youtubeId,
+              flags: const YoutubePlayerFlags(autoPlay: true),
+            )..addListener(_onYoutubeChanged);
+            setState(() {
+              _current = remoteItem;
+              _youtube = controller;
+            });
+          } else {
+            _youtube?.dispose();
+            _youtube = null;
+            await _video?.dispose();
+            final controller = VideoPlayerController.networkUrl(
+              Uri.parse(sourceUrl),
+            );
+            await controller.initialize();
+            if (!mounted) {
+              await controller.dispose();
+              _applyingRemote = false;
+              return;
+            }
+            setState(() {
+              _current = remoteItem;
+              _video = controller;
+            });
           }
-          setState(() {
-            _current = remoteItem;
-            _video = controller;
-          });
         }
       }
       if (widget.isAudio) {
@@ -6179,6 +6202,17 @@ class _RoomScreenState extends State<_RoomScreen> {
         } else if (type == 'stop') {
           await _player.pause();
           await _player.seek(Duration.zero);
+        }
+      } else if (_youtube != null) {
+        final controller = _youtube!;
+        if (position != null) controller.seekTo(position);
+        if (type == 'play') {
+          controller.play();
+        } else if (type == 'pause') {
+          controller.pause();
+        } else if (type == 'stop') {
+          controller.pause();
+          controller.seekTo(Duration.zero);
         }
       } else {
         final controller = _video;
@@ -6195,6 +6229,8 @@ class _RoomScreenState extends State<_RoomScreen> {
       }
     } catch (_) {
       // Best-effort sync; ignore transient errors.
+    } finally {
+      _applyingRemote = false;
     }
   }
 
@@ -6205,6 +6241,7 @@ class _RoomScreenState extends State<_RoomScreen> {
     _sourceUrl.dispose();
     _player.dispose();
     _video?.dispose();
+    _youtube?.dispose();
     super.dispose();
   }
 
@@ -6277,6 +6314,14 @@ class _RoomScreenState extends State<_RoomScreen> {
                 );
               },
             )
+          else if (!widget.isAudio && _youtube != null && _current != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: YoutubePlayer(
+                controller: _youtube!,
+                showVideoProgressIndicator: true,
+              ),
+            )
           else if (!widget.isAudio && _video != null && _current != null)
             _VideoPlayerBar(
               controller: _video!,
@@ -6346,26 +6391,48 @@ class _RoomScreenState extends State<_RoomScreen> {
           _current,
         );
       } else {
-        if (_current?.id != item.id || _video == null) {
-          await _video?.dispose();
-          final controller = VideoPlayerController.networkUrl(Uri.parse(url));
-          await controller.initialize();
-          if (!mounted) {
-            await controller.dispose();
-            return;
+        final youtubeId = YoutubePlayer.convertUrlToId(url);
+        if (youtubeId != null) {
+          if (_current?.id != item.id || _youtube == null) {
+            await _video?.dispose();
+            _video = null;
+            _youtube?.dispose();
+            final controller = YoutubePlayerController(
+              initialVideoId: youtubeId,
+              flags: const YoutubePlayerFlags(autoPlay: true),
+            )..addListener(_onYoutubeChanged);
+            setState(() {
+              _current = item;
+              _youtube = controller;
+            });
+          } else {
+            _youtube?.play();
           }
-          setState(() {
-            _current = item;
-            _video = controller;
-          });
+          await widget.playback(widget.repository, 'play', 0, _current);
+        } else {
+          _youtube?.dispose();
+          _youtube = null;
+          if (_current?.id != item.id || _video == null) {
+            await _video?.dispose();
+            final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+            await controller.initialize();
+            if (!mounted) {
+              await controller.dispose();
+              return;
+            }
+            setState(() {
+              _current = item;
+              _video = controller;
+            });
+          }
+          await _video?.play();
+          await widget.playback(
+            widget.repository,
+            'play',
+            _video?.value.position.inMilliseconds ?? 0,
+            _current,
+          );
         }
-        await _video?.play();
-        await widget.playback(
-          widget.repository,
-          'play',
-          _video?.value.position.inMilliseconds ?? 0,
-          _current,
-        );
       }
     } catch (error) {
       if (!mounted) return;
@@ -6373,6 +6440,24 @@ class _RoomScreenState extends State<_RoomScreen> {
         context,
       ).showSnackBar(const SnackBar(content: Text('تعذر تشغيل هذا المقطع.')));
     }
+  }
+
+  // Broadcasts YouTube play/pause when the user interacts with the built-in
+  // controls. Fires only on play/pause transitions (not position ticks) and is
+  // guarded so remote-applied changes don't echo back.
+  bool? _lastYoutubePlaying;
+  void _onYoutubeChanged() {
+    final controller = _youtube;
+    if (controller == null || _applyingRemote) return;
+    final playing = controller.value.isPlaying;
+    if (playing == _lastYoutubePlaying) return;
+    _lastYoutubePlaying = playing;
+    widget.playback(
+      widget.repository,
+      playing ? 'play' : 'pause',
+      controller.value.position.inMilliseconds,
+      _current,
+    );
   }
 
   Future<void> _togglePlay() async {
