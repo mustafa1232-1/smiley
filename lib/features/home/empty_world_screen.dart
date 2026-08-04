@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -3104,45 +3105,19 @@ class _TreeScreenState extends State<_TreeScreen> {
             builder: (context, snapshot) {
               if (!snapshot.hasData) return const LinearProgressIndicator();
               final leaves = snapshot.requireData.leaves;
-              if (leaves.isEmpty) return const Text('لا توجد أوراق اليوم بعد.');
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  for (final leaf in leaves)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: const Icon(Icons.eco_outlined),
-                              title: Text(leaf.title ?? 'ورقة'),
-                              subtitle: Text(
-                                '${leaf.contributions.length} مساهمة',
-                              ),
-                              trailing: IconButton(
-                                tooltip: 'إضافة مساهمة',
-                                onPressed: _busy
-                                    ? null
-                                    : () => _addContribution(leaf.id),
-                                icon: const Icon(Icons.add_comment_outlined),
-                              ),
-                            ),
-                            Text(leaf.body),
-                            if (leaf.contributions.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              for (final contribution
-                                  in leaf.contributions.take(3))
-                                _EmptyLine(
-                                  text: contribution.body,
-                                  color: Colors.grey,
-                                ),
-                            ],
-                          ],
-                        ),
-                      ),
+                  _MemoryTreeView(leaves: leaves, onTapLeaf: _showLeaf),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      leaves.isEmpty
+                          ? 'ازرعوا أول ورقة لتنمو الشجرة 🌱'
+                          : 'اضغطوا على أي ورقة لعرض ذكراها 🍃 (${leaves.length})',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
+                  ),
                 ],
               );
             },
@@ -3192,6 +3167,310 @@ class _TreeScreenState extends State<_TreeScreen> {
       if (mounted) setState(() => _busy = false);
     }
   }
+
+  void _showLeaf(TreeLeafItem leaf) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.5,
+          maxChildSize: 0.85,
+          builder: (context, controller) => ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.eco_rounded, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      leaf.title ?? 'ورقة ذكرى',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                leaf.body,
+                style: const TextStyle(fontSize: 15, height: 1.6),
+              ),
+              const SizedBox(height: 16),
+              if (leaf.contributions.isNotEmpty) ...[
+                Text(
+                  'المساهمات (${leaf.contributions.length})',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                for (final contribution in leaf.contributions)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('🍃 '),
+                        Expanded(child: Text(contribution.body)),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 8),
+              ],
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _addContribution(leaf.id);
+                },
+                icon: const Icon(Icons.add_comment_outlined),
+                label: const Text('إضافة مساهمة'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Interactive, animated memory tree. The trunk/branches are painted and grow
+/// in, leaves are laid out with a golden-angle (phyllotaxis) spread so they
+/// never overlap, sway gently, and each is tappable to reveal its memory.
+class _MemoryTreeView extends StatefulWidget {
+  const _MemoryTreeView({required this.leaves, required this.onTapLeaf});
+
+  final List<TreeLeafItem> leaves;
+  final void Function(TreeLeafItem leaf) onTapLeaf;
+
+  @override
+  State<_MemoryTreeView> createState() => _MemoryTreeViewState();
+}
+
+class _MemoryTreeViewState extends State<_MemoryTreeView>
+    with TickerProviderStateMixin {
+  late final AnimationController _sway = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 4),
+  )..repeat(reverse: true);
+  late final AnimationController _grow = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..forward();
+
+  static const _leafColors = [
+    Color(0xFF66BB6A),
+    Color(0xFF43A047),
+    Color(0xFF2E7D32),
+    Color(0xFF81C784),
+    Color(0xFF9CCC65),
+  ];
+
+  @override
+  void dispose() {
+    _sway.dispose();
+    _grow.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final leaves = widget.leaves;
+    return AspectRatio(
+      aspectRatio: 0.82,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              scheme.primary.withValues(alpha: 0.06),
+              scheme.secondary.withValues(alpha: 0.03),
+            ],
+          ),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final size = Size(constraints.maxWidth, constraints.maxHeight);
+            final canopyCenter = Offset(size.width * 0.5, size.height * 0.34);
+            final canopyRadius = size.width * 0.36;
+
+            return AnimatedBuilder(
+              animation: Listenable.merge([_sway, _grow]),
+              builder: (context, _) {
+                final grow = Curves.easeOutCubic.transform(_grow.value);
+                final swayPhase = math.sin(_sway.value * math.pi * 2);
+
+                final leafWidgets = <Widget>[];
+                for (var i = 0; i < leaves.length; i++) {
+                  final angle = i * 2.399963; // golden angle (radians)
+                  final t = leaves.length == 1
+                      ? 0.0
+                      : (i + 0.6) / leaves.length;
+                  final r = canopyRadius * math.sqrt(t);
+                  final depth = 0.7 + 0.3 * (1 - t); // front leaves larger
+                  final leafGrow =
+                      ((grow - t * 0.4).clamp(0.0, 1.0)) /
+                      (1 - t * 0.4).clamp(0.2, 1.0);
+                  final wind = swayPhase * (4 + r * 0.05);
+                  final dx = canopyCenter.dx + r * math.cos(angle) + wind - 15;
+                  final dy = canopyCenter.dy + r * math.sin(angle) * 0.82 - 15;
+                  final color = _leafColors[i % _leafColors.length];
+
+                  leafWidgets.add(
+                    Positioned(
+                      left: dx,
+                      top: dy,
+                      child: Transform.scale(
+                        scale: leafGrow.clamp(0.0, 1.0) * depth,
+                        child: _LeafDot(
+                          color: color,
+                          onTap: () => widget.onTapLeaf(leaves[i]),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: _TreePainter(
+                          grow: grow,
+                          sway: swayPhase * 0.03,
+                          leafCount: leaves.length,
+                          trunkColor: const Color(0xFF795548),
+                          branchColor: const Color(0xFF8D6E63),
+                        ),
+                      ),
+                    ),
+                    ...leafWidgets,
+                  ],
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _LeafDot extends StatelessWidget {
+  const _LeafDot({required this.color, required this.onTap});
+
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [color.withValues(alpha: 0.95), color],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.4),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.eco_rounded, size: 16, color: Colors.white),
+      ),
+    );
+  }
+}
+
+class _TreePainter extends CustomPainter {
+  _TreePainter({
+    required this.grow,
+    required this.sway,
+    required this.leafCount,
+    required this.trunkColor,
+    required this.branchColor,
+  });
+
+  final double grow;
+  final double sway;
+  final int leafCount;
+  final Color trunkColor;
+  final Color branchColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final base = Offset(size.width / 2, size.height * 0.96);
+    final canopyY = size.height * 0.34;
+    final trunkTop = Offset(
+      base.dx + math.sin(sway) * 24,
+      base.dy - (base.dy - canopyY) * grow,
+    );
+
+    // Ground shadow.
+    canvas.drawOval(
+      Rect.fromCenter(center: base, width: 130 * grow, height: 22 * grow),
+      Paint()..color = Colors.black.withValues(alpha: 0.06),
+    );
+
+    // Tapered trunk.
+    final width = 20.0 * grow;
+    final trunk = Path()
+      ..moveTo(base.dx - width, base.dy)
+      ..quadraticBezierTo(
+        base.dx - 5,
+        (base.dy + trunkTop.dy) / 2,
+        trunkTop.dx - 4,
+        trunkTop.dy,
+      )
+      ..lineTo(trunkTop.dx + 4, trunkTop.dy)
+      ..quadraticBezierTo(
+        base.dx + 5,
+        (base.dy + trunkTop.dy) / 2,
+        base.dx + width,
+        base.dy,
+      )
+      ..close();
+    canvas.drawPath(trunk, Paint()..color = trunkColor);
+
+    // Branches fanning into the canopy.
+    final branchPaint = Paint()
+      ..color = branchColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7 * grow
+      ..strokeCap = StrokeCap.round;
+    final branches = math.max(3, math.min(6, 2 + leafCount ~/ 3));
+    for (var i = 0; i < branches; i++) {
+      final spread = (i / (branches - 1)) * 2 - 1; // -1..1
+      final end = Offset(
+        trunkTop.dx + spread * size.width * 0.34 * grow,
+        canopyY - 30 * grow + (spread.abs()) * 20,
+      );
+      final control = Offset(
+        trunkTop.dx + spread * size.width * 0.14,
+        (trunkTop.dy + end.dy) / 2 - 20,
+      );
+      final branch = Path()
+        ..moveTo(trunkTop.dx, trunkTop.dy)
+        ..quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
+      canvas.drawPath(branch, branchPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TreePainter old) =>
+      old.grow != grow || old.sway != sway || old.leafCount != leafCount;
 }
 
 class _TimeCapsulesScreen extends StatefulWidget {
