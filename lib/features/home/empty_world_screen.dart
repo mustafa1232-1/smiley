@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
@@ -1264,6 +1267,14 @@ class _ChatTabState extends State<_ChatTab>
   static const _chatColorPrefsKey = 'smiley.chat.bg_color';
   Color? _chatColor;
 
+  final _search = TextEditingController();
+  String _searchQuery = '';
+
+  final AudioRecorder _recorder = AudioRecorder();
+  bool _recording = false;
+  Duration _recordElapsed = Duration.zero;
+  Timer? _recordTimer;
+
   @override
   void initState() {
     super.initState();
@@ -1354,8 +1365,84 @@ class _ChatTabState extends State<_ChatTab>
   @override
   void dispose() {
     stopRealtimeRefresh();
+    _recordTimer?.cancel();
+    _recorder.dispose();
+    _search.dispose();
     _message.dispose();
     super.dispose();
+  }
+
+  Future<void> _startRecording() async {
+    if (!await _recorder.hasPermission()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يلزم إذن الميكروفون لتسجيل الصوت.')),
+      );
+      return;
+    }
+    final dir = await getTemporaryDirectory();
+    final path =
+        '${dir.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
+    await _recorder.start(const RecordConfig(), path: path);
+    if (!mounted) return;
+    setState(() {
+      _recording = true;
+      _recordElapsed = Duration.zero;
+    });
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() => _recordElapsed += const Duration(seconds: 1));
+      }
+    });
+  }
+
+  Future<void> _cancelRecording() async {
+    _recordTimer?.cancel();
+    final path = await _recorder.stop();
+    if (path != null) {
+      await File(path).delete().catchError((_) => File(path));
+    }
+    if (!mounted) return;
+    setState(() => _recording = false);
+  }
+
+  Future<void> _stopAndSendRecording() async {
+    _recordTimer?.cancel();
+    final path = await _recorder.stop();
+    if (!mounted) return;
+    setState(() => _recording = false);
+    if (path == null) return;
+
+    setState(() => _sending = true);
+    try {
+      final bytes = await File(path).readAsBytes();
+      final asset = await widget.repository.uploadMedia(
+        fileName: 'voice.m4a',
+        mimeType: 'audio/mp4',
+        bytes: bytes,
+      );
+      await widget.repository.sendMessage(
+        '',
+        assetIds: [asset.id],
+        clientMessageId: 'voice-${DateTime.now().microsecondsSinceEpoch}',
+      );
+      await File(path).delete().catchError((_) => File(path));
+      if (!mounted) return;
+      setState(() => _messages = _loadMessages());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  String _fmtDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
@@ -1364,6 +1451,27 @@ class _ChatTabState extends State<_ChatTab>
       color: _chatColor,
       child: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: TextField(
+              controller: _search,
+              onChanged: (value) => setState(() => _searchQuery = value),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'بحث في المحادثة…',
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () {
+                          _search.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      ),
+              ),
+            ),
+          ),
           Expanded(
             child: FutureBuilder<List<ChatMessage>>(
               future: _messages,
@@ -1371,9 +1479,19 @@ class _ChatTabState extends State<_ChatTab>
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final items = snapshot.requireData;
+                final all = snapshot.requireData;
+                final query = _searchQuery.trim().toLowerCase();
+                final items = query.isEmpty
+                    ? all
+                    : all
+                          .where((m) => m.body.toLowerCase().contains(query))
+                          .toList();
                 if (items.isEmpty) {
-                  return const Center(child: Text('لا توجد رسائل بعد.'));
+                  return Center(
+                    child: Text(
+                      query.isEmpty ? 'لا توجد رسائل بعد.' : 'لا نتائج للبحث.',
+                    ),
+                  );
                 }
                 return ListView.builder(
                   padding: const EdgeInsets.all(16),
@@ -1515,62 +1633,110 @@ class _ChatTabState extends State<_ChatTab>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _EmojiBar(onSelect: _insertEmoji),
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'لون المحادثة',
-                        onPressed: _pickChatColor,
-                        icon: const Icon(Icons.palette_outlined),
-                      ),
-                      IconButton.outlined(
-                        tooltip: 'إرفاق ملف',
-                        onPressed: (_sending || _uploading)
-                            ? null
-                            : _attachMedia,
-                        icon: _uploading
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Badge.count(
-                                count: _attachments.length,
-                                isLabelVisible: _attachments.isNotEmpty,
-                                child: const Icon(Icons.attach_file_rounded),
-                              ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _message,
-                          decoration: InputDecoration(
-                            hintText: 'اكتب رسالة',
-                            prefixIcon: const Icon(
-                              Icons.chat_bubble_outline_rounded,
-                            ),
-                          ),
-                          onSubmitted: (_) => _send(),
+                if (!_recording) _EmojiBar(onSelect: _insertEmoji),
+                if (_recording)
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        const _RecordingDot(),
+                        const SizedBox(width: 10),
+                        Text(
+                          'جارٍ التسجيل  ${_fmtDuration(_recordElapsed)}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.outlined(
-                        tooltip: 'جدولة الرسالة',
-                        onPressed: (_sending || _uploading) ? null : _schedule,
-                        icon: const Icon(Icons.schedule_send_rounded),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.filled(
-                        tooltip: 'إرسال',
-                        onPressed: (_sending || _uploading) ? null : _send,
-                        icon: const Icon(Icons.send_rounded),
-                      ),
-                    ],
+                        const Spacer(),
+                        IconButton(
+                          tooltip: 'إلغاء',
+                          onPressed: _cancelRecording,
+                          icon: const Icon(Icons.delete_outline_rounded),
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton.filled(
+                          tooltip: 'إرسال',
+                          onPressed: _sending ? null : _stopAndSendRecording,
+                          icon: _sending
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.send_rounded),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert_rounded),
+                          onSelected: (value) {
+                            if (value == 'color') _pickChatColor();
+                            if (value == 'schedule') _schedule();
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(
+                              value: 'color',
+                              child: Text('لون المحادثة'),
+                            ),
+                            PopupMenuItem(
+                              value: 'schedule',
+                              child: Text('جدولة رسالة'),
+                            ),
+                          ],
+                        ),
+                        IconButton.outlined(
+                          tooltip: 'إرفاق ملف',
+                          onPressed: (_sending || _uploading)
+                              ? null
+                              : _attachMedia,
+                          icon: _uploading
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Badge.count(
+                                  count: _attachments.length,
+                                  isLabelVisible: _attachments.isNotEmpty,
+                                  child: const Icon(Icons.attach_file_rounded),
+                                ),
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          tooltip: 'تسجيل صوتي',
+                          onPressed: (_sending || _uploading)
+                              ? null
+                              : _startRecording,
+                          icon: const Icon(Icons.mic_rounded),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: TextField(
+                            controller: _message,
+                            decoration: const InputDecoration(
+                              hintText: 'اكتب رسالة',
+                              prefixIcon: Icon(
+                                Icons.chat_bubble_outline_rounded,
+                              ),
+                            ),
+                            onSubmitted: (_) => _send(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.filled(
+                          tooltip: 'إرسال',
+                          onPressed: (_sending || _uploading) ? null : _send,
+                          icon: const Icon(Icons.send_rounded),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -1885,6 +2051,42 @@ class _EmojiBar extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _RecordingDot extends StatefulWidget {
+  const _RecordingDot();
+
+  @override
+  State<_RecordingDot> createState() => _RecordingDotState();
+}
+
+class _RecordingDotState extends State<_RecordingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 700),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.35, end: 1).animate(_controller),
+      child: Container(
+        width: 12,
+        height: 12,
+        decoration: const BoxDecoration(
+          color: Colors.red,
+          shape: BoxShape.circle,
+        ),
       ),
     );
   }
@@ -6947,15 +7149,9 @@ class _MediaGallery extends StatelessWidget {
                       ),
                     ),
                   )
-                : _chip(
-                    context,
-                    media,
-                    media.isVideo
-                        ? 'فيديو'
-                        : media.isAudio
-                        ? 'صوت'
-                        : 'ملف',
-                  ),
+                : media.isAudio
+                ? _AudioAttachment(url: media.url)
+                : _chip(context, media, media.isVideo ? 'فيديو' : 'ملف'),
           ),
       ],
     );
@@ -6983,6 +7179,96 @@ class _MediaGallery extends StatelessWidget {
           const SizedBox(width: 6),
           Text(label),
         ],
+      ),
+    );
+  }
+}
+
+class _AudioAttachment extends StatefulWidget {
+  const _AudioAttachment({required this.url});
+
+  final String url;
+
+  @override
+  State<_AudioAttachment> createState() => _AudioAttachmentState();
+}
+
+class _AudioAttachmentState extends State<_AudioAttachment> {
+  AudioPlayer? _player;
+  bool _loading = false;
+  bool _playing = false;
+
+  @override
+  void dispose() {
+    _player?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    var player = _player;
+    if (player == null) {
+      setState(() => _loading = true);
+      player = AudioPlayer();
+      _player = player;
+      player.playerStateStream.listen((state) {
+        if (!mounted) return;
+        setState(
+          () => _playing =
+              state.playing &&
+              state.processingState != ProcessingState.completed,
+        );
+      });
+      try {
+        await player.setUrl(widget.url);
+      } catch (_) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+      if (mounted) setState(() => _loading = false);
+    }
+    if (player.playing) {
+      await player.pause();
+    } else {
+      if (player.processingState == ProcessingState.completed) {
+        await player.seek(Duration.zero);
+      }
+      await player.play();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: _toggle,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _loading
+                ? const SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    _playing
+                        ? Icons.pause_circle_filled_rounded
+                        : Icons.play_circle_fill_rounded,
+                    color: scheme.primary,
+                    size: 24,
+                  ),
+            const SizedBox(width: 8),
+            const Icon(Icons.graphic_eq_rounded, size: 18),
+            const SizedBox(width: 6),
+            const Text('رسالة صوتية'),
+          ],
+        ),
       ),
     );
   }
