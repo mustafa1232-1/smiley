@@ -141,12 +141,18 @@ abstract interface class SpaceRepository {
   Future<RoomModel> updateMusicPlayback({
     required String eventType,
     int? positionMs,
+    String? itemId,
+    String? sourceUrl,
+    String? title,
   });
   Future<RoomModel> watchRoom();
   Future<void> addWatchItem(String title, {String? sourceUrl});
   Future<RoomModel> updateWatchPlayback({
     required String eventType,
     int? positionMs,
+    String? itemId,
+    String? sourceUrl,
+    String? title,
   });
   Future<TreeDayModel> todayTree();
   Future<void> createTreeLeaf({String? title, required String body});
@@ -744,9 +750,15 @@ class HttpSpaceRepository implements SpaceRepository {
   Future<RoomModel> updateMusicPlayback({
     required String eventType,
     int? positionMs,
+    String? itemId,
+    String? sourceUrl,
+    String? title,
   }) async {
     final body = <String, dynamic>{'eventType': eventType};
     if (positionMs != null) body['positionMs'] = positionMs;
+    if (itemId != null) body['itemId'] = itemId;
+    if (sourceUrl != null) body['sourceUrl'] = sourceUrl;
+    if (title != null) body['title'] = title;
     final json = await _api.postJson('/music-room/playback', body);
     return RoomModel.fromMusicJson(json['room'] as Map<String, dynamic>);
   }
@@ -770,9 +782,15 @@ class HttpSpaceRepository implements SpaceRepository {
   Future<RoomModel> updateWatchPlayback({
     required String eventType,
     int? positionMs,
+    String? itemId,
+    String? sourceUrl,
+    String? title,
   }) async {
     final body = <String, dynamic>{'eventType': eventType};
     if (positionMs != null) body['positionMs'] = positionMs;
+    if (itemId != null) body['itemId'] = itemId;
+    if (sourceUrl != null) body['sourceUrl'] = sourceUrl;
+    if (title != null) body['title'] = title;
     final json = await _api.postJson('/watch-room/playback', body);
     return RoomModel.fromWatchJson(json['room'] as Map<String, dynamic>);
   }

@@ -279,7 +279,11 @@ const roomItemSchema = z.object({
 
 const roomPlaybackSchema = z.object({
   eventType: z.enum(['play', 'pause', 'seek', 'stop']),
-  positionMs: z.number().int().min(0).max(86_400_000).optional()
+  positionMs: z.number().int().min(0).max(86_400_000).optional(),
+  // Optional item context so the partner's device can sync to the same track.
+  itemId: z.string().uuid().optional(),
+  sourceUrl: z.string().trim().url().max(2000).optional(),
+  title: z.string().trim().max(200).optional()
 });
 
 const treeLeafSchema = z.object({
@@ -2039,7 +2043,10 @@ spaceRouter.post('/music-room/playback', requireAuth, async (request, response) 
     roomId: room.id,
     eventId: event.id,
     eventType: event.eventType,
-    positionMs: event.positionMs
+    positionMs: event.positionMs,
+    itemId: input.itemId,
+    sourceUrl: input.sourceUrl,
+    title: input.title
   });
   response.json({ room: updated });
 });
@@ -2096,7 +2103,10 @@ spaceRouter.post('/watch-room/playback', requireAuth, async (request, response) 
     roomId: room.id,
     eventId: event.id,
     eventType: event.eventType,
-    positionMs: event.positionMs
+    positionMs: event.positionMs,
+    itemId: input.itemId,
+    sourceUrl: input.sourceUrl,
+    title: input.title
   });
   response.json({ room: updated });
 });

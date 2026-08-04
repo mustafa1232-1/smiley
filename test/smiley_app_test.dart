@@ -319,6 +319,9 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<RoomModel> updateMusicPlayback({
     required String eventType,
     int? positionMs,
+    String? itemId,
+    String? sourceUrl,
+    String? title,
   }) async {
     return RoomModel(
       id: 'music',
@@ -345,6 +348,9 @@ class FakeSpaceRepository implements SpaceRepository {
   Future<RoomModel> updateWatchPlayback({
     required String eventType,
     int? positionMs,
+    String? itemId,
+    String? sourceUrl,
+    String? title,
   }) async {
     return RoomModel(
       id: 'watch',

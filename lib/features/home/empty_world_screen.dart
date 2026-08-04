@@ -5825,6 +5825,7 @@ class _RoomScreen extends StatefulWidget {
     SpaceRepository repository,
     String eventType,
     int? positionMs,
+    RoomItem? item,
   )
   playback;
 
@@ -5847,10 +5848,14 @@ class _RoomScreen extends StatefulWidget {
     SpaceRepository repository,
     String eventType,
     int? positionMs,
+    RoomItem? item,
   ) {
     return repository.updateMusicPlayback(
       eventType: eventType,
       positionMs: positionMs,
+      itemId: item?.id,
+      sourceUrl: item?.sourceUrl,
+      title: item?.title,
     );
   }
 
@@ -5870,10 +5875,14 @@ class _RoomScreen extends StatefulWidget {
     SpaceRepository repository,
     String eventType,
     int? positionMs,
+    RoomItem? item,
   ) {
     return repository.updateWatchPlayback(
       eventType: eventType,
       positionMs: positionMs,
+      itemId: item?.id,
+      sourceUrl: item?.sourceUrl,
+      title: item?.title,
     );
   }
 }
@@ -5910,11 +5919,52 @@ class _RoomScreenState extends State<_RoomScreen> {
     final position = rawPosition is int
         ? Duration(milliseconds: rawPosition)
         : null;
-    _applyRemote(type, position);
+    _applyRemote(
+      type,
+      position,
+      itemId: payload['itemId']?.toString(),
+      sourceUrl: payload['sourceUrl']?.toString(),
+      title: payload['title']?.toString(),
+    );
   }
 
-  Future<void> _applyRemote(String? type, Duration? position) async {
+  Future<void> _applyRemote(
+    String? type,
+    Duration? position, {
+    String? itemId,
+    String? sourceUrl,
+    String? title,
+  }) async {
     try {
+      // Switch to the partner's track first if it differs from ours.
+      if (sourceUrl != null &&
+          sourceUrl.isNotEmpty &&
+          sourceUrl != _current?.sourceUrl) {
+        final remoteItem = RoomItem(
+          id: itemId ?? sourceUrl,
+          title: title ?? 'مقطع',
+          source: 'manual',
+          sourceUrl: sourceUrl,
+        );
+        if (widget.isAudio) {
+          setState(() => _current = remoteItem);
+          await _player.setUrl(sourceUrl);
+        } else {
+          await _video?.dispose();
+          final controller = VideoPlayerController.networkUrl(
+            Uri.parse(sourceUrl),
+          );
+          await controller.initialize();
+          if (!mounted) {
+            await controller.dispose();
+            return;
+          }
+          setState(() {
+            _current = remoteItem;
+            _video = controller;
+          });
+        }
+      }
       if (widget.isAudio) {
         if (_current == null) return;
         if (position != null) await _player.seek(position);
@@ -6019,6 +6069,7 @@ class _RoomScreenState extends State<_RoomScreen> {
                   widget.repository,
                   'seek',
                   position.inMilliseconds,
+                  _current,
                 );
               },
             )
@@ -6088,6 +6139,7 @@ class _RoomScreenState extends State<_RoomScreen> {
           widget.repository,
           'play',
           _player.position.inMilliseconds,
+          _current,
         );
       } else {
         if (_current?.id != item.id || _video == null) {
@@ -6108,6 +6160,7 @@ class _RoomScreenState extends State<_RoomScreen> {
           widget.repository,
           'play',
           _video?.value.position.inMilliseconds ?? 0,
+          _current,
         );
       }
     } catch (error) {
@@ -6125,6 +6178,7 @@ class _RoomScreenState extends State<_RoomScreen> {
         widget.repository,
         'pause',
         _player.position.inMilliseconds,
+        _current,
       );
     } else {
       await _player.play();
@@ -6132,6 +6186,7 @@ class _RoomScreenState extends State<_RoomScreen> {
         widget.repository,
         'play',
         _player.position.inMilliseconds,
+        _current,
       );
     }
   }
@@ -6145,6 +6200,7 @@ class _RoomScreenState extends State<_RoomScreen> {
         widget.repository,
         'pause',
         controller.value.position.inMilliseconds,
+        _current,
       );
     } else {
       await controller.play();
@@ -6152,6 +6208,7 @@ class _RoomScreenState extends State<_RoomScreen> {
         widget.repository,
         'play',
         controller.value.position.inMilliseconds,
+        _current,
       );
     }
   }
