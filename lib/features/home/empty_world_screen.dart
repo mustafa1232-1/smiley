@@ -239,6 +239,7 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
           hasActivePartnership: false,
           onPartnershipChanged: _reload,
           onSignOut: _signOut,
+          events: widget.realtimeClient.events,
         ),
       };
     }
@@ -256,6 +257,7 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
           hasActivePartnership: false,
           onPartnershipChanged: _reload,
           onSignOut: _signOut,
+          events: widget.realtimeClient.events,
         ),
         _ => _PartnerRequiredTab(
           icon: Icons.auto_awesome_rounded,
@@ -2132,6 +2134,7 @@ class _MoreHubTabV2 extends StatelessWidget {
     required this.hasActivePartnership,
     required this.onPartnershipChanged,
     required this.onSignOut,
+    this.events,
   });
 
   final SpaceRepository repository;
@@ -2140,6 +2143,7 @@ class _MoreHubTabV2 extends StatelessWidget {
   final bool hasActivePartnership;
   final VoidCallback onPartnershipChanged;
   final VoidCallback onSignOut;
+  final Stream<Map<String, dynamic>>? events;
 
   @override
   Widget build(BuildContext context) {
@@ -2155,7 +2159,7 @@ class _MoreHubTabV2 extends StatelessWidget {
         () => guarded(
           'الموسيقى',
           Icons.music_note_rounded,
-          () => _RoomScreen.music(repository: repository),
+          () => _RoomScreen.music(repository: repository, events: events),
         ),
       ),
       _MoreItem(
@@ -2164,7 +2168,7 @@ class _MoreHubTabV2 extends StatelessWidget {
         () => guarded(
           'السينما',
           Icons.movie_outlined,
-          () => _RoomScreen.watch(repository: repository),
+          () => _RoomScreen.watch(repository: repository, events: events),
         ),
       ),
       _MoreItem(
@@ -5786,26 +5790,30 @@ class _AlbumsScreenState extends State<_AlbumsScreen> {
 }
 
 class _RoomScreen extends StatefulWidget {
-  const _RoomScreen.music({required this.repository})
+  const _RoomScreen.music({required this.repository, this.events})
     : title = 'الموسيقى',
       icon = Icons.music_note_rounded,
       isAudio = true,
+      eventType = 'music.playback.updated',
       load = repositoryMusicRoom,
       add = repositoryAddMusicItem,
       playback = repositoryUpdateMusicPlayback;
 
-  const _RoomScreen.watch({required this.repository})
+  const _RoomScreen.watch({required this.repository, this.events})
     : title = 'السينما',
       icon = Icons.movie_outlined,
       isAudio = false,
+      eventType = 'watch.playback.updated',
       load = repositoryWatchRoom,
       add = repositoryAddWatchItem,
       playback = repositoryUpdateWatchPlayback;
 
   final SpaceRepository repository;
+  final Stream<Map<String, dynamic>>? events;
   final String title;
   final IconData icon;
   final bool isAudio;
+  final String eventType;
   final Future<RoomModel> Function(SpaceRepository repository) load;
   final Future<void> Function(
     SpaceRepository repository,
@@ -5880,9 +5888,65 @@ class _RoomScreenState extends State<_RoomScreen> {
   final AudioPlayer _player = AudioPlayer();
   VideoPlayerController? _video;
   RoomItem? _current;
+  StreamSubscription<Map<String, dynamic>>? _sync;
+
+  @override
+  void initState() {
+    super.initState();
+    final events = widget.events;
+    if (events != null) {
+      _sync = events.listen(_onRemotePlayback);
+    }
+  }
+
+  // Applies the partner's play/pause/seek to the local player so both sides stay
+  // in sync. Applied directly (never re-broadcast) to avoid feedback loops.
+  void _onRemotePlayback(Map<String, dynamic> event) {
+    if (event['type']?.toString() != widget.eventType) return;
+    final payload = event['payload'];
+    if (payload is! Map) return;
+    final type = payload['eventType']?.toString();
+    final rawPosition = payload['positionMs'];
+    final position = rawPosition is int
+        ? Duration(milliseconds: rawPosition)
+        : null;
+    _applyRemote(type, position);
+  }
+
+  Future<void> _applyRemote(String? type, Duration? position) async {
+    try {
+      if (widget.isAudio) {
+        if (_current == null) return;
+        if (position != null) await _player.seek(position);
+        if (type == 'play') {
+          await _player.play();
+        } else if (type == 'pause') {
+          await _player.pause();
+        } else if (type == 'stop') {
+          await _player.pause();
+          await _player.seek(Duration.zero);
+        }
+      } else {
+        final controller = _video;
+        if (controller == null) return;
+        if (position != null) await controller.seekTo(position);
+        if (type == 'play') {
+          await controller.play();
+        } else if (type == 'pause') {
+          await controller.pause();
+        } else if (type == 'stop') {
+          await controller.pause();
+          await controller.seekTo(Duration.zero);
+        }
+      }
+    } catch (_) {
+      // Best-effort sync; ignore transient errors.
+    }
+  }
 
   @override
   void dispose() {
+    _sync?.cancel();
     _title.dispose();
     _sourceUrl.dispose();
     _player.dispose();
@@ -6145,7 +6209,6 @@ class _RoomScreenState extends State<_RoomScreen> {
       if (mounted) setState(() => _busy = false);
     }
   }
-
 }
 
 class _AudioPlayerBar extends StatelessWidget {
