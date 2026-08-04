@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../core/animations.dart';
 import '../../core/api_client.dart';
@@ -5877,6 +5878,7 @@ class _RoomScreenState extends State<_RoomScreen> {
   bool _uploading = false;
 
   final AudioPlayer _player = AudioPlayer();
+  VideoPlayerController? _video;
   RoomItem? _current;
 
   @override
@@ -5884,6 +5886,7 @@ class _RoomScreenState extends State<_RoomScreen> {
     _title.dispose();
     _sourceUrl.dispose();
     _player.dispose();
+    _video?.dispose();
     super.dispose();
   }
 
@@ -5927,19 +5930,17 @@ class _RoomScreenState extends State<_RoomScreen> {
                   label: const Text('إضافة'),
                 ),
               ),
-              if (widget.isAudio) ...[
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: (_busy || _uploading) ? null : _uploadAudio,
-                  icon: _uploading
-                      ? const SizedBox.square(
-                          dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.upload_rounded),
-                  label: const Text('رفع أغنية'),
-                ),
-              ],
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: (_busy || _uploading) ? null : _uploadMedia,
+                icon: _uploading
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.upload_rounded),
+                label: Text(widget.isAudio ? 'رفع أغنية' : 'رفع فيديو'),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -5956,6 +5957,12 @@ class _RoomScreenState extends State<_RoomScreen> {
                   position.inMilliseconds,
                 );
               },
+            )
+          else if (!widget.isAudio && _video != null && _current != null)
+            _VideoPlayerBar(
+              controller: _video!,
+              title: _current!.title,
+              onToggle: _toggleVideo,
             ),
           const SizedBox(height: 12),
           FutureBuilder<RoomModel>(
@@ -5967,13 +5974,6 @@ class _RoomScreenState extends State<_RoomScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (!widget.isAudio)
-                    _RoomPlaybackPanel(
-                      room: room,
-                      busy: _busy,
-                      onPlayback: _playback,
-                    ),
-                  const SizedBox(height: 12),
                   if (items.isEmpty)
                     const Text('لا توجد عناصر بعد.')
                   else
@@ -5989,17 +5989,15 @@ class _RoomScreenState extends State<_RoomScreen> {
                         ),
                         title: Text(item.title),
                         subtitle: Text(item.sourceUrl ?? item.source),
-                        trailing: widget.isAudio && item.sourceUrl != null
+                        trailing: item.sourceUrl != null
                             ? IconButton(
                                 icon: const Icon(
                                   Icons.play_circle_fill_rounded,
                                 ),
                                 onPressed: () => _playItem(item),
                               )
-                            : (item.sourceUrl == null
-                                  ? null
-                                  : const Icon(Icons.open_in_new_rounded)),
-                        onTap: widget.isAudio && item.sourceUrl != null
+                            : null,
+                        onTap: item.sourceUrl != null
                             ? () => _playItem(item)
                             : null,
                       ),
@@ -6016,16 +6014,38 @@ class _RoomScreenState extends State<_RoomScreen> {
     final url = item.sourceUrl;
     if (url == null || url.isEmpty) return;
     try {
-      if (_current?.id != item.id) {
-        setState(() => _current = item);
-        await _player.setUrl(url);
+      if (widget.isAudio) {
+        if (_current?.id != item.id) {
+          setState(() => _current = item);
+          await _player.setUrl(url);
+        }
+        await _player.play();
+        await widget.playback(
+          widget.repository,
+          'play',
+          _player.position.inMilliseconds,
+        );
+      } else {
+        if (_current?.id != item.id || _video == null) {
+          await _video?.dispose();
+          final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+          await controller.initialize();
+          if (!mounted) {
+            await controller.dispose();
+            return;
+          }
+          setState(() {
+            _current = item;
+            _video = controller;
+          });
+        }
+        await _video?.play();
+        await widget.playback(
+          widget.repository,
+          'play',
+          _video?.value.position.inMilliseconds ?? 0,
+        );
       }
-      await _player.play();
-      await widget.playback(
-        widget.repository,
-        'play',
-        _player.position.inMilliseconds,
-      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -6052,10 +6072,30 @@ class _RoomScreenState extends State<_RoomScreen> {
     }
   }
 
-  Future<void> _uploadAudio() async {
+  Future<void> _toggleVideo() async {
+    final controller = _video;
+    if (controller == null) return;
+    if (controller.value.isPlaying) {
+      await controller.pause();
+      await widget.playback(
+        widget.repository,
+        'pause',
+        controller.value.position.inMilliseconds,
+      );
+    } else {
+      await controller.play();
+      await widget.playback(
+        widget.repository,
+        'play',
+        controller.value.position.inMilliseconds,
+      );
+    }
+  }
+
+  Future<void> _uploadMedia() async {
     final result = await FilePicker.pickFiles(
       withData: true,
-      type: FileType.audio,
+      type: widget.isAudio ? FileType.audio : FileType.video,
     );
     final file = result?.files.single;
     final bytes = file?.bytes;
@@ -6106,20 +6146,6 @@ class _RoomScreenState extends State<_RoomScreen> {
     }
   }
 
-  Future<void> _playback(String eventType) async {
-    setState(() => _busy = true);
-    try {
-      await widget.playback(widget.repository, eventType, null);
-      setState(() => _future = widget.load(widget.repository));
-    } on ApiException catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
 }
 
 class _AudioPlayerBar extends StatelessWidget {
@@ -6232,6 +6258,95 @@ class _AudioPlayerBar extends StatelessWidget {
   }
 }
 
+class _VideoPlayerBar extends StatelessWidget {
+  const _VideoPlayerBar({
+    required this.controller,
+    required this.title,
+    required this.onToggle,
+  });
+
+  final VideoPlayerController controller;
+  final String title;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final ratio = controller.value.aspectRatio == 0
+        ? 16 / 9
+        : controller.value.aspectRatio;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: AspectRatio(
+            aspectRatio: ratio,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                VideoPlayer(controller),
+                ValueListenableBuilder<VideoPlayerValue>(
+                  valueListenable: controller,
+                  builder: (context, value, _) => GestureDetector(
+                    onTap: onToggle,
+                    child: AnimatedOpacity(
+                      opacity: value.isPlaying ? 0 : 1,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(
+                        color: Colors.black26,
+                        child: const Center(
+                          child: Icon(
+                            Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: 56,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            ValueListenableBuilder<VideoPlayerValue>(
+              valueListenable: controller,
+              builder: (context, value, _) => IconButton.filled(
+                onPressed: onToggle,
+                icon: Icon(
+                  value.isPlaying
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        VideoProgressIndicator(
+          controller,
+          allowScrubbing: true,
+          colors: VideoProgressColors(playedColor: scheme.primary),
+        ),
+      ],
+    );
+  }
+}
+
+// ignore: unused_element
 class _RoomPlaybackPanel extends StatelessWidget {
   const _RoomPlaybackPanel({
     required this.room,
