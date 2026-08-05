@@ -736,6 +736,7 @@ class FakeSpaceRepository implements SpaceRepository {
     String body, {
     List<String> assetIds = const [],
     String? clientMessageId,
+    String? replyToId,
   }) async {
     return ChatMessage(
       id: 'message',

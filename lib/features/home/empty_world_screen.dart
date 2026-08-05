@@ -1271,6 +1271,7 @@ class _ChatTabState extends State<_ChatTab>
 
   final _search = TextEditingController();
   String _searchQuery = '';
+  ChatMessage? _replyTo;
 
   final AudioRecorder _recorder = AudioRecorder();
   bool _recording = false;
@@ -1515,6 +1516,50 @@ class _ChatTabState extends State<_ChatTab>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              if (item.replyTo != null) ...[
+                                IntrinsicHeight(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 3,
+                                        color: scheme.primary,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              item.replyTo!.mine
+                                                  ? 'أنت'
+                                                  : item
+                                                        .replyTo!
+                                                        .senderUsername,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: scheme.primary,
+                                              ),
+                                            ),
+                                            Text(
+                                              item.replyTo!.body ?? 'مرفق',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                              ],
                               if (!item.isMine &&
                                   item.senderUsername != null) ...[
                                 Text(
@@ -1578,6 +1623,15 @@ class _ChatTabState extends State<_ChatTab>
                                       label: Text('${item.pinCount}'),
                                     ),
                                     IconButton(
+                                      tooltip: 'رد',
+                                      onPressed: () =>
+                                          setState(() => _replyTo = item),
+                                      icon: const Icon(
+                                        Icons.reply_rounded,
+                                        size: 18,
+                                      ),
+                                    ),
+                                    IconButton(
                                       tooltip: 'تعديل',
                                       onPressed: () => _editMessage(item),
                                       icon: const Icon(
@@ -1635,6 +1689,48 @@ class _ChatTabState extends State<_ChatTab>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (_replyTo != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.reply_rounded,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'رد على ${_replyTo!.isMine ? 'رسالتك' : (_replyTo!.senderUsername ?? 'شريكك')}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                              Text(
+                                _replyTo!.body.isNotEmpty
+                                    ? _replyTo!.body
+                                    : 'مرفق',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          onPressed: () => setState(() => _replyTo = null),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (!_recording) _EmojiBar(onSelect: _insertEmoji),
                 if (_recording)
                   Padding(
@@ -1767,15 +1863,20 @@ class _ChatTabState extends State<_ChatTab>
     // Stable id shared between the live attempt and the offline retry so the
     // server de-duplicates if the first attempt actually reached it.
     final clientMessageId = 'm-${DateTime.now().microsecondsSinceEpoch}';
+    final replyToId = _replyTo?.id;
     try {
       await widget.repository.sendMessage(
         body,
         assetIds: assetIds,
         clientMessageId: clientMessageId,
+        replyToId: replyToId,
       );
       _message.clear();
       _attachments.clear();
-      setState(() => _messages = _loadMessages());
+      setState(() {
+        _replyTo = null;
+        _messages = _loadMessages();
+      });
     } on ApiException catch (error) {
       if (error.code != 'network_error') rethrow;
       await widget.offlineOutbox.enqueueMessage(

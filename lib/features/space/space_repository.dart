@@ -60,6 +60,7 @@ abstract interface class SpaceRepository {
     String body, {
     List<String> assetIds,
     String? clientMessageId,
+    String? replyToId,
   });
   Future<ChatMessage> editMessage({
     required String messageId,
@@ -411,6 +412,7 @@ class HttpSpaceRepository implements SpaceRepository {
     String body, {
     List<String> assetIds = const [],
     String? clientMessageId,
+    String? replyToId,
   }) async {
     final trimmed = body.trim();
     final json = await _api.postJson('/messages', {
@@ -420,6 +422,7 @@ class HttpSpaceRepository implements SpaceRepository {
           clientMessageId ?? 'm-${DateTime.now().microsecondsSinceEpoch}',
       if (trimmed.isNotEmpty) 'body': trimmed,
       if (assetIds.isNotEmpty) 'assetIds': assetIds,
+      'replyToId': ?replyToId,
     });
     return ChatMessage.fromJson(json['message'] as Map<String, dynamic>);
   }
@@ -1395,6 +1398,29 @@ class MediaRef {
   }
 }
 
+class ReplyRef {
+  const ReplyRef({
+    required this.id,
+    required this.senderUsername,
+    required this.mine,
+    this.body,
+  });
+
+  final String id;
+  final String? body;
+  final String senderUsername;
+  final bool mine;
+
+  factory ReplyRef.fromJson(Map<String, dynamic> json) {
+    return ReplyRef(
+      id: json['id'] as String,
+      body: json['body'] as String?,
+      senderUsername: json['senderUsername'] as String? ?? '',
+      mine: json['mine'] as bool? ?? false,
+    );
+  }
+}
+
 class ChatMessage {
   const ChatMessage({
     required this.id,
@@ -1412,6 +1438,7 @@ class ChatMessage {
     this.pending = false,
     this.isMine = false,
     this.attachments = const [],
+    this.replyTo,
   });
 
   final String id;
@@ -1429,6 +1456,7 @@ class ChatMessage {
   final bool pending;
   final bool isMine;
   final List<MediaRef> attachments;
+  final ReplyRef? replyTo;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final sender = json['sender'] as Map<String, dynamic>?;
@@ -1450,6 +1478,9 @@ class ChatMessage {
       pinnedByMe: json['pinnedByMe'] as bool? ?? false,
       isMine: json['mine'] as bool? ?? false,
       attachments: MediaRef.listFrom(json['attachments']),
+      replyTo: json['replyTo'] != null
+          ? ReplyRef.fromJson(json['replyTo'] as Map<String, dynamic>)
+          : null,
     );
   }
 }

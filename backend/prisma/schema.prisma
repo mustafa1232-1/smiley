@@ -358,10 +358,13 @@ model Message {
   serverTimestamp DateTime     @default(now())
   editedAt        DateTime?
   deletedAt       DateTime?
+  replyToId       String?      @db.Uuid
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender          User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo         Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies         Message[]    @relation("MessageReplies")
   attachments     MessageAttachment[]
   reactions       MessageReaction[]
   receipts        MessageReceipt[]
@@ -369,6 +372,7 @@ model Message {
 
   @@unique([conversationId, clientMessageId])
   @@index([conversationId, serverTimestamp])
+  @@index([replyToId])
 }
 
 model MessageAttachment {

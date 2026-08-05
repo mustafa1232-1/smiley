@@ -77,7 +77,8 @@ const occasionInputSchema = z.object({
 const messageSchema = z.object({
   clientMessageId: z.string().trim().min(1).max(80),
   body: z.string().trim().max(4000).optional(),
-  assetIds: z.array(z.string().uuid()).max(10).optional()
+  assetIds: z.array(z.string().uuid()).max(10).optional(),
+  replyToId: z.string().uuid().optional()
 });
 
 const messageReactionSchema = z.object({
@@ -1230,6 +1231,16 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
     });
     if (existing) return existing;
 
+    if (input.replyToId) {
+      const parent = await tx.message.findFirst({
+        where: { id: input.replyToId, conversationId: conversation.id, deletedAt: null },
+        select: { id: true }
+      });
+      if (!parent) {
+        throw new AppError(422, 'invalid_reply', 'الرسالة المقتبسة غير موجودة');
+      }
+    }
+
     return tx.message.create({
       data: {
         conversationId: conversation.id,
@@ -1237,6 +1248,7 @@ spaceRouter.post('/messages', requireAuth, async (request, response) => {
         clientMessageId: input.clientMessageId,
         kind: assetIds.length > 0 ? 'file' : 'text',
         body: body || null,
+        replyToId: input.replyToId ?? null,
         attachments: assetIds.length
           ? { create: assetIds.map((assetId) => ({ assetId, kind: 'media' })) }
           : undefined
@@ -2920,6 +2932,14 @@ function serializeScheduledMessage(message: {
 function messageResponseInclude(userId: string) {
   return {
     attachments: true,
+    replyTo: {
+      select: {
+        id: true,
+        body: true,
+        senderId: true,
+        sender: { select: { username: true } }
+      }
+    },
     receipts: { where: { userId } },
     reactions: { where: { userId }, select: { value: true } },
     pins: { where: { userId }, select: { id: true } },
@@ -2988,6 +3008,12 @@ function serializeMessage(
     serverTimestamp: Date;
     editedAt: Date | null;
     attachments?: Array<{ assetId: string | null; url?: string | null }>;
+    replyTo?: {
+      id: string;
+      body: string | null;
+      senderId: string;
+      sender: { username: string };
+    } | null;
     receipts?: Array<{
       deliveredAt: Date | null;
       readAt: Date | null;
@@ -3010,6 +3036,14 @@ function serializeMessage(
     body: message.body,
     serverTimestamp: message.serverTimestamp,
     editedAt: message.editedAt,
+    replyTo: message.replyTo
+      ? {
+          id: message.replyTo.id,
+          body: message.replyTo.body,
+          mine: message.replyTo.senderId === currentUserId,
+          senderUsername: message.replyTo.sender.username
+        }
+      : null,
     assetIds: (message.attachments ?? [])
       .map((item) => item.assetId)
       .filter((assetId): assetId is string => Boolean(assetId)),
