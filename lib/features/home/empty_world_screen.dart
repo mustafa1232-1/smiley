@@ -11,6 +11,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart'
 
 import '../../core/animations.dart';
 import '../../core/api_client.dart';
+import '../../core/avatar.dart';
 import '../../core/offline_outbox.dart';
 import '../../core/realtime_client.dart';
 import '../../core/secure_stores.dart';
@@ -3211,6 +3212,22 @@ class _TreeScreenState extends State<_TreeScreen> {
   final _title = TextEditingController();
   final _body = TextEditingController();
   bool _busy = false;
+  Avatar _avatar = const Avatar();
+
+  @override
+  void initState() {
+    super.initState();
+    AvatarStore.load().then((a) {
+      if (mounted) setState(() => _avatar = a);
+    });
+  }
+
+  Future<void> _editAvatar() async {
+    final result = await Navigator.of(context).push<Avatar>(
+      MaterialPageRoute(builder: (_) => AvatarBuilderScreen(initial: _avatar)),
+    );
+    if (result != null && mounted) setState(() => _avatar = result);
+  }
 
   @override
   void dispose() {
@@ -3241,6 +3258,7 @@ class _TreeScreenState extends State<_TreeScreen> {
             controller: _body,
             minLines: 3,
             maxLines: 6,
+            onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(labelText: 'نص الورقة'),
           ),
           const SizedBox(height: 8),
@@ -3258,7 +3276,20 @@ class _TreeScreenState extends State<_TreeScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _MemoryTreeView(leaves: leaves, onTapLeaf: _showLeaf),
+                  Stack(
+                    children: [
+                      _MemoryTreeView(leaves: leaves, onTapLeaf: _showLeaf),
+                      Positioned(
+                        left: 10,
+                        bottom: 10,
+                        child: _TreePresence(
+                          avatar: _avatar,
+                          writing: _body.text.trim().isNotEmpty,
+                          onEdit: _editAvatar,
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
@@ -3382,6 +3413,79 @@ class _TreeScreenState extends State<_TreeScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+// The user's avatar standing by the tree, with a status bubble. Tapping it
+// opens the avatar editor.
+class _TreePresence extends StatelessWidget {
+  const _TreePresence({
+    required this.avatar,
+    required this.writing,
+    required this.onEdit,
+  });
+
+  final Avatar avatar;
+  final bool writing;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Text(
+            writing ? 'يكتب ورقة ✍️' : 'أنت هنا 🌳',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF3A2A22),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        GestureDetector(
+          onTap: onEdit,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              AvatarView(
+                avatar: avatar,
+                size: 56,
+                background: Colors.white,
+                ringColor: scheme.primary,
+              ),
+              Positioned(
+                right: -2,
+                bottom: -2,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.edit, size: 11, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
