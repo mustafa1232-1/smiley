@@ -1,12 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart'
@@ -1273,11 +1270,6 @@ class _ChatTabState extends State<_ChatTab>
   String _searchQuery = '';
   ChatMessage? _replyTo;
 
-  final AudioRecorder _recorder = AudioRecorder();
-  bool _recording = false;
-  Duration _recordElapsed = Duration.zero;
-  Timer? _recordTimer;
-
   @override
   void initState() {
     super.initState();
@@ -1368,84 +1360,9 @@ class _ChatTabState extends State<_ChatTab>
   @override
   void dispose() {
     stopRealtimeRefresh();
-    _recordTimer?.cancel();
-    _recorder.dispose();
     _search.dispose();
     _message.dispose();
     super.dispose();
-  }
-
-  Future<void> _startRecording() async {
-    if (!await _recorder.hasPermission()) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يلزم إذن الميكروفون لتسجيل الصوت.')),
-      );
-      return;
-    }
-    final dir = await getTemporaryDirectory();
-    final path =
-        '${dir.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
-    await _recorder.start(const RecordConfig(), path: path);
-    if (!mounted) return;
-    setState(() {
-      _recording = true;
-      _recordElapsed = Duration.zero;
-    });
-    _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() => _recordElapsed += const Duration(seconds: 1));
-      }
-    });
-  }
-
-  Future<void> _cancelRecording() async {
-    _recordTimer?.cancel();
-    final path = await _recorder.stop();
-    if (path != null) {
-      await File(path).delete().catchError((_) => File(path));
-    }
-    if (!mounted) return;
-    setState(() => _recording = false);
-  }
-
-  Future<void> _stopAndSendRecording() async {
-    _recordTimer?.cancel();
-    final path = await _recorder.stop();
-    if (!mounted) return;
-    setState(() => _recording = false);
-    if (path == null) return;
-
-    setState(() => _sending = true);
-    try {
-      final bytes = await File(path).readAsBytes();
-      final asset = await widget.repository.uploadMedia(
-        fileName: 'voice.m4a',
-        mimeType: 'audio/mp4',
-        bytes: bytes,
-      );
-      await widget.repository.sendMessage(
-        '',
-        assetIds: [asset.id],
-        clientMessageId: 'voice-${DateTime.now().microsecondsSinceEpoch}',
-      );
-      await File(path).delete().catchError((_) => File(path));
-      if (!mounted) return;
-      setState(() => _messages = _loadMessages());
-    } on ApiException catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  String _fmtDuration(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
   }
 
   @override
@@ -1731,110 +1648,66 @@ class _ChatTabState extends State<_ChatTab>
                       ],
                     ),
                   ),
-                if (!_recording) _EmojiBar(onSelect: _insertEmoji),
-                if (_recording)
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        const _RecordingDot(),
-                        const SizedBox(width: 10),
-                        Text(
-                          'جارٍ التسجيل  ${_fmtDuration(_recordElapsed)}',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'إلغاء',
-                          onPressed: _cancelRecording,
-                          icon: const Icon(Icons.delete_outline_rounded),
-                        ),
-                        const SizedBox(width: 4),
-                        IconButton.filled(
-                          tooltip: 'إرسال',
-                          onPressed: _sending ? null : _stopAndSendRecording,
-                          icon: _sending
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.send_rounded),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert_rounded),
-                          onSelected: (value) {
-                            if (value == 'color') _pickChatColor();
-                            if (value == 'schedule') _schedule();
-                          },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(
-                              value: 'color',
-                              child: Text('لون المحادثة'),
-                            ),
-                            PopupMenuItem(
-                              value: 'schedule',
-                              child: Text('جدولة رسالة'),
-                            ),
-                          ],
-                        ),
-                        IconButton.outlined(
-                          tooltip: 'إرفاق ملف',
-                          onPressed: (_sending || _uploading)
-                              ? null
-                              : _attachMedia,
-                          icon: _uploading
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Badge.count(
-                                  count: _attachments.length,
-                                  isLabelVisible: _attachments.isNotEmpty,
-                                  child: const Icon(Icons.attach_file_rounded),
-                                ),
-                        ),
-                        const SizedBox(width: 4),
-                        IconButton(
-                          tooltip: 'تسجيل صوتي',
-                          onPressed: (_sending || _uploading)
-                              ? null
-                              : _startRecording,
-                          icon: const Icon(Icons.mic_rounded),
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: TextField(
-                            controller: _message,
-                            decoration: const InputDecoration(
-                              hintText: 'اكتب رسالة',
-                              prefixIcon: Icon(
-                                Icons.chat_bubble_outline_rounded,
-                              ),
-                            ),
-                            onSubmitted: (_) => _send(),
+                _EmojiBar(onSelect: _insertEmoji),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert_rounded),
+                        onSelected: (value) {
+                          if (value == 'color') _pickChatColor();
+                          if (value == 'schedule') _schedule();
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(
+                            value: 'color',
+                            child: Text('لون المحادثة'),
                           ),
+                          PopupMenuItem(
+                            value: 'schedule',
+                            child: Text('جدولة رسالة'),
+                          ),
+                        ],
+                      ),
+                      IconButton.outlined(
+                        tooltip: 'إرفاق ملف',
+                        onPressed: (_sending || _uploading)
+                            ? null
+                            : _attachMedia,
+                        icon: _uploading
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Badge.count(
+                                count: _attachments.length,
+                                isLabelVisible: _attachments.isNotEmpty,
+                                child: const Icon(Icons.attach_file_rounded),
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _message,
+                          decoration: const InputDecoration(
+                            hintText: 'اكتب رسالة',
+                            prefixIcon: Icon(Icons.chat_bubble_outline_rounded),
+                          ),
+                          onSubmitted: (_) => _send(),
                         ),
-                        const SizedBox(width: 8),
-                        IconButton.filled(
-                          tooltip: 'إرسال',
-                          onPressed: (_sending || _uploading) ? null : _send,
-                          icon: const Icon(Icons.send_rounded),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filled(
+                        tooltip: 'إرسال',
+                        onPressed: (_sending || _uploading) ? null : _send,
+                        icon: const Icon(Icons.send_rounded),
+                      ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),
@@ -2154,42 +2027,6 @@ class _EmojiBar extends StatelessWidget {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _RecordingDot extends StatefulWidget {
-  const _RecordingDot();
-
-  @override
-  State<_RecordingDot> createState() => _RecordingDotState();
-}
-
-class _RecordingDotState extends State<_RecordingDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 700),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: Tween<double>(begin: 0.35, end: 1).animate(_controller),
-      child: Container(
-        width: 12,
-        height: 12,
-        decoration: const BoxDecoration(
-          color: Colors.red,
-          shape: BoxShape.circle,
-        ),
       ),
     );
   }
@@ -3591,6 +3428,7 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final leaves = widget.leaves;
+    final count = math.max(1, leaves.length);
     return AspectRatio(
       aspectRatio: 0.82,
       child: DecoratedBox(
@@ -3608,8 +3446,9 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
         child: LayoutBuilder(
           builder: (context, constraints) {
             final size = Size(constraints.maxWidth, constraints.maxHeight);
-            final canopyCenter = Offset(size.width * 0.5, size.height * 0.34);
-            final canopyRadius = size.width * 0.36;
+            final base = Offset(size.width / 2, size.height * 0.95);
+            final trunkTop = Offset(size.width / 2, size.height * 0.46);
+            final canopyRadius = size.width * 0.40;
 
             return AnimatedBuilder(
               animation: Listenable.merge([_sway, _grow]),
@@ -3617,36 +3456,40 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
                 final grow = Curves.easeOutCubic.transform(_grow.value);
                 final swayPhase = math.sin(_sway.value * math.pi * 2);
 
-                final leafWidgets = <Widget>[];
-                for (var i = 0; i < leaves.length; i++) {
-                  final angle = i * 2.399963; // golden angle (radians)
-                  final t = leaves.length == 1
-                      ? 0.0
-                      : (i + 0.6) / leaves.length;
-                  final r = canopyRadius * math.sqrt(t);
-                  final depth = 0.7 + 0.3 * (1 - t); // front leaves larger
-                  final leafGrow =
-                      ((grow - t * 0.4).clamp(0.0, 1.0)) /
-                      (1 - t * 0.4).clamp(0.2, 1.0);
-                  final wind = swayPhase * (4 + r * 0.05);
-                  final dx = canopyCenter.dx + r * math.cos(angle) + wind - 15;
-                  final dy = canopyCenter.dy + r * math.sin(angle) * 0.82 - 15;
-                  final color = _leafColors[i % _leafColors.length];
+                // Branch endpoints laid out as an upward fan around the trunk
+                // top. Each leaf sits exactly on one endpoint, and the painter
+                // draws a branch from the trunk to the same point, so leaves are
+                // always attached to a branch (never floating).
+                final endpoints = <Offset>[];
+                for (var i = 0; i < count; i++) {
+                  final tNorm = count == 1 ? 0.5 : i / (count - 1);
+                  final angle = (tNorm * 2 - 1) * (math.pi * 0.46);
+                  final radiusFactor =
+                      0.55 + 0.42 * (0.5 + 0.5 * math.sin(i * 2.2));
+                  final r = canopyRadius * radiusFactor * grow;
+                  final wind = swayPhase * (5 * r / canopyRadius);
+                  endpoints.add(
+                    Offset(
+                      trunkTop.dx + math.sin(angle) * r + wind,
+                      trunkTop.dy - math.cos(angle) * r * 1.05,
+                    ),
+                  );
+                }
 
-                  leafWidgets.add(
+                final leafWidgets = <Widget>[
+                  for (var i = 0; i < leaves.length; i++)
                     Positioned(
-                      left: dx,
-                      top: dy,
+                      left: endpoints[i].dx - 14,
+                      top: endpoints[i].dy - 14,
                       child: Transform.scale(
-                        scale: leafGrow.clamp(0.0, 1.0) * depth,
+                        scale: ((grow - 0.35) / 0.65).clamp(0.0, 1.0),
                         child: _LeafDot(
-                          color: color,
+                          color: _leafColors[i % _leafColors.length],
                           onTap: () => widget.onTapLeaf(leaves[i]),
                         ),
                       ),
                     ),
-                  );
-                }
+                ];
 
                 return Stack(
                   clipBehavior: Clip.none,
@@ -3655,8 +3498,9 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
                       child: CustomPaint(
                         painter: _TreePainter(
                           grow: grow,
-                          sway: swayPhase * 0.03,
-                          leafCount: leaves.length,
+                          base: base,
+                          trunkTop: trunkTop,
+                          endpoints: endpoints,
                           trunkColor: const Color(0xFF795548),
                           branchColor: const Color(0xFF8D6E63),
                         ),
@@ -3709,46 +3553,41 @@ class _LeafDot extends StatelessWidget {
 class _TreePainter extends CustomPainter {
   _TreePainter({
     required this.grow,
-    required this.sway,
-    required this.leafCount,
+    required this.base,
+    required this.trunkTop,
+    required this.endpoints,
     required this.trunkColor,
     required this.branchColor,
   });
 
   final double grow;
-  final double sway;
-  final int leafCount;
+  final Offset base;
+  final Offset trunkTop;
+  final List<Offset> endpoints;
   final Color trunkColor;
   final Color branchColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final base = Offset(size.width / 2, size.height * 0.96);
-    final canopyY = size.height * 0.34;
-    final trunkTop = Offset(
-      base.dx + math.sin(sway) * 24,
-      base.dy - (base.dy - canopyY) * grow,
-    );
-
     // Ground shadow.
     canvas.drawOval(
       Rect.fromCenter(center: base, width: 130 * grow, height: 22 * grow),
       Paint()..color = Colors.black.withValues(alpha: 0.06),
     );
 
-    // Tapered trunk.
-    final width = 20.0 * grow;
+    // Tapered trunk from the base up to the canopy origin.
+    final width = 16.0 * grow;
     final trunk = Path()
       ..moveTo(base.dx - width, base.dy)
       ..quadraticBezierTo(
-        base.dx - 5,
+        base.dx - 4,
         (base.dy + trunkTop.dy) / 2,
         trunkTop.dx - 4,
         trunkTop.dy,
       )
       ..lineTo(trunkTop.dx + 4, trunkTop.dy)
       ..quadraticBezierTo(
-        base.dx + 5,
+        base.dx + 4,
         (base.dy + trunkTop.dy) / 2,
         base.dx + width,
         base.dy,
@@ -3756,33 +3595,30 @@ class _TreePainter extends CustomPainter {
       ..close();
     canvas.drawPath(trunk, Paint()..color = trunkColor);
 
-    // Branches fanning into the canopy.
-    final branchPaint = Paint()
-      ..color = branchColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 7 * grow
-      ..strokeCap = StrokeCap.round;
-    final branches = math.max(3, math.min(6, 2 + leafCount ~/ 3));
-    for (var i = 0; i < branches; i++) {
-      final spread = (i / (branches - 1)) * 2 - 1; // -1..1
-      final end = Offset(
-        trunkTop.dx + spread * size.width * 0.34 * grow,
-        canopyY - 30 * grow + (spread.abs()) * 20,
-      );
+    // One curved branch from the trunk top to each leaf endpoint, so every
+    // leaf sits on the tip of a branch.
+    for (final end in endpoints) {
+      final dx = end.dx - trunkTop.dx;
       final control = Offset(
-        trunkTop.dx + spread * size.width * 0.14,
-        (trunkTop.dy + end.dy) / 2 - 20,
+        trunkTop.dx + dx * 0.35,
+        (trunkTop.dy + end.dy) / 2 - 14,
       );
       final branch = Path()
         ..moveTo(trunkTop.dx, trunkTop.dy)
         ..quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
-      canvas.drawPath(branch, branchPaint);
+      canvas.drawPath(
+        branch,
+        Paint()
+          ..color = branchColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4 * grow
+          ..strokeCap = StrokeCap.round,
+      );
     }
   }
 
   @override
-  bool shouldRepaint(_TreePainter old) =>
-      old.grow != grow || old.sway != sway || old.leafCount != leafCount;
+  bool shouldRepaint(_TreePainter old) => true;
 }
 
 class _TimeCapsulesScreen extends StatefulWidget {
