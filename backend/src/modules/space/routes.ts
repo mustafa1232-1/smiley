@@ -2160,6 +2160,18 @@ spaceRouter.get('/tree/today', requireAuth, async (request, response) => {
   response.json({ day });
 });
 
+// All leaves ever planted for this partnership — the memory tree is permanent;
+// leaves never expire and can always be revisited.
+spaceRouter.get('/tree/all', requireAuth, async (request, response) => {
+  const partnership = await requireActivePartnership(request.user!.sub);
+  const leaves = await prisma.treeLeaf.findMany({
+    where: { treeDay: { partnershipId: partnership.id } },
+    include: { contributions: { orderBy: { createdAt: 'asc' } } },
+    orderBy: { createdAt: 'asc' }
+  });
+  response.json({ leaves });
+});
+
 spaceRouter.post('/tree/leaves', requireAuth, async (request, response) => {
   const userId = request.user!.sub;
   const input = treeLeafSchema.parse(request.body);

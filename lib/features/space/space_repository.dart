@@ -156,6 +156,7 @@ abstract interface class SpaceRepository {
     String? title,
   });
   Future<TreeDayModel> todayTree();
+  Future<List<TreeLeafItem>> allTreeLeaves();
   Future<void> createTreeLeaf({String? title, required String body});
   Future<void> addTreeLeafContribution({
     required String leafId,
@@ -802,6 +803,15 @@ class HttpSpaceRepository implements SpaceRepository {
   Future<TreeDayModel> todayTree() async {
     final json = await _api.getJson('/tree/today');
     return TreeDayModel.fromJson(json['day'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<TreeLeafItem>> allTreeLeaves() async {
+    final json = await _api.getJson('/tree/all');
+    return (json['leaves'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(TreeLeafItem.fromJson)
+        .toList();
   }
 
   @override

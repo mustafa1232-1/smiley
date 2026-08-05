@@ -3209,17 +3209,25 @@ class _TreeScreen extends StatefulWidget {
 }
 
 class _TreeScreenState extends State<_TreeScreen> {
-  late Future<TreeDayModel> _future = widget.repository.todayTree();
+  late Future<List<TreeLeafItem>> _future = widget.repository.allTreeLeaves();
   final _title = TextEditingController();
   final _body = TextEditingController();
   bool _busy = false;
+  bool _writing = false;
   Avatar _avatar = const Avatar();
+  String _treeName = 'شجرتنا';
 
   @override
   void initState() {
     super.initState();
     AvatarStore.load().then((a) {
       if (mounted) setState(() => _avatar = a);
+    });
+    SharedPreferences.getInstance().then((p) {
+      final name = p.getString('tree_name');
+      if (name != null && name.trim().isNotEmpty && mounted) {
+        setState(() => _treeName = name);
+      }
     });
   }
 
@@ -3230,6 +3238,37 @@ class _TreeScreenState extends State<_TreeScreen> {
     if (result != null && mounted) setState(() => _avatar = result);
   }
 
+  Future<void> _renameTree() async {
+    final controller = TextEditingController(text: _treeName);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('اسم الشجرة'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 40,
+          decoration: const InputDecoration(hintText: 'مثال: شجرة حبّنا'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty) return;
+    final p = await SharedPreferences.getInstance();
+    await p.setString('tree_name', name);
+    if (mounted) setState(() => _treeName = name);
+  }
+
   @override
   void dispose() {
     _title.dispose();
@@ -3237,76 +3276,175 @@ class _TreeScreenState extends State<_TreeScreen> {
     super.dispose();
   }
 
+  void _refresh() =>
+      setState(() => _future = widget.repository.allTreeLeaves());
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final topPad = MediaQuery.of(context).padding.top;
+    final botPad = MediaQuery.of(context).padding.bottom;
     return Scaffold(
-      appBar: AppBar(title: const Text('الشجرة اليومية')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const _SectionHeader(
-            icon: Icons.park_outlined,
-            title: 'ورقة اليوم',
-            subtitle: 'اكتبوا ورقة يومية تنمو بها شجرة الذكريات.',
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _title,
-            decoration: const InputDecoration(labelText: 'عنوان اختياري'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _body,
-            minLines: 3,
-            maxLines: 6,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(labelText: 'نص الورقة'),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _busy ? null : _create,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('إضافة ورقة'),
-          ),
-          const SizedBox(height: 16),
-          FutureBuilder<TreeDayModel>(
-            future: _future,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const LinearProgressIndicator();
-              final leaves = snapshot.requireData.leaves;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Stack(
-                    children: [
-                      _MemoryTreeView(leaves: leaves, onTapLeaf: _showLeaf),
-                      Positioned(
-                        left: 10,
-                        bottom: 10,
-                        child: _TreePresence(
-                          avatar: _avatar,
-                          writing: _body.text.trim().isNotEmpty,
-                          onEdit: _editAvatar,
-                        ),
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: Colors.white,
+        title: const Text('عالمنا'),
+      ),
+      body: FutureBuilder<List<TreeLeafItem>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final leaves = snapshot.data ?? const <TreeLeafItem>[];
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              // Full-screen living scene (sky shader + tree + weather + grass).
+              _MemoryTreeView(leaves: leaves, onTapLeaf: _showLeaf),
+
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+
+              // Tree name + memory count (tap the name to rename).
+              Positioned(
+                top: topPad + 54,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: _renameTree,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      leaves.isEmpty
-                          ? 'ازرعوا أول ورقة لتنمو الشجرة 🌱'
-                          : 'اضغطوا على أي ورقة لعرض ذكراها 🍃 (${leaves.length})',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.28),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _treeName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(
+                            Icons.edit,
+                            size: 14,
+                            color: Colors.white70,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '🍃 ${leaves.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              );
-            },
-          ),
-        ],
+                ),
+              ),
+
+              // Your avatar living in the world.
+              Positioned(
+                left: 14,
+                bottom: 92 + botPad,
+                child: _TreePresence(
+                  avatar: _avatar,
+                  writing: _writing,
+                  onEdit: _editAvatar,
+                ),
+              ),
+
+              // Add-leaf button → compose sheet.
+              Positioned(
+                left: 20,
+                right: 20,
+                bottom: 20 + botPad,
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _openCompose,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('إضافة ورقة'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52),
+                    backgroundColor: scheme.primary,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
+  }
+
+  Future<void> _openCompose() async {
+    if (mounted) setState(() => _writing = true);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 4,
+            bottom: 20 + MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _SectionHeader(
+                icon: Icons.park_outlined,
+                title: 'ورقة جديدة',
+                subtitle: 'اكتبوا ذكرى تبقى على الشجرة للأبد.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _title,
+                decoration: const InputDecoration(labelText: 'عنوان اختياري'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _body,
+                minLines: 3,
+                maxLines: 6,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'نص الورقة'),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        await _create();
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('إضافة الورقة'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (mounted) setState(() => _writing = false);
   }
 
   Future<void> _create() async {
@@ -3319,7 +3457,7 @@ class _TreeScreenState extends State<_TreeScreen> {
       );
       _title.clear();
       _body.clear();
-      setState(() => _future = widget.repository.todayTree());
+      _refresh();
     } on ApiException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -3339,7 +3477,7 @@ class _TreeScreenState extends State<_TreeScreen> {
         leafId: leafId,
         body: body,
       );
-      setState(() => _future = widget.repository.todayTree());
+      _refresh();
     } on ApiException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -3573,10 +3711,10 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
   void _handleTap(Offset local) {
     final forest = _forest;
     if (forest == null) return;
-    var best = 26.0; // hit radius (px)
+    var best = 30.0; // hit radius (px)
     _LeafInst? hit;
     for (final tree in forest.trees) {
-      for (final leaf in tree.leaves) {
+      for (final leaf in tree.memories) {
         final d = (leaf.pos - local).distance;
         if (d < best) {
           best = d;
@@ -3591,43 +3729,38 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 0.92,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final size = Size(constraints.maxWidth, constraints.maxHeight);
-            final key =
-                '${size.width.round()}x${size.height.round()}'
-                '|${widget.leaves.length}';
-            if (key != _forestKey) {
-              _forest = _buildForest(size, widget.leaves.length);
-              _forestKey = key;
-            }
-            final forest = _forest!;
-            return GestureDetector(
-              onTapUp: (d) => _handleTap(d.localPosition),
-              child: AnimatedBuilder(
-                animation: Listenable.merge([_wind, _grow]),
-                builder: (context, _) {
-                  return CustomPaint(
-                    size: size,
-                    painter: _ScenePainter(
-                      now: DateTime.now(),
-                      grow: Curves.easeOutCubic.transform(_grow.value),
-                      windPhase: _wind.value * math.pi * 2,
-                      forest: forest,
-                      weather: _weather,
-                      skyShader: _skyShader,
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        ),
-      ),
+    // Fills whatever space the parent gives it — used full-screen in the world.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        final key =
+            '${size.width.round()}x${size.height.round()}'
+            '|${widget.leaves.length}';
+        if (key != _forestKey) {
+          _forest = _buildForest(size, widget.leaves.length);
+          _forestKey = key;
+        }
+        final forest = _forest!;
+        return GestureDetector(
+          onTapUp: (d) => _handleTap(d.localPosition),
+          child: AnimatedBuilder(
+            animation: Listenable.merge([_wind, _grow]),
+            builder: (context, _) {
+              return CustomPaint(
+                size: size,
+                painter: _ScenePainter(
+                  now: DateTime.now(),
+                  grow: Curves.easeOutCubic.transform(_grow.value),
+                  windPhase: _wind.value * math.pi * 2,
+                  forest: forest,
+                  weather: _weather,
+                  skyShader: _skyShader,
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -3643,7 +3776,7 @@ const int _kLeavesPerBranch = 50;
 const int _kBranchesPerTree = 20;
 const int _kLeavesPerTree = _kLeavesPerBranch * _kBranchesPerTree; // 1000
 const int _kMaxTrees = 5;
-const int _kMaxRenderedLeaves = 1300; // safety cap for very large memory counts
+const int _kMaxMemoryLeaves = 400; // per-tree cap on distinct memory leaves
 
 class _Seg {
   const _Seg(this.a, this.ctrl, this.b, this.width);
@@ -3656,20 +3789,28 @@ class _Seg {
 class _LeafInst {
   const _LeafInst(this.pos, this.angle, this.shade, this.memoryIndex);
   final Offset pos;
-  final double angle; // rest angle, parallel to its branch
+  final double angle;
   final int shade; // 0..2 green shade
-  final int memoryIndex;
+  final int memoryIndex; // -1 for filler foliage
 }
 
 class _TreeVisual {
-  _TreeVisual(this.base, this.trunkTop, this.trunkWidth, this.scale);
+  _TreeVisual(
+    this.base,
+    this.trunkTop,
+    this.trunkWidth,
+    this.scale,
+    this.leafLen,
+  );
   final Offset base;
   final Offset trunkTop;
   final double trunkWidth;
   final double scale;
+  final double leafLen;
   final List<_Seg> wood = [];
-  final List<Offset> clumps = []; // backing canopy masses (full limbs only)
-  final List<_LeafInst> leaves = [];
+  final List<Offset> clumps = [];
+  final List<_LeafInst> foliage = []; // lush filler, not tappable
+  final List<_LeafInst> memories = []; // one per memory, tappable
 }
 
 class _Forest {
@@ -3678,122 +3819,145 @@ class _Forest {
   final int newestIndex; // memory index of the freshest leaf (-1 if none)
 }
 
-// Point on a quadratic bezier at parameter t.
 Offset _quad(Offset a, Offset ctrl, Offset b, double t) {
   final mt = 1 - t;
   return a * (mt * mt) + ctrl * (2 * mt * t) + b * (t * t);
 }
 
-_Forest _buildForest(Size size, int leafCount) {
+// Builds the grove. The last (growing) tree is big and centred; each completed
+// tree (1000 memories) shrinks and lines up beside it. Every tree gets a lush
+// filler canopy so it always looks full, plus one leaf per memory on top.
+_Forest _buildForest(Size size, int memories) {
   final w = size.width;
   final h = size.height;
-  final horizonY = h * 0.62;
-
-  final treeCount = leafCount <= 0
+  final trees = <_TreeVisual>[];
+  final treeCount = memories <= 0
       ? 1
-      : ((leafCount + _kLeavesPerTree - 1) ~/ _kLeavesPerTree).clamp(
+      : ((memories + _kLeavesPerTree - 1) ~/ _kLeavesPerTree).clamp(
           1,
           _kMaxTrees,
         );
+  final growingIndex = treeCount - 1;
 
-  // Ground slots: (centreX factor, baseY offset below horizon, depth scale).
-  // Front & centred first, then flanking, then farther-back saplings.
-  const slots = <List<double>>[
-    [0.50, 40, 1.00],
-    [0.22, 30, 0.72],
-    [0.78, 31, 0.70],
-    [0.36, 22, 0.54],
-    [0.64, 23, 0.52],
-  ];
-
-  final trees = <_TreeVisual>[];
-  var rendered = 0;
   for (var ti = 0; ti < treeCount; ti++) {
-    final treeLeaves = (leafCount - ti * _kLeavesPerTree).clamp(
-      0,
-      _kLeavesPerTree,
+    final memThis = (memories - ti * _kLeavesPerTree).clamp(0, _kLeavesPerTree);
+    final isGrowing = ti == growingIndex;
+
+    Offset base;
+    double trunkH;
+    double scale;
+    if (isGrowing) {
+      base = Offset(w * 0.5, h * 0.99);
+      trunkH = h * 0.34;
+      scale = 1.0;
+    } else {
+      final c = ti; // completed index
+      final n = growingIndex; // number of completed trees
+      final f = n <= 1 ? 0.5 : c / (n - 1);
+      base = Offset(w * (0.16 + f * 0.68), h * 0.72);
+      trunkH = h * 0.16;
+      scale = 0.42;
+    }
+    trees.add(
+      _makeTree(
+        base: base,
+        trunkH: trunkH,
+        scale: scale,
+        seed: ti * 9973 + 7,
+        memStart: ti * _kLeavesPerTree,
+        memCount: memThis,
+        big: isGrowing,
+      ),
     );
-    final branches =
-        (treeLeaves <= 0
-                ? 1
-                : (treeLeaves + _kLeavesPerBranch - 1) ~/ _kLeavesPerBranch)
-            .clamp(1, _kBranchesPerTree);
-    final maturity = branches / _kBranchesPerTree; // 0.05 .. 1.0
-    final slot = slots[ti % slots.length];
-    final scale = slot[2] * (0.5 + 0.5 * maturity);
-    final base = Offset(w * slot[0], horizonY + slot[1]);
-    final trunkH = h * (0.14 + 0.20 * maturity) * scale;
-    final trunkTop = Offset(base.dx, base.dy - trunkH);
-    final trunkWidth = (7 + 9 * maturity) * scale;
-    final tree = _TreeVisual(base, trunkTop, trunkWidth, scale);
-
-    // Deterministic RNG seeded by tree index → stable shape across frames.
-    var seed = ti * 9973 + 7;
-    double rnd() {
-      seed++;
-      final x = math.sin(seed * 12.9898) * 43758.5453;
-      return x - x.floorToDouble();
-    }
-
-    for (var bi = 0; bi < branches; bi++) {
-      // Fan the limbs across the crown and stagger their attach height.
-      final frac = bi / (_kBranchesPerTree - 1);
-      final ang = (frac - 0.5) * 2.0 * 1.15 + (rnd() - 0.5) * 0.20;
-      final attach = Offset.lerp(
-        trunkTop,
-        Offset(base.dx, base.dy - trunkH * 0.55),
-        (bi % 3) * 0.16,
-      )!;
-      final limbLen = trunkH * (0.85 + rnd() * 0.4);
-      final dir = Offset(math.sin(ang), -math.cos(ang));
-      final perp = Offset(dir.dy, -dir.dx);
-      final tip =
-          attach + dir * limbLen + perp * (rnd() - 0.5) * limbLen * 0.15;
-      final ctrl =
-          attach +
-          dir * (limbLen * 0.5) +
-          perp * (rnd() - 0.5) * limbLen * 0.28;
-      tree.wood.add(_Seg(attach, ctrl, tip, (3 + 4 * maturity) * scale));
-      // A small fork near the end for a less lollipop silhouette.
-      final forkFrom = _quad(attach, ctrl, tip, 0.68);
-      final forkTip =
-          forkFrom +
-          Offset(math.sin(ang + 0.5), -math.cos(ang + 0.5)) * limbLen * 0.3;
-      tree.wood.add(
-        _Seg(
-          forkFrom,
-          Offset.lerp(forkFrom, forkTip, 0.5)!,
-          forkTip,
-          (1.4 + 2 * maturity) * scale,
-        ),
-      );
-
-      final leavesHere = (treeLeaves - bi * _kLeavesPerBranch).clamp(
-        0,
-        _kLeavesPerBranch,
-      );
-      // A full-ish limb gets a soft backing mass; sparse young limbs don't, so
-      // their few leaves read individually.
-      if (leavesHere > 20) tree.clumps.add(_quad(attach, ctrl, tip, 0.82));
-
-      for (var si = 0; si < leavesHere; si++) {
-        if (rendered >= _kMaxRenderedLeaves) break;
-        final memoryIndex = ti * _kLeavesPerTree + bi * _kLeavesPerBranch + si;
-        final along = 0.25 + 0.72 * ((si + 0.5) / _kLeavesPerBranch);
-        final anchor = _quad(attach, ctrl, tip, along);
-        final side = si.isEven ? 1.0 : -1.0;
-        final off = perp * side * (limbLen * 0.06) * (0.4 + rnd());
-        final leafAngle = ang + side * (0.5 + rnd() * 0.5);
-        tree.leaves.add(
-          _LeafInst(anchor + off, leafAngle, si % 3, memoryIndex),
-        );
-        rendered++;
-      }
-    }
-    trees.add(tree);
-    if (rendered >= _kMaxRenderedLeaves) break;
   }
-  return _Forest(trees, leafCount - 1);
+  return _Forest(trees, memories - 1);
+}
+
+_TreeVisual _makeTree({
+  required Offset base,
+  required double trunkH,
+  required double scale,
+  required int seed,
+  required int memStart,
+  required int memCount,
+  required bool big,
+}) {
+  var s = seed;
+  double rnd() {
+    s++;
+    final x = math.sin(s * 12.9898) * 43758.5453;
+    return x - x.floorToDouble();
+  }
+
+  final trunkTop = Offset(base.dx, base.dy - trunkH);
+  final trunkWidth = (big ? 20.0 : 9.0) * scale;
+  final leafLen = (big ? 15.0 : 9.0) * scale;
+  final tree = _TreeVisual(base, trunkTop, trunkWidth, scale, leafLen);
+
+  final limbCount = big ? 18 : 11;
+  for (var bi = 0; bi < limbCount; bi++) {
+    final f = bi / (limbCount - 1);
+    final ang = (f - 0.5) * 2.0 * 1.25 + (rnd() - 0.5) * 0.25;
+    final attach = Offset.lerp(
+      trunkTop,
+      Offset(base.dx, base.dy - trunkH * 0.5),
+      (bi % 3) * 0.18,
+    )!;
+    final limbLen = trunkH * (0.9 + rnd() * 0.5);
+    final dir = Offset(math.sin(ang), -math.cos(ang));
+    final perp = Offset(dir.dy, -dir.dx);
+    final tip = attach + dir * limbLen + perp * (rnd() - 0.5) * limbLen * 0.18;
+    final ctrl =
+        attach + dir * (limbLen * 0.5) + perp * (rnd() - 0.5) * limbLen * 0.3;
+    tree.wood.add(_Seg(attach, ctrl, tip, (big ? 5.0 : 2.5) * scale));
+    tree.clumps.add(_quad(attach, ctrl, tip, 0.8));
+
+    // Lush filler foliage all along the limb → the canopy always looks full.
+    final fillPer = big ? 12 : 8;
+    for (var k = 0; k < fillPer; k++) {
+      final along = (0.35 + 0.6 * (k / fillPer) + (rnd() - 0.5) * 0.05).clamp(
+        0.0,
+        1.0,
+      );
+      final anchor = _quad(attach, ctrl, tip, along);
+      final side = k.isEven ? 1.0 : -1.0;
+      final off =
+          perp * side * (limbLen * 0.10) * (0.4 + rnd()) +
+          Offset(
+            (rnd() - 0.5) * limbLen * 0.12,
+            (rnd() - 0.5) * limbLen * 0.12,
+          );
+      final la = ang + side * (0.4 + rnd() * 0.6);
+      tree.foliage.add(_LeafInst(anchor + off, la, k % 3, -1));
+    }
+  }
+
+  // Memory leaves — one per memory, spread across the outer canopy, tappable.
+  final show = memCount.clamp(0, _kMaxMemoryLeaves);
+  final limbs = tree.wood.length;
+  for (var i = 0; i < show; i++) {
+    final seg = tree.wood[i % limbs];
+    final along =
+        (0.5 + 0.48 * (((i ~/ limbs) % 6) / 6.0) + (rnd() - 0.5) * 0.05).clamp(
+          0.0,
+          1.0,
+        );
+    final anchor = _quad(seg.a, seg.ctrl, seg.b, along);
+    final dir = seg.b - seg.a;
+    final len = dir.distance == 0 ? 1.0 : dir.distance;
+    final norm = Offset(dir.dy, -dir.dx) / len;
+    final side = i.isEven ? 1.0 : -1.0;
+    final segAngle = math.atan2(dir.dx, -dir.dy);
+    final pos =
+        anchor +
+        norm * side * (6.0 * scale) +
+        Offset((rnd() - 0.5) * 6, (rnd() - 0.5) * 6);
+    tree.memories.add(
+      _LeafInst(pos, segAngle + side * 0.5, i % 3, memStart + i),
+    );
+  }
+
+  return tree;
 }
 
 class _ScenePainter extends CustomPainter {
@@ -4158,36 +4322,66 @@ class _ScenePainter extends CustomPainter {
       );
     }
 
-    // --- Dense, layered meadow grass (depth-shaded, swaying) ---
-    final bandTop = horizonY + 44;
-    final gPal = [
-      const Color(0xFF33691E),
-      const Color(0xFF2E7D32),
-      const Color(0xFF43A047),
-      const Color(0xFF558B2F),
+    // --- Dense meadow grass: filled tapered blades, drawn far→near, with
+    // sunlit spines so it reads as real grass rather than flat strokes. ---
+    final bandTop = horizonY + 40;
+    const gPal = [
+      Color(0xFF2E7D32),
+      Color(0xFF388E3C),
+      Color(0xFF43A047),
+      Color(0xFF4E7A2E),
     ];
-    final grassPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-    for (var i = 0; i < 150; i++) {
-      final gx = (i * 37 % 100) / 100 * w + ((i * 53 % 13) - 6);
-      final depth = (i * 7 % 100) / 100; // 0 far … 1 near
-      final gy = bandTop + depth * (h - bandTop);
-      final hgt = 6 + depth * 20;
-      final s = math.sin(windPhase + i * 0.5 + depth) * (2 + depth * 3);
-      final base = gPal[i % gPal.length];
-      grassPaint.color = Color.lerp(
-        base,
+    const blades = 400;
+    for (var i = 0; i < blades; i++) {
+      final depth = i / blades; // 0 far (top) … 1 near (bottom)
+      final gx =
+          ((i * 71) % blades) / blades * (w + 24) - 12 + ((i * 37 % 13) - 6);
+      final gy = bandTop + depth * (h - bandTop) + 4;
+      final hgt = 7 + depth * depth * 32;
+      final sway =
+          math.sin(windPhase * 1.1 + i * 0.7 + depth * 2) * (2 + depth * 5);
+      final wBlade = 0.8 + depth * 2.4;
+      final tipX = gx + sway;
+      final tipY = gy - hgt;
+      final col = Color.lerp(
         const Color(0xFF1B5E20),
-        (1 - depth) * 0.4,
+        gPal[i % gPal.length],
+        0.25 + depth * 0.75,
       )!;
-      grassPaint.strokeWidth = 1.1 + depth * 1.1;
       canvas.drawPath(
         Path()
-          ..moveTo(gx, gy)
-          ..quadraticBezierTo(gx + s * 0.5, gy - hgt * 0.6, gx + s, gy - hgt),
-        grassPaint,
+          ..moveTo(gx - wBlade, gy)
+          ..quadraticBezierTo(
+            gx + sway * 0.4 - wBlade * 0.3,
+            gy - hgt * 0.55,
+            tipX,
+            tipY,
+          )
+          ..quadraticBezierTo(
+            gx + sway * 0.4 + wBlade * 0.3,
+            gy - hgt * 0.55,
+            gx + wBlade,
+            gy,
+          )
+          ..close(),
+        Paint()..color = col,
       );
+      if (i.isEven) {
+        canvas.drawPath(
+          Path()
+            ..moveTo(gx, gy)
+            ..quadraticBezierTo(gx + sway * 0.5, gy - hgt * 0.6, tipX, tipY),
+          Paint()
+            ..color = Color.lerp(
+              col,
+              const Color(0xFF9CCC65),
+              0.5,
+            )!.withValues(alpha: 0.5)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 0.7
+            ..strokeCap = StrokeCap.round,
+        );
+      }
     }
 
     // --- Red poppies, clustered to the left like a real meadow ---
@@ -4434,28 +4628,26 @@ class _ScenePainter extends CustomPainter {
       );
     }
 
-    final leafLen = 13 * tr.scale * grow;
+    final leafLen = tr.leafLen * grow;
+    double flutter(Offset base) =>
+        0.20 * math.sin(windPhase * 1.6 + base.dx * 0.06 + base.dy * 0.03);
+
+    // Lush filler canopy (batched into a few draw calls).
     final shadePaths = [Path(), Path(), Path()];
     final lightPath = Path();
-    (Offset, double)? newest;
-    for (final leaf in tr.leaves) {
+    for (final leaf in tr.foliage) {
       final p = sway(leaf.pos);
-      final flut =
-          0.20 *
-          math.sin(windPhase * 1.6 + leaf.pos.dx * 0.06 + leaf.pos.dy * 0.03);
-      final a = leaf.angle + flut;
+      final a = leaf.angle + flutter(leaf.pos);
       _addLeaf(shadePaths[leaf.shade], p, a, leafLen);
       final hp = Offset(
         p.dx + math.sin(a) * leafLen * 0.18,
         p.dy - math.cos(a) * leafLen * 0.18,
       );
       _addLeaf(lightPath, hp, a, leafLen * 0.55);
-      if (leaf.memoryIndex == forest.newestIndex) newest = (p, a);
     }
     for (var s = 0; s < 3; s++) {
       canvas.drawPath(shadePaths[s], Paint()..color = _leafShades[s]);
     }
-    // Warm, backlit highlight on the canopy edges.
     canvas.drawPath(
       lightPath,
       Paint()
@@ -4465,6 +4657,22 @@ class _ScenePainter extends CustomPainter {
           rim * 0.7,
         )!.withValues(alpha: 0.85),
     );
+
+    // Memory leaves — brighter greens on top so each memory reads as a clear,
+    // tappable leaf. Batched by shade for performance.
+    const memShades = [Color(0xFF43A047), Color(0xFF66BB6A), Color(0xFF7CB342)];
+    final memPaths = [Path(), Path(), Path()];
+    final memLen = leafLen * 1.3;
+    (Offset, double)? newest;
+    for (final m in tr.memories) {
+      final p = sway(m.pos);
+      final a = m.angle + flutter(m.pos);
+      _addLeaf(memPaths[m.shade], p, a, memLen);
+      if (m.memoryIndex == forest.newestIndex) newest = (p, a);
+    }
+    for (var s = 0; s < 3; s++) {
+      canvas.drawPath(memPaths[s], Paint()..color = memShades[s]);
+    }
     return newest;
   }
 

@@ -836,6 +836,9 @@ class FakeSpaceRepository implements SpaceRepository {
   }
 
   @override
+  Future<List<TreeLeafItem>> allTreeLeaves() async => const [];
+
+  @override
   Future<List<TimeCapsuleItem>> timeCapsules() async => [];
 
   @override
