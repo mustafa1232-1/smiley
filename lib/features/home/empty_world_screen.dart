@@ -3455,12 +3455,13 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
                   final tip = tips[idx];
                   leafWidgets.add(
                     Positioned(
-                      left: tip.dx - 13,
-                      top: tip.dy - 13,
+                      left: tip.pos.dx - 18,
+                      top: tip.pos.dy - 18,
                       child: Transform.scale(
                         scale: ((grow - 0.45) / 0.55).clamp(0.0, 1.0),
                         child: _LeafDot(
                           color: _leafColors[i % _leafColors.length],
+                          angle: tip.angle,
                           onTap: () => widget.onTapLeaf(leaves[i]),
                         ),
                       ),
@@ -3501,11 +3502,25 @@ class _Seg {
   final int depth;
 }
 
+class _Tip {
+  const _Tip(this.pos, this.angle);
+  final Offset pos;
+  final double angle; // branch direction at this tip (0 = straight up)
+}
+
 class _TreeGeom {
   const _TreeGeom(this.segments, this.tips);
   final List<_Seg> segments;
-  final List<Offset> tips;
+  final List<_Tip> tips;
 }
+
+// A leaf outline pointing straight up from the origin (base at 0,0 → tip at
+// 0,-len). Rotate the canvas by the branch angle to lay it along a branch.
+Path _leafPath(double len, double wid) => Path()
+  ..moveTo(0, 0)
+  ..quadraticBezierTo(wid, -len * 0.45, 0, -len)
+  ..quadraticBezierTo(-wid, -len * 0.45, 0, 0)
+  ..close();
 
 // Deterministic recursive tree: branches fork upward and outward with a little
 // organic jitter and a gentle curve on every limb. The outermost tips are where
@@ -3513,7 +3528,7 @@ class _TreeGeom {
 // depends on recursion order), so leaves never jump; only sway/grow move points.
 _TreeGeom _buildTree(Offset root, double length, double sway, double grow) {
   final segments = <_Seg>[];
-  final tips = <Offset>[];
+  final tips = <_Tip>[];
   var seed = 0;
   double rnd() {
     seed++;
@@ -3530,7 +3545,7 @@ _TreeGeom _buildTree(Offset root, double length, double sway, double grow) {
     final ctrl = from + dir * (grown * 0.5) + perp * (grown * bend);
     segments.add(_Seg(from, ctrl, to, depth));
     if (depth == 0) {
-      tips.add(to);
+      tips.add(_Tip(to, angle));
       return;
     }
     final swayAmt = sway * 0.022 * (5 - depth);
@@ -3556,35 +3571,76 @@ _TreeGeom _buildTree(Offset root, double length, double sway, double grow) {
 }
 
 class _LeafDot extends StatelessWidget {
-  const _LeafDot({required this.color, required this.onTap});
+  const _LeafDot({
+    required this.color,
+    required this.angle,
+    required this.onTap,
+  });
 
   final Color color;
+  final double angle;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [color.withValues(alpha: 0.95), color],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.4),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: CustomPaint(
+          painter: _MemoryLeafPainter(color: color, angle: angle),
         ),
-        child: const Icon(Icons.eco_rounded, size: 16, color: Colors.white),
       ),
     );
   }
+}
+
+// A highlighted "memory" leaf: a real leaf shape laid parallel to its branch,
+// with a soft halo and light centre so it reads as a tappable marker.
+class _MemoryLeafPainter extends CustomPainter {
+  _MemoryLeafPainter({required this.color, required this.angle});
+
+  final Color color;
+  final double angle;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    canvas.drawCircle(c, 16, Paint()..color = color.withValues(alpha: 0.16));
+    canvas.save();
+    canvas.translate(c.dx, c.dy);
+    canvas.rotate(angle);
+    const len = 26.0;
+    const wid = 9.0;
+    canvas.translate(0, len / 2); // centre the leaf on the anchor point
+    final light = Color.lerp(color, Colors.white, 0.5)!;
+    canvas.drawPath(_leafPath(len, wid), Paint()..color = color);
+    canvas.save();
+    canvas.translate(-wid * 0.15, -len * 0.12);
+    canvas.drawPath(
+      _leafPath(len * 0.68, wid * 0.6),
+      Paint()..color = light.withValues(alpha: 0.9),
+    );
+    canvas.restore();
+    canvas.drawLine(
+      Offset.zero,
+      const Offset(0, -len),
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.7)
+        ..strokeWidth = 1,
+    );
+    canvas.restore();
+    canvas.drawCircle(
+      c,
+      3,
+      Paint()..color = Colors.white.withValues(alpha: 0.95),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_MemoryLeafPainter old) =>
+      old.color != color || old.angle != angle;
 }
 
 class _ScenePainter extends CustomPainter {
@@ -3790,27 +3846,41 @@ class _ScenePainter extends CustomPainter {
       Paint()..color = Colors.black.withValues(alpha: 0.10),
     );
 
-    // --- Trunk (tapered) with a small root flare ---
+    // --- Trunk: shaded like a cylinder (light left, dark right) ---
     final trunkW = 15.0 * grow;
-    canvas.drawPath(
-      Path()
-        ..moveTo(trunkBase.dx - trunkW, trunkBase.dy)
-        ..quadraticBezierTo(
-          trunkBase.dx - 5,
-          (trunkBase.dy + trunkTop.dy) / 2,
-          trunkTop.dx - 4,
-          trunkTop.dy,
-        )
-        ..lineTo(trunkTop.dx + 4, trunkTop.dy)
-        ..quadraticBezierTo(
-          trunkBase.dx + 5,
-          (trunkBase.dy + trunkTop.dy) / 2,
-          trunkBase.dx + trunkW,
-          trunkBase.dy,
-        )
-        ..close(),
-      Paint()..color = const Color(0xFF6D4C41),
+    final trunkPath = Path()
+      ..moveTo(trunkBase.dx - trunkW, trunkBase.dy)
+      ..quadraticBezierTo(
+        trunkBase.dx - 5,
+        (trunkBase.dy + trunkTop.dy) / 2,
+        trunkTop.dx - 4,
+        trunkTop.dy,
+      )
+      ..lineTo(trunkTop.dx + 4, trunkTop.dy)
+      ..quadraticBezierTo(
+        trunkBase.dx + 5,
+        (trunkBase.dy + trunkTop.dy) / 2,
+        trunkBase.dx + trunkW,
+        trunkBase.dy,
+      )
+      ..close();
+    final trunkRect = Rect.fromLTRB(
+      trunkBase.dx - trunkW,
+      trunkTop.dy,
+      trunkBase.dx + trunkW,
+      trunkBase.dy,
     );
+    canvas.drawPath(
+      trunkPath,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [Color(0xFF9C7A6B), Color(0xFF6D4C41), Color(0xFF4E342E)],
+          stops: [0.0, 0.5, 1.0],
+        ).createShader(trunkRect),
+    );
+    // Root flare at the base.
     canvas.drawPath(
       Path()
         ..moveTo(trunkBase.dx - trunkW - 6, trunkBase.dy + 2)
@@ -3828,54 +3898,111 @@ class _ScenePainter extends CustomPainter {
           trunkBase.dy + 2,
         )
         ..close(),
-      Paint()..color = const Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF4E342E),
+    );
+    // Bark shading grooves for texture.
+    final bark = Paint()
+      ..color = const Color(0xFF3E2723).withValues(alpha: 0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(trunkBase.dx - 3, trunkBase.dy - 8),
+      Offset(trunkTop.dx - 2, trunkTop.dy + 10),
+      bark,
+    );
+    canvas.drawLine(
+      Offset(trunkBase.dx + 5, trunkBase.dy - 12),
+      Offset(trunkTop.dx + 2, trunkTop.dy + 14),
+      bark,
     );
 
-    // --- Branches (curved, tapered by depth) ---
-    final branchPaint = Paint()
-      ..color = const Color(0xFF795548)
+    // --- Branches: dark base + lighter centre highlight → round, 3D limbs ---
+    final branchDark = Paint()
+      ..color = const Color(0xFF4E342E)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final branchLight = Paint()
+      ..color = const Color(0xFF8D6E63)
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     for (final seg in tree.segments) {
-      branchPaint.strokeWidth = (seg.depth + 1) * 1.6 * grow;
-      canvas.drawPath(
-        Path()
-          ..moveTo(seg.a.dx, seg.a.dy)
-          ..quadraticBezierTo(seg.ctrl.dx, seg.ctrl.dy, seg.b.dx, seg.b.dy),
-        branchPaint,
-      );
+      final path = Path()
+        ..moveTo(seg.a.dx, seg.a.dy)
+        ..quadraticBezierTo(seg.ctrl.dx, seg.ctrl.dy, seg.b.dx, seg.b.dy);
+      final wBase = (seg.depth + 1) * 1.8 * grow;
+      branchDark.strokeWidth = wBase;
+      canvas.drawPath(path, branchDark);
+      branchLight.strokeWidth = wBase * 0.45;
+      canvas.drawPath(path, branchLight);
     }
 
-    // --- Foliage: three soft layers for a lush, rounded canopy ---
-    final darkFoliage = Paint()
-      ..color = const Color(0xFF2E7D32).withValues(alpha: 0.22);
+    // --- Canopy: 3D masses, then real leaves laid parallel to each branch ---
+    // Rounded green clumps (dark base + lit top-left) read as volume.
     for (final seg in tree.segments) {
-      if (seg.depth <= 1) canvas.drawCircle(seg.b, 26 * grow, darkFoliage);
-    }
-    final midFoliage = Paint()
-      ..color = const Color(0xFF43A047).withValues(alpha: 0.5);
-    for (final tip in tree.tips) {
-      canvas.drawCircle(tip, 15 * grow, midFoliage);
-    }
-    final brightFoliage = Paint()
-      ..color = const Color(0xFF81C784).withValues(alpha: 0.55);
-    for (var i = 0; i < tree.tips.length; i++) {
-      if (i.isEven) {
+      if (seg.depth <= 1) {
+        final r = 24 * grow;
+        canvas.drawCircle(seg.b, r, Paint()..color = const Color(0xFF2E7D32));
         canvas.drawCircle(
-          tree.tips[i].translate(-3, -3),
-          8 * grow,
-          brightFoliage,
+          seg.b.translate(-r * 0.28, -r * 0.32),
+          r * 0.62,
+          Paint()..color = const Color(0xFF66BB6A).withValues(alpha: 0.85),
         );
       }
     }
+    // A single leaf, filled dark with a lighter inner highlight + midrib.
+    const leafPairs = <List<Color>>[
+      [Color(0xFF2E7D32), Color(0xFF7CB342)],
+      [Color(0xFF388E3C), Color(0xFF9CCC65)],
+      [Color(0xFF43A047), Color(0xFF81C784)],
+    ];
+    var li = 0;
+    void leafAt(Offset base, double a, double len) {
+      final pair = leafPairs[li++ % leafPairs.length];
+      final wid = len * 0.36;
+      canvas.save();
+      canvas.translate(base.dx, base.dy);
+      canvas.rotate(a);
+      canvas.drawPath(_leafPath(len, wid), Paint()..color = pair[0]);
+      canvas.save();
+      canvas.translate(-wid * 0.15, -len * 0.12);
+      canvas.drawPath(
+        _leafPath(len * 0.66, wid * 0.6),
+        Paint()..color = pair[1].withValues(alpha: 0.92),
+      );
+      canvas.restore();
+      canvas.drawLine(
+        Offset.zero,
+        Offset(0, -len),
+        Paint()
+          ..color = pair[0].withValues(alpha: 0.6)
+          ..strokeWidth = 0.7,
+      );
+      canvas.restore();
+    }
 
-    // Soft blossoms scattered through the canopy.
+    // Leaves sprouting along the outer twigs, alternating sides of the branch.
+    for (final seg in tree.segments) {
+      if (seg.depth <= 1) {
+        final dir = seg.b - seg.a;
+        final segAngle = math.atan2(dir.dx, -dir.dy);
+        leafAt(seg.a + dir * 0.55, segAngle + 0.9, 12 * grow);
+        leafAt(seg.a + dir * 0.78, segAngle - 0.9, 12 * grow);
+      }
+    }
+    // A small fan of leaves at every branch tip, pointing outward along it.
+    for (final tip in tree.tips) {
+      leafAt(tip.pos, tip.angle, 15 * grow);
+      leafAt(tip.pos, tip.angle + 0.62, 12 * grow);
+      leafAt(tip.pos, tip.angle - 0.62, 12 * grow);
+    }
+    // Soft blossoms tucked among the leaves.
     const blossom = [Color(0xFFFFC1E3), Color(0xFFFFFFFF), Color(0xFFF8BBD0)];
     for (var i = 0; i < tree.tips.length; i++) {
-      if (i % 3 == 0) {
+      if (i % 4 == 0) {
         canvas.drawCircle(
-          tree.tips[i].translate(4, 2),
-          3.2 * grow,
+          tree.tips[i].pos.translate(3, 1),
+          3 * grow,
           Paint()..color = blossom[i % blossom.length].withValues(alpha: 0.9),
         );
       }
