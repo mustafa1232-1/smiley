@@ -3426,83 +3426,59 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final leaves = widget.leaves;
-    final count = math.max(1, leaves.length);
     return AspectRatio(
-      aspectRatio: 0.82,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              scheme.primary.withValues(alpha: 0.06),
-              scheme.secondary.withValues(alpha: 0.03),
-            ],
-          ),
-        ),
+      aspectRatio: 0.92,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final size = Size(constraints.maxWidth, constraints.maxHeight);
-            final base = Offset(size.width / 2, size.height * 0.95);
-            final trunkTop = Offset(size.width / 2, size.height * 0.46);
-            final canopyRadius = size.width * 0.40;
+            final trunkTop = Offset(size.width / 2, size.height * 0.52);
+            final trunkBase = Offset(size.width / 2, size.height * 0.84);
+            final initLength = size.height * 0.14;
 
             return AnimatedBuilder(
               animation: Listenable.merge([_sway, _grow]),
               builder: (context, _) {
+                final now = DateTime.now();
                 final grow = Curves.easeOutCubic.transform(_grow.value);
                 final swayPhase = math.sin(_sway.value * math.pi * 2);
+                final tree = _buildTree(trunkTop, initLength, swayPhase, grow);
+                final tips = tree.tips;
 
-                // Branch endpoints laid out as an upward fan around the trunk
-                // top. Each leaf sits exactly on one endpoint, and the painter
-                // draws a branch from the trunk to the same point, so leaves are
-                // always attached to a branch (never floating).
-                final endpoints = <Offset>[];
-                for (var i = 0; i < count; i++) {
-                  final tNorm = count == 1 ? 0.5 : i / (count - 1);
-                  final angle = (tNorm * 2 - 1) * (math.pi * 0.46);
-                  final radiusFactor =
-                      0.55 + 0.42 * (0.5 + 0.5 * math.sin(i * 2.2));
-                  final r = canopyRadius * radiusFactor * grow;
-                  final wind = swayPhase * (5 * r / canopyRadius);
-                  endpoints.add(
-                    Offset(
-                      trunkTop.dx + math.sin(angle) * r + wind,
-                      trunkTop.dy - math.cos(angle) * r * 1.05,
-                    ),
-                  );
-                }
-
-                final leafWidgets = <Widget>[
-                  for (var i = 0; i < leaves.length; i++)
+                final leafWidgets = <Widget>[];
+                for (var i = 0; i < leaves.length && tips.isNotEmpty; i++) {
+                  final idx =
+                      (i * tips.length ~/ math.max(1, leaves.length)) %
+                      tips.length;
+                  final tip = tips[idx];
+                  leafWidgets.add(
                     Positioned(
-                      left: endpoints[i].dx - 14,
-                      top: endpoints[i].dy - 14,
+                      left: tip.dx - 13,
+                      top: tip.dy - 13,
                       child: Transform.scale(
-                        scale: ((grow - 0.35) / 0.65).clamp(0.0, 1.0),
+                        scale: ((grow - 0.45) / 0.55).clamp(0.0, 1.0),
                         child: _LeafDot(
                           color: _leafColors[i % _leafColors.length],
                           onTap: () => widget.onTapLeaf(leaves[i]),
                         ),
                       ),
                     ),
-                ];
+                  );
+                }
 
                 return Stack(
-                  clipBehavior: Clip.none,
                   children: [
                     Positioned.fill(
                       child: CustomPaint(
-                        painter: _TreePainter(
+                        painter: _ScenePainter(
+                          now: now,
                           grow: grow,
-                          base: base,
+                          sway: swayPhase,
+                          tree: tree,
+                          trunkBase: trunkBase,
                           trunkTop: trunkTop,
-                          endpoints: endpoints,
-                          trunkColor: const Color(0xFF795548),
-                          branchColor: const Color(0xFF8D6E63),
                         ),
                       ),
                     ),
@@ -3516,6 +3492,44 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
       ),
     );
   }
+}
+
+class _Seg {
+  const _Seg(this.a, this.b, this.depth);
+  final Offset a;
+  final Offset b;
+  final int depth;
+}
+
+class _TreeGeom {
+  const _TreeGeom(this.segments, this.tips);
+  final List<_Seg> segments;
+  final List<Offset> tips;
+}
+
+// Deterministic recursive tree: branches fork upward and outward; the outermost
+// tips are where memory leaves attach.
+_TreeGeom _buildTree(Offset root, double length, double sway, double grow) {
+  final segments = <_Seg>[];
+  final tips = <Offset>[];
+  void rec(Offset from, double angle, double len, int depth) {
+    final to = from + Offset(math.sin(angle), -math.cos(angle)) * len * grow;
+    segments.add(_Seg(from, to, depth));
+    if (depth == 0) {
+      tips.add(to);
+      return;
+    }
+    final swayAmt = sway * 0.03 * (4 - depth);
+    final spread = 0.40 + 0.05 * depth;
+    rec(to, angle - spread + swayAmt, len * 0.74, depth - 1);
+    rec(to, angle + spread + swayAmt, len * 0.74, depth - 1);
+    if (depth >= 3) {
+      rec(to, angle + swayAmt * 1.4, len * 0.56, depth - 2);
+    }
+  }
+
+  rec(root, 0, length, 3);
+  return _TreeGeom(segments, tips);
 }
 
 class _LeafDot extends StatelessWidget {
@@ -3550,75 +3564,185 @@ class _LeafDot extends StatelessWidget {
   }
 }
 
-class _TreePainter extends CustomPainter {
-  _TreePainter({
+class _ScenePainter extends CustomPainter {
+  _ScenePainter({
+    required this.now,
     required this.grow,
-    required this.base,
+    required this.sway,
+    required this.tree,
+    required this.trunkBase,
     required this.trunkTop,
-    required this.endpoints,
-    required this.trunkColor,
-    required this.branchColor,
   });
 
+  final DateTime now;
   final double grow;
-  final Offset base;
+  final double sway;
+  final _TreeGeom tree;
+  final Offset trunkBase;
   final Offset trunkTop;
-  final List<Offset> endpoints;
-  final Color trunkColor;
-  final Color branchColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Ground shadow.
-    canvas.drawOval(
-      Rect.fromCenter(center: base, width: 130 * grow, height: 22 * grow),
-      Paint()..color = Colors.black.withValues(alpha: 0.06),
+    final w = size.width;
+    final h = size.height;
+    final horizonY = h * 0.62;
+    final hour = now.hour + now.minute / 60 + now.second / 3600;
+    final isDay = hour >= 6 && hour < 18;
+    final frac =
+        (isDay ? (hour - 6) / 12 : ((hour < 6 ? hour + 24 : hour) - 18) / 12)
+            .clamp(0.0, 1.0);
+    final elevation = math.sin(frac * math.pi);
+
+    // Sky.
+    final sky = _skyColors(hour);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, w, h),
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [sky.$1, sky.$2],
+        ).createShader(Rect.fromLTWH(0, 0, w, h)),
     );
 
-    // Tapered trunk from the base up to the canopy origin.
-    final width = 16.0 * grow;
+    // Stars at night.
+    final starOpacity = isDay ? 0.0 : (0.45 + 0.55 * elevation);
+    if (starOpacity > 0.03) {
+      final starPaint = Paint();
+      for (var i = 0; i < 30; i++) {
+        final sx = ((i * 71) % 100) / 100 * w;
+        final sy = ((i * 137) % 55) / 100 * h;
+        final twinkle = 0.5 + 0.5 * math.sin(sway * math.pi + i);
+        starPaint.color = Colors.white.withValues(
+          alpha: (starOpacity * (0.4 + 0.6 * twinkle)).clamp(0.0, 1.0),
+        );
+        canvas.drawCircle(Offset(sx, sy), 0.8 + (i % 3) * 0.5, starPaint);
+      }
+    }
+
+    // Sun / moon, positioned along an arc by the real time of day.
+    final cx = w * 0.12 + (w * 0.76) * frac;
+    final cy = horizonY - elevation * (horizonY - h * 0.10);
+    if (isDay) {
+      canvas.drawCircle(
+        Offset(cx, cy),
+        40,
+        Paint()..color = const Color(0xFFFFF3B0).withValues(alpha: 0.12),
+      );
+      canvas.drawCircle(
+        Offset(cx, cy),
+        30,
+        Paint()..color = const Color(0xFFFFECB3).withValues(alpha: 0.22),
+      );
+      canvas.drawCircle(
+        Offset(cx, cy),
+        21,
+        Paint()..color = const Color(0xFFFFD54F),
+      );
+    } else {
+      canvas.drawCircle(
+        Offset(cx, cy),
+        30,
+        Paint()..color = Colors.white.withValues(alpha: 0.12),
+      );
+      canvas.drawCircle(
+        Offset(cx, cy),
+        18,
+        Paint()..color = const Color(0xFFECEFF1),
+      );
+      final crater = Paint()
+        ..color = const Color(0xFFB0BEC5).withValues(alpha: 0.6);
+      canvas.drawCircle(Offset(cx - 6, cy - 4), 3.5, crater);
+      canvas.drawCircle(Offset(cx + 5, cy + 3), 2.5, crater);
+      canvas.drawCircle(Offset(cx + 2, cy - 6), 2, crater);
+    }
+
+    // Ground hills.
+    final backHill = Path()
+      ..moveTo(0, horizonY + 18)
+      ..quadraticBezierTo(w * 0.3, horizonY - 12, w * 0.6, horizonY + 14)
+      ..quadraticBezierTo(w * 0.85, horizonY + 28, w, horizonY + 4)
+      ..lineTo(w, h)
+      ..lineTo(0, h)
+      ..close();
+    canvas.drawPath(backHill, Paint()..color = const Color(0xFF7CB342));
+    final frontHill = Path()
+      ..moveTo(0, horizonY + 44)
+      ..quadraticBezierTo(w * 0.25, horizonY + 16, w * 0.5, horizonY + 46)
+      ..quadraticBezierTo(w * 0.8, horizonY + 74, w, horizonY + 40)
+      ..lineTo(w, h)
+      ..lineTo(0, h)
+      ..close();
+    canvas.drawPath(frontHill, Paint()..color = const Color(0xFF558B2F));
+
+    // Tapered trunk.
+    final trunkW = 15.0 * grow;
     final trunk = Path()
-      ..moveTo(base.dx - width, base.dy)
+      ..moveTo(trunkBase.dx - trunkW, trunkBase.dy)
       ..quadraticBezierTo(
-        base.dx - 4,
-        (base.dy + trunkTop.dy) / 2,
+        trunkBase.dx - 4,
+        (trunkBase.dy + trunkTop.dy) / 2,
         trunkTop.dx - 4,
         trunkTop.dy,
       )
       ..lineTo(trunkTop.dx + 4, trunkTop.dy)
       ..quadraticBezierTo(
-        base.dx + 4,
-        (base.dy + trunkTop.dy) / 2,
-        base.dx + width,
-        base.dy,
+        trunkBase.dx + 4,
+        (trunkBase.dy + trunkTop.dy) / 2,
+        trunkBase.dx + trunkW,
+        trunkBase.dy,
       )
       ..close();
-    canvas.drawPath(trunk, Paint()..color = trunkColor);
+    canvas.drawPath(trunk, Paint()..color = const Color(0xFF6D4C41));
 
-    // One curved branch from the trunk top to each leaf endpoint, so every
-    // leaf sits on the tip of a branch.
-    for (final end in endpoints) {
-      final dx = end.dx - trunkTop.dx;
-      final control = Offset(
-        trunkTop.dx + dx * 0.35,
-        (trunkTop.dy + end.dy) / 2 - 14,
-      );
-      final branch = Path()
-        ..moveTo(trunkTop.dx, trunkTop.dy)
-        ..quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
-      canvas.drawPath(
-        branch,
-        Paint()
-          ..color = branchColor
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 4 * grow
-          ..strokeCap = StrokeCap.round,
-      );
+    // Branches (thicker near the trunk).
+    final branchPaint = Paint()
+      ..color = const Color(0xFF795548)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    for (final seg in tree.segments) {
+      branchPaint.strokeWidth = (seg.depth + 1) * 1.7 * grow;
+      canvas.drawLine(seg.a, seg.b, branchPaint);
+    }
+
+    // Soft foliage clusters covering the branch tips for a lush canopy.
+    final foliageSoft = Paint()
+      ..color = const Color(0xFF66BB6A).withValues(alpha: 0.30);
+    for (final seg in tree.segments) {
+      if (seg.depth == 1) canvas.drawCircle(seg.b, 22 * grow, foliageSoft);
+    }
+    final foliage = Paint()
+      ..color = const Color(0xFF43A047).withValues(alpha: 0.55);
+    for (final tip in tree.tips) {
+      canvas.drawCircle(tip, 14 * grow, foliage);
     }
   }
 
   @override
-  bool shouldRepaint(_TreePainter old) => true;
+  bool shouldRepaint(_ScenePainter old) => true;
+}
+
+// Sky top/bottom colors interpolated across the day by hour (0..24).
+(Color, Color) _skyColors(double hour) {
+  const keys = <(double, Color, Color)>[
+    (0.0, Color(0xFF0A0E23), Color(0xFF15233F)),
+    (5.0, Color(0xFF243B6B), Color(0xFF7C6A86)),
+    (7.0, Color(0xFF8FC5F0), Color(0xFFFBE2B0)),
+    (12.0, Color(0xFF4AA0E6), Color(0xFFCDEBFF)),
+    (17.0, Color(0xFF6FB2E6), Color(0xFFFBD9A0)),
+    (19.0, Color(0xFFE86A48), Color(0xFFF4A66E)),
+    (21.0, Color(0xFF0A0E23), Color(0xFF15233F)),
+    (24.0, Color(0xFF0A0E23), Color(0xFF15233F)),
+  ];
+  for (var i = 0; i < keys.length - 1; i++) {
+    final a = keys[i];
+    final b = keys[i + 1];
+    if (hour >= a.$1 && hour <= b.$1) {
+      final t = (hour - a.$1) / (b.$1 - a.$1);
+      return (Color.lerp(a.$2, b.$2, t)!, Color.lerp(a.$3, b.$3, t)!);
+    }
+  }
+  return (keys.first.$2, keys.first.$3);
 }
 
 class _TimeCapsulesScreen extends StatefulWidget {
