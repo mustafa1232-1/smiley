@@ -3434,9 +3434,9 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
         child: LayoutBuilder(
           builder: (context, constraints) {
             final size = Size(constraints.maxWidth, constraints.maxHeight);
-            final trunkTop = Offset(size.width / 2, size.height * 0.52);
-            final trunkBase = Offset(size.width / 2, size.height * 0.84);
-            final initLength = size.height * 0.14;
+            final trunkTop = Offset(size.width / 2, size.height * 0.56);
+            final trunkBase = Offset(size.width / 2, size.height * 0.86);
+            final initLength = size.height * 0.12;
 
             return AnimatedBuilder(
               animation: Listenable.merge([_sway, _grow]),
@@ -3475,7 +3475,6 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
                         painter: _ScenePainter(
                           now: now,
                           grow: grow,
-                          sway: swayPhase,
                           tree: tree,
                           trunkBase: trunkBase,
                           trunkTop: trunkTop,
@@ -3495,8 +3494,9 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
 }
 
 class _Seg {
-  const _Seg(this.a, this.b, this.depth);
+  const _Seg(this.a, this.ctrl, this.b, this.depth);
   final Offset a;
+  final Offset ctrl;
   final Offset b;
   final int depth;
 }
@@ -3507,28 +3507,51 @@ class _TreeGeom {
   final List<Offset> tips;
 }
 
-// Deterministic recursive tree: branches fork upward and outward; the outermost
-// tips are where memory leaves attach.
+// Deterministic recursive tree: branches fork upward and outward with a little
+// organic jitter and a gentle curve on every limb. The outermost tips are where
+// the memory leaves attach. The jitter sequence is stable across frames (it only
+// depends on recursion order), so leaves never jump; only sway/grow move points.
 _TreeGeom _buildTree(Offset root, double length, double sway, double grow) {
   final segments = <_Seg>[];
   final tips = <Offset>[];
+  var seed = 0;
+  double rnd() {
+    seed++;
+    final x = math.sin(seed * 12.9898) * 43758.5453;
+    return x - x.floorToDouble();
+  }
+
   void rec(Offset from, double angle, double len, int depth) {
-    final to = from + Offset(math.sin(angle), -math.cos(angle)) * len * grow;
-    segments.add(_Seg(from, to, depth));
+    final dir = Offset(math.sin(angle), -math.cos(angle));
+    final grown = len * grow;
+    final to = from + dir * grown;
+    final perp = Offset(dir.dy, -dir.dx);
+    final bend = (rnd() - 0.5) * 0.36;
+    final ctrl = from + dir * (grown * 0.5) + perp * (grown * bend);
+    segments.add(_Seg(from, ctrl, to, depth));
     if (depth == 0) {
       tips.add(to);
       return;
     }
-    final swayAmt = sway * 0.03 * (4 - depth);
-    final spread = 0.40 + 0.05 * depth;
-    rec(to, angle - spread + swayAmt, len * 0.74, depth - 1);
-    rec(to, angle + spread + swayAmt, len * 0.74, depth - 1);
-    if (depth >= 3) {
-      rec(to, angle + swayAmt * 1.4, len * 0.56, depth - 2);
+    final swayAmt = sway * 0.022 * (5 - depth);
+    final spread = 0.30 + 0.05 * depth;
+    final jitterA = (rnd() - 0.5) * 0.12;
+    final jitterB = (rnd() - 0.5) * 0.12;
+    final lenA = len * (0.70 + rnd() * 0.07);
+    final lenB = len * (0.70 + rnd() * 0.07);
+    rec(to, angle - spread + swayAmt + jitterA, lenA, depth - 1);
+    rec(to, angle + spread + swayAmt + jitterB, lenB, depth - 1);
+    if (depth >= 2 && rnd() > 0.4) {
+      rec(
+        to,
+        angle + swayAmt * 1.2 + (rnd() - 0.5) * 0.2,
+        len * 0.5,
+        depth - 2,
+      );
     }
   }
 
-  rec(root, 0, length, 3);
+  rec(root, 0, length, 4);
   return _TreeGeom(segments, tips);
 }
 
@@ -3568,7 +3591,6 @@ class _ScenePainter extends CustomPainter {
   _ScenePainter({
     required this.now,
     required this.grow,
-    required this.sway,
     required this.tree,
     required this.trunkBase,
     required this.trunkTop,
@@ -3576,7 +3598,6 @@ class _ScenePainter extends CustomPainter {
 
   final DateTime now;
   final double grow;
-  final double sway;
   final _TreeGeom tree;
   final Offset trunkBase;
   final Offset trunkTop;
@@ -3587,13 +3608,20 @@ class _ScenePainter extends CustomPainter {
     final h = size.height;
     final horizonY = h * 0.62;
     final hour = now.hour + now.minute / 60 + now.second / 3600;
+    final t = now.millisecondsSinceEpoch / 1000.0; // continuous seconds
     final isDay = hour >= 6 && hour < 18;
     final frac =
         (isDay ? (hour - 6) / 12 : ((hour < 6 ? hour + 24 : hour) - 18) / 12)
             .clamp(0.0, 1.0);
     final elevation = math.sin(frac * math.pi);
+    final dayLight = isDay ? elevation : 0.0;
 
-    // Sky.
+    // Occasional rain — deterministic per calendar day (~1 day in 4), so the
+    // weather feels real but varies day to day.
+    final doy = now.difference(DateTime(now.year)).inDays;
+    final rainy = doy % 4 == 0;
+
+    // --- Sky ---
     final sky = _skyColors(hour);
     canvas.drawRect(
       Rect.fromLTWH(0, 0, w, h),
@@ -3605,28 +3633,28 @@ class _ScenePainter extends CustomPainter {
         ).createShader(Rect.fromLTWH(0, 0, w, h)),
     );
 
-    // Stars at night.
+    // --- Stars (night) ---
     final starOpacity = isDay ? 0.0 : (0.45 + 0.55 * elevation);
     if (starOpacity > 0.03) {
-      final starPaint = Paint();
-      for (var i = 0; i < 30; i++) {
+      final sp = Paint();
+      for (var i = 0; i < 40; i++) {
         final sx = ((i * 71) % 100) / 100 * w;
-        final sy = ((i * 137) % 55) / 100 * h;
-        final twinkle = 0.5 + 0.5 * math.sin(sway * math.pi + i);
-        starPaint.color = Colors.white.withValues(
-          alpha: (starOpacity * (0.4 + 0.6 * twinkle)).clamp(0.0, 1.0),
+        final sy = ((i * 137) % 58) / 100 * h;
+        final twinkle = 0.5 + 0.5 * math.sin(t * 2 + i);
+        sp.color = Colors.white.withValues(
+          alpha: (starOpacity * (0.35 + 0.65 * twinkle)).clamp(0.0, 1.0),
         );
-        canvas.drawCircle(Offset(sx, sy), 0.8 + (i % 3) * 0.5, starPaint);
+        canvas.drawCircle(Offset(sx, sy), 0.7 + (i % 3) * 0.5, sp);
       }
     }
 
-    // Sun / moon, positioned along an arc by the real time of day.
+    // --- Sun / Moon along a real-time arc ---
     final cx = w * 0.12 + (w * 0.76) * frac;
     final cy = horizonY - elevation * (horizonY - h * 0.10);
     if (isDay) {
       canvas.drawCircle(
         Offset(cx, cy),
-        40,
+        42,
         Paint()..color = const Color(0xFFFFF3B0).withValues(alpha: 0.12),
       );
       canvas.drawCircle(
@@ -3657,7 +3685,46 @@ class _ScenePainter extends CustomPainter {
       canvas.drawCircle(Offset(cx + 2, cy - 6), 2, crater);
     }
 
-    // Ground hills.
+    // --- Clouds (drift with real time; dimmer at night; grey when rainy) ---
+    final cloudBase = isDay ? 0.9 : 0.28;
+    final cloudTint = rainy
+        ? const Color(0xFF9AA6B2)
+        : (isDay ? Colors.white : const Color(0xFFB9C4E0));
+    for (var i = 0; i < 3; i++) {
+      final speed = 6.0 + i * 3.0;
+      final span = w + 120;
+      final x = ((t * (speed / 6) + i * 90) % span) - 60;
+      final y = h * (0.12 + i * 0.11);
+      _cloud(
+        canvas,
+        Offset(x, y),
+        1.0 - i * 0.18,
+        cloudTint.withValues(alpha: cloudBase * (0.9 - i * 0.15)),
+      );
+    }
+
+    // --- Birds gliding by (clear days only) ---
+    if (dayLight > 0.15 && !rainy) {
+      final birdPaint = Paint()
+        ..color = const Color(0xFF37474F).withValues(alpha: 0.55)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..strokeCap = StrokeCap.round;
+      for (var i = 0; i < 4; i++) {
+        final bx = ((t * 14 + i * 70) % (w + 80)) - 40;
+        final by = h * (0.18 + (i % 2) * 0.06) + math.sin(t * 0.6 + i) * 4;
+        final flap = 3 + 2.5 * math.sin(t * 6 + i);
+        canvas.drawPath(
+          Path()
+            ..moveTo(bx - 6, by)
+            ..quadraticBezierTo(bx - 3, by - flap, bx, by)
+            ..quadraticBezierTo(bx + 3, by - flap, bx + 6, by),
+          birdPaint,
+        );
+      }
+    }
+
+    // --- Hills ---
     final backHill = Path()
       ..moveTo(0, horizonY + 18)
       ..quadraticBezierTo(w * 0.3, horizonY - 12, w * 0.6, horizonY + 14)
@@ -3675,47 +3742,210 @@ class _ScenePainter extends CustomPainter {
       ..close();
     canvas.drawPath(frontHill, Paint()..color = const Color(0xFF558B2F));
 
-    // Tapered trunk.
-    final trunkW = 15.0 * grow;
-    final trunk = Path()
-      ..moveTo(trunkBase.dx - trunkW, trunkBase.dy)
-      ..quadraticBezierTo(
-        trunkBase.dx - 4,
-        (trunkBase.dy + trunkTop.dy) / 2,
-        trunkTop.dx - 4,
-        trunkTop.dy,
-      )
-      ..lineTo(trunkTop.dx + 4, trunkTop.dy)
-      ..quadraticBezierTo(
-        trunkBase.dx + 4,
-        (trunkBase.dy + trunkTop.dy) / 2,
-        trunkBase.dx + trunkW,
-        trunkBase.dy,
-      )
-      ..close();
-    canvas.drawPath(trunk, Paint()..color = const Color(0xFF6D4C41));
+    // Swaying grass tufts + little wildflowers on the meadow.
+    final grassPaint = Paint()
+      ..color = const Color(0xFF33691E)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < 16; i++) {
+      final gx = (i * 37 % 100) / 100 * w;
+      final gy = horizonY + 52 + (i * 53 % 30);
+      final s = math.sin(t * 1.5 + i) * 1.6;
+      canvas.drawLine(Offset(gx, gy), Offset(gx + s, gy - 6), grassPaint);
+    }
+    const flowerColors = [
+      Color(0xFFFF80AB),
+      Color(0xFFFFF176),
+      Color(0xFFFFFFFF),
+      Color(0xFFB388FF),
+    ];
+    for (var i = 0; i < 9; i++) {
+      final fx = ((i * 61 + 20) % 100) / 100 * w;
+      final fy = horizonY + 58 + (i * 41 % 26);
+      final c = flowerColors[i % flowerColors.length];
+      final petal = Paint()..color = c.withValues(alpha: 0.9);
+      for (var k = 0; k < 4; k++) {
+        final a = k * math.pi / 2;
+        canvas.drawCircle(
+          Offset(fx + math.cos(a) * 2, fy + math.sin(a) * 2),
+          1.6,
+          petal,
+        );
+      }
+      canvas.drawCircle(
+        Offset(fx, fy),
+        1.2,
+        Paint()..color = const Color(0xFFFFD54F),
+      );
+    }
 
-    // Branches (thicker near the trunk).
+    // --- Tree shadow ---
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(trunkBase.dx, trunkBase.dy + 4),
+        width: 120 * grow,
+        height: 20 * grow,
+      ),
+      Paint()..color = Colors.black.withValues(alpha: 0.10),
+    );
+
+    // --- Trunk (tapered) with a small root flare ---
+    final trunkW = 15.0 * grow;
+    canvas.drawPath(
+      Path()
+        ..moveTo(trunkBase.dx - trunkW, trunkBase.dy)
+        ..quadraticBezierTo(
+          trunkBase.dx - 5,
+          (trunkBase.dy + trunkTop.dy) / 2,
+          trunkTop.dx - 4,
+          trunkTop.dy,
+        )
+        ..lineTo(trunkTop.dx + 4, trunkTop.dy)
+        ..quadraticBezierTo(
+          trunkBase.dx + 5,
+          (trunkBase.dy + trunkTop.dy) / 2,
+          trunkBase.dx + trunkW,
+          trunkBase.dy,
+        )
+        ..close(),
+      Paint()..color = const Color(0xFF6D4C41),
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(trunkBase.dx - trunkW - 6, trunkBase.dy + 2)
+        ..quadraticBezierTo(
+          trunkBase.dx - trunkW,
+          trunkBase.dy - 6,
+          trunkBase.dx - trunkW + 4,
+          trunkBase.dy,
+        )
+        ..lineTo(trunkBase.dx + trunkW - 4, trunkBase.dy)
+        ..quadraticBezierTo(
+          trunkBase.dx + trunkW,
+          trunkBase.dy - 6,
+          trunkBase.dx + trunkW + 6,
+          trunkBase.dy + 2,
+        )
+        ..close(),
+      Paint()..color = const Color(0xFF5D4037),
+    );
+
+    // --- Branches (curved, tapered by depth) ---
     final branchPaint = Paint()
       ..color = const Color(0xFF795548)
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     for (final seg in tree.segments) {
-      branchPaint.strokeWidth = (seg.depth + 1) * 1.7 * grow;
-      canvas.drawLine(seg.a, seg.b, branchPaint);
+      branchPaint.strokeWidth = (seg.depth + 1) * 1.6 * grow;
+      canvas.drawPath(
+        Path()
+          ..moveTo(seg.a.dx, seg.a.dy)
+          ..quadraticBezierTo(seg.ctrl.dx, seg.ctrl.dy, seg.b.dx, seg.b.dy),
+        branchPaint,
+      );
     }
 
-    // Soft foliage clusters covering the branch tips for a lush canopy.
-    final foliageSoft = Paint()
-      ..color = const Color(0xFF66BB6A).withValues(alpha: 0.30);
+    // --- Foliage: three soft layers for a lush, rounded canopy ---
+    final darkFoliage = Paint()
+      ..color = const Color(0xFF2E7D32).withValues(alpha: 0.22);
     for (final seg in tree.segments) {
-      if (seg.depth == 1) canvas.drawCircle(seg.b, 22 * grow, foliageSoft);
+      if (seg.depth <= 1) canvas.drawCircle(seg.b, 26 * grow, darkFoliage);
     }
-    final foliage = Paint()
-      ..color = const Color(0xFF43A047).withValues(alpha: 0.55);
+    final midFoliage = Paint()
+      ..color = const Color(0xFF43A047).withValues(alpha: 0.5);
     for (final tip in tree.tips) {
-      canvas.drawCircle(tip, 14 * grow, foliage);
+      canvas.drawCircle(tip, 15 * grow, midFoliage);
     }
+    final brightFoliage = Paint()
+      ..color = const Color(0xFF81C784).withValues(alpha: 0.55);
+    for (var i = 0; i < tree.tips.length; i++) {
+      if (i.isEven) {
+        canvas.drawCircle(
+          tree.tips[i].translate(-3, -3),
+          8 * grow,
+          brightFoliage,
+        );
+      }
+    }
+
+    // Soft blossoms scattered through the canopy.
+    const blossom = [Color(0xFFFFC1E3), Color(0xFFFFFFFF), Color(0xFFF8BBD0)];
+    for (var i = 0; i < tree.tips.length; i++) {
+      if (i % 3 == 0) {
+        canvas.drawCircle(
+          tree.tips[i].translate(4, 2),
+          3.2 * grow,
+          Paint()..color = blossom[i % blossom.length].withValues(alpha: 0.9),
+        );
+      }
+    }
+
+    // --- Fireflies drifting around the tree (night only) ---
+    if (!isDay) {
+      for (var i = 0; i < 14; i++) {
+        final fx =
+            trunkTop.dx +
+            math.sin(t * 0.5 + i * 1.3) * (w * 0.34) +
+            (i % 5 - 2) * 8;
+        final fy = trunkTop.dy - 30 + math.cos(t * 0.4 + i) * 40 + (i % 3) * 12;
+        final pulse = (0.4 + 0.6 * (0.5 + 0.5 * math.sin(t * 3 + i))).clamp(
+          0.0,
+          1.0,
+        );
+        canvas.drawCircle(
+          Offset(fx, fy),
+          4,
+          Paint()
+            ..color = const Color(0xFFFFF59D).withValues(alpha: 0.18 * pulse),
+        );
+        canvas.drawCircle(
+          Offset(fx, fy),
+          1.6,
+          Paint()
+            ..color = const Color(0xFFFFF176).withValues(alpha: 0.95 * pulse),
+        );
+      }
+    }
+
+    // --- Rain (occasional days) ---
+    if (rainy) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, w, h),
+        Paint()..color = const Color(0xFF5B6B7A).withValues(alpha: 0.12),
+      );
+      final rainPaint = Paint()
+        ..color = const Color(0xFFB3E5FC).withValues(alpha: 0.5)
+        ..strokeWidth = 1.2
+        ..strokeCap = StrokeCap.round;
+      for (var i = 0; i < 60; i++) {
+        final rx = (i * 53 % 100) / 100 * w + math.sin(t + i) * 2;
+        final speed = 220 + (i % 5) * 40;
+        final ry = ((t * speed + i * 37) % (h + 40)) - 20;
+        canvas.drawLine(Offset(rx, ry), Offset(rx - 3, ry + 11), rainPaint);
+      }
+    }
+  }
+
+  // A puffy cloud built from overlapping circles and a flat rounded base.
+  void _cloud(Canvas canvas, Offset c, double scale, Color color) {
+    final p = Paint()..color = color;
+    canvas.drawCircle(c, 16 * scale, p);
+    canvas.drawCircle(c.translate(16 * scale, 4 * scale), 13 * scale, p);
+    canvas.drawCircle(c.translate(-16 * scale, 5 * scale), 12 * scale, p);
+    canvas.drawCircle(c.translate(6 * scale, -6 * scale), 12 * scale, p);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          c.dx - 22 * scale,
+          c.dy + 2 * scale,
+          44 * scale,
+          12 * scale,
+        ),
+        Radius.circular(8 * scale),
+      ),
+      p,
+    );
   }
 
   @override
@@ -5487,6 +5717,57 @@ class _GamesScreenState extends State<_GamesScreen> {
           return ListView(
             padding: const EdgeInsets.all(20),
             children: [
+              const _SectionHeader(
+                icon: Icons.sports_esports_rounded,
+                title: 'ألعاب سريعة',
+                subtitle: 'العبا سويًا على جهاز واحد — بدون إنترنت.',
+              ),
+              const SizedBox(height: 14),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.45,
+                children: [
+                  _MiniGameCard(
+                    icon: Icons.style_rounded,
+                    title: 'بطاقات الحب',
+                    subtitle: 'طابِق الأزواج',
+                    colors: const [Color(0xFF7C4DFF), Color(0xFFB388FF)],
+                    onTap: () => _open(const _MemoryMatchScreen()),
+                  ),
+                  _MiniGameCard(
+                    icon: Icons.alt_route_rounded,
+                    title: 'لو خيّروك',
+                    subtitle: 'هذا أم ذاك؟',
+                    colors: const [Color(0xFFFF5FA2), Color(0xFFFF9E80)],
+                    onTap: () => _open(const _WouldYouRatherScreen()),
+                  ),
+                  _MiniGameCard(
+                    icon: Icons.local_fire_department_rounded,
+                    title: 'صراحة وجرأة',
+                    subtitle: 'اسحبا بطاقة',
+                    colors: const [Color(0xFFFFB300), Color(0xFFFF7043)],
+                    onTap: () => _open(const _TruthOrDareScreen()),
+                  ),
+                  _MiniGameCard(
+                    icon: Icons.bolt_rounded,
+                    title: 'سرعة البديهة',
+                    subtitle: 'من أسرع؟',
+                    colors: const [Color(0xFF26C6DA), Color(0xFF4B9A8D)],
+                    onTap: () => _open(const _ReactionGameScreen()),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              const _SectionHeader(
+                icon: Icons.wifi_rounded,
+                title: 'ألعاب مع الشريك',
+                subtitle: 'تُلعب أونلاين ومتزامنة بينكما.',
+              ),
+              const SizedBox(height: 14),
               Row(
                 children: [
                   Expanded(
@@ -5580,6 +5861,10 @@ class _GamesScreenState extends State<_GamesScreen> {
     );
   }
 
+  void _open(Widget screen) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+
   Future<void> _createGame() async {
     setState(() => _busy = true);
     try {
@@ -5647,6 +5932,846 @@ class _GamesScreenState extends State<_GamesScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+}
+
+// ===========================================================================
+// Quick offline couple games (fully playable on one device, no backend).
+// ===========================================================================
+
+class _MiniGameCard extends StatelessWidget {
+  const _MiniGameCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.colors,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final List<Color> colors;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: colors,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: colors.last.withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Icon(icon, color: Colors.white, size: 30),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// --- Memory match --------------------------------------------------------
+
+class _MemoryMatchScreen extends StatefulWidget {
+  const _MemoryMatchScreen();
+
+  @override
+  State<_MemoryMatchScreen> createState() => _MemoryMatchScreenState();
+}
+
+class _MemoryMatchScreenState extends State<_MemoryMatchScreen> {
+  static const _faces = ['❤️', '😍', '🌹', '🐻', '🍫', '⭐', '🎈', '🌙'];
+  late List<String> _cards;
+  final Set<int> _revealed = {};
+  final Set<int> _matched = {};
+  int? _first;
+  bool _busy = false;
+  int _moves = 0;
+  int? _best;
+  final Stopwatch _watch = Stopwatch();
+  Timer? _flipTimer;
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _deal();
+    _loadBest();
+  }
+
+  Future<void> _loadBest() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _best = prefs.getInt('game_memory_best'));
+  }
+
+  void _deal() {
+    _cards = [..._faces, ..._faces]..shuffle(math.Random());
+    _revealed.clear();
+    _matched.clear();
+    _first = null;
+    _busy = false;
+    _moves = 0;
+    _watch
+      ..reset()
+      ..start();
+    _tick?.cancel();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _flipTimer?.cancel();
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  void _tap(int i) {
+    if (_busy || _revealed.contains(i) || _matched.contains(i)) return;
+    setState(() => _revealed.add(i));
+    if (_first == null) {
+      _first = i;
+      return;
+    }
+    _moves++;
+    final a = _first!;
+    final b = i;
+    _first = null;
+    if (_cards[a] == _cards[b]) {
+      setState(
+        () => _matched
+          ..add(a)
+          ..add(b),
+      );
+      if (_matched.length == _cards.length) _finish();
+    } else {
+      _busy = true;
+      _flipTimer = Timer(const Duration(milliseconds: 750), () {
+        if (!mounted) return;
+        setState(() {
+          _revealed
+            ..remove(a)
+            ..remove(b);
+          _busy = false;
+        });
+      });
+    }
+  }
+
+  Future<void> _finish() async {
+    _watch.stop();
+    _tick?.cancel();
+    final prefs = await SharedPreferences.getInstance();
+    final prev = prefs.getInt('game_memory_best');
+    if (prev == null || _moves < prev) {
+      await prefs.setInt('game_memory_best', _moves);
+      if (mounted) setState(() => _best = _moves);
+    }
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('أحسنتما! 🎉'),
+        content: Text(
+          'أتممتما اللعبة في $_moves محاولة و${_watch.elapsed.inSeconds} ثانية.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('حسنًا'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              setState(_deal);
+            },
+            child: const Text('العب مجددًا'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stat(IconData icon, String label, String value) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        Icon(icon, color: scheme.primary),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('بطاقات الحب'),
+        actions: [
+          IconButton(
+            tooltip: 'توزيع جديد',
+            onPressed: () => setState(_deal),
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _stat(Icons.touch_app_rounded, 'محاولات', '$_moves'),
+                _stat(
+                  Icons.timer_outlined,
+                  'الوقت',
+                  '${_watch.elapsed.inSeconds}ث',
+                ),
+                _stat(
+                  Icons.emoji_events_outlined,
+                  'أفضل',
+                  _best?.toString() ?? '—',
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: GridView.count(
+                crossAxisCount: 4,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                children: [
+                  for (var i = 0; i < _cards.length; i++)
+                    _MemoryCard(
+                      face: _cards[i],
+                      revealed: _revealed.contains(i) || _matched.contains(i),
+                      matched: _matched.contains(i),
+                      onTap: () => _tap(i),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MemoryCard extends StatelessWidget {
+  const _MemoryCard({
+    required this.face,
+    required this.revealed,
+    required this.matched,
+    required this.onTap,
+  });
+
+  final String face;
+  final bool revealed;
+  final bool matched;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: revealed ? 1 : 0),
+        duration: const Duration(milliseconds: 280),
+        builder: (context, v, _) {
+          final showFront = v > 0.5;
+          final child = showFront
+              ? Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()..rotateY(math.pi),
+                  child: _face(),
+                )
+              : _back();
+          return Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, 0.001)
+              ..rotateY(v * math.pi),
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _back() => Container(
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(14),
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF7C4DFF), Color(0xFF5E35B1)],
+      ),
+    ),
+    child: const Center(
+      child: Icon(Icons.favorite_rounded, color: Colors.white24, size: 26),
+    ),
+  );
+
+  Widget _face() => Container(
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(14),
+      color: matched ? const Color(0xFFE8F5E9) : Colors.white,
+      border: Border.all(
+        color: matched ? const Color(0xFF66BB6A) : const Color(0xFFE0E0E0),
+        width: 2,
+      ),
+    ),
+    child: Center(child: Text(face, style: const TextStyle(fontSize: 26))),
+  );
+}
+
+// --- Would you rather -----------------------------------------------------
+
+class _WouldYouRatherScreen extends StatefulWidget {
+  const _WouldYouRatherScreen();
+
+  @override
+  State<_WouldYouRatherScreen> createState() => _WouldYouRatherScreenState();
+}
+
+class _WouldYouRatherScreenState extends State<_WouldYouRatherScreen> {
+  static const _dilemmas = <List<String>>[
+    ['نسافر إلى البحر', 'نسافر إلى الجبل'],
+    ['سهرة أفلام في البيت', 'عشاء في مطعم فاخر'],
+    ['نتقاسم طبقًا واحدًا', 'لكلٍّ طبقه الخاص'],
+    ['قهوة الصباح', 'شاي المساء'],
+    ['رحلة مفاجئة', 'رحلة مخطط لها بدقّة'],
+    ['نرقص تحت المطر', 'نتأمل النجوم'],
+    ['نطبخ سويًا', 'نطلب توصيلًا ونرتاح'],
+    ['صيف دائم', 'شتاء دائم'],
+    ['نوثّق كل لحظة بالصور', 'نعيش اللحظة بلا كاميرا'],
+    ['نسهر للفجر نتكلم', 'ننام مبكرًا متعانقين'],
+    ['هدية غالية', 'رسالة بخط اليد'],
+    ['نتعلم لغة جديدة معًا', 'نتعلم الطبخ معًا'],
+    ['بيت صغير دافئ', 'بيت واسع كبير'],
+    ['نربّي قطة', 'نربّي كلبًا'],
+    ['نعيش قرب الأهل', 'نخوض مغامرة في مدينة جديدة'],
+    ['نحتفل بصخب مع الجميع', 'نحتفل بهدوء بيننا'],
+    ['نكتب مذكرات مشتركة', 'نصوّر فيديو لكل ذكرى'],
+    ['فطور في السرير', 'نزهة صباحية'],
+  ];
+
+  late List<int> _order;
+  int _pos = 0;
+  int? _choice;
+
+  @override
+  void initState() {
+    super.initState();
+    _order = List<int>.generate(_dilemmas.length, (i) => i)
+      ..shuffle(math.Random());
+  }
+
+  void _next() {
+    setState(() {
+      _choice = null;
+      _pos++;
+      if (_pos >= _dilemmas.length) {
+        _pos = 0;
+        _order.shuffle(math.Random());
+      }
+    });
+  }
+
+  Widget _option(int index, String text, List<Color> colors) {
+    final selected = _choice == index;
+    final dim = _choice != null && !selected;
+    return GestureDetector(
+      onTap: () => setState(() => _choice = index),
+      child: AnimatedOpacity(
+        opacity: dim ? 0.4 : 1,
+        duration: const Duration(milliseconds: 200),
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: colors,
+            ),
+            border: selected ? Border.all(color: Colors.white, width: 3) : null,
+            boxShadow: [
+              BoxShadow(
+                color: colors.last.withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (selected)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Icon(
+                    Icons.check_circle_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              Text(
+                text,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final d = _dilemmas[_order[_pos]];
+    return Scaffold(
+      appBar: AppBar(title: const Text('لو خيّروك')),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Text(
+              '${_pos + 1} / ${_dilemmas.length}',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _option(0, d[0], const [
+                Color(0xFF7C4DFF),
+                Color(0xFF9575CD),
+              ]),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                'أو',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+            ),
+            Expanded(
+              child: _option(1, d[1], const [
+                Color(0xFFFF5FA2),
+                Color(0xFFFF8A65),
+              ]),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _next,
+                icon: const Icon(Icons.skip_next_rounded),
+                label: const Text('التالي'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- Truth or dare --------------------------------------------------------
+
+class _TruthOrDareScreen extends StatefulWidget {
+  const _TruthOrDareScreen();
+
+  @override
+  State<_TruthOrDareScreen> createState() => _TruthOrDareScreenState();
+}
+
+class _TruthOrDareScreenState extends State<_TruthOrDareScreen> {
+  static const _truths = <String>[
+    'ما أول شيء لاحظته فيّ؟',
+    'ما أكثر لحظة تتمنى تكرارها معي؟',
+    'ما الشيء الذي أفعله ويُسعدك دائمًا؟',
+    'متى شعرت أنك محظوظ بي؟',
+    'لو وصفتني بكلمة واحدة، ماذا تقول؟',
+    'ما الحلم الذي تتمنى أن نحققه معًا؟',
+    'ما أطرف موقف جمعنا؟',
+    'ما الأغنية التي تذكّرك بي؟',
+    'ما الشيء الذي تريد أن نجرّبه معًا ولم نجرّبه بعد؟',
+    'ما أجمل هدية شعرت بها مني؟',
+    'ما الذي يجعلك تبتسم حتى في يوم سيّئ؟',
+    'ما أكثر مكان تتمنى أن نزوره سويًا؟',
+    'ما الشيء الصغير الذي تفتقده حين أغيب؟',
+    'ما اللحظة التي عرفت فيها أنك تحبني؟',
+    'لو رجع بنا الزمن، أي يوم نعيشه ثانية؟',
+    'ما العادة التي بدأناها معًا وتحبها؟',
+    'ما الكلمة التي تحب أن أناديك بها؟',
+    'ما الذي تتمنى أن أعرفه عنك أكثر؟',
+    'ما أكثر صفة تفخر بها فيّ؟',
+    'ما أجمل مفاجأة تتمنى أن أعملها لك؟',
+  ];
+
+  static const _dares = <String>[
+    'أرسل لي رسالة صوتية تقول فيها أجمل صفة فيّ.',
+    'قلّد طريقتي في الضحك.',
+    'غنِّ مقطعًا من أغنية نحبها.',
+    'امنحني عناقًا لمدة 20 ثانية.',
+    'التقط سيلفي مضحكًا معي الآن.',
+    'اكتب لي جملة حب على ورقة وأرِني إياها.',
+    'صف يومنا المثالي في ثلاث جمل.',
+    'اختر لي لقبًا جديدًا لطيفًا.',
+    'قل ثلاثة أشياء تشكرني عليها.',
+    'حضّر لي كوب ماء أو قهوة الآن.',
+    'أخبرني بذكرى تُضحكك كلما تذكرتها.',
+    'قل "أحبك" بثلاث لهجات مختلفة.',
+    'اعمل رقصة قصيرة لمدة 10 ثوانٍ.',
+    'أغمض عينيك وصِف ملامح وجهي.',
+    'ابتسم لي دون أن تتكلم لمدة 15 ثانية.',
+    'أخبرني بأمنية تتمناها لنا هذا العام.',
+    'اختر أغنية وشغّلها لنا الآن.',
+    'قل أجمل جملة سمعتها عني من أحد.',
+    'ارسم قلبًا صغيرًا وأهدِه لي.',
+    'صِف شعورك بأول لقاء جمعنا.',
+  ];
+
+  final math.Random _rand = math.Random();
+  String? _card;
+  bool _isDare = false;
+
+  void _draw(bool dare) {
+    final deck = dare ? _dares : _truths;
+    String pick;
+    do {
+      pick = deck[_rand.nextInt(deck.length)];
+    } while (deck.length > 1 && pick == _card);
+    setState(() {
+      _card = pick;
+      _isDare = dare;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasCard = _card != null;
+    return Scaffold(
+      appBar: AppBar(title: const Text('صراحة وجرأة')),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: hasCard
+                    ? Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: _isDare
+                                ? const [Color(0xFFFF7043), Color(0xFFFFB300)]
+                                : const [Color(0xFF5C6BC0), Color(0xFF26C6DA)],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white24,
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              child: Text(
+                                _isDare ? 'جرأة 🔥' : 'صراحة 💬',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            Text(
+                              _card!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Text(
+                        'اختر صراحة أو جرأة لسحب بطاقة 💌',
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 16,
+                        ),
+                      ),
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _draw(false),
+                    icon: const Icon(Icons.chat_bubble_outline_rounded),
+                    label: const Text('صراحة'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF5C6BC0),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _draw(true),
+                    icon: const Icon(Icons.local_fire_department_rounded),
+                    label: const Text('جرأة'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF7043),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (hasCard) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _draw(_isDare),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('بطاقة أخرى'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- Reaction speed -------------------------------------------------------
+
+class _ReactionGameScreen extends StatefulWidget {
+  const _ReactionGameScreen();
+
+  @override
+  State<_ReactionGameScreen> createState() => _ReactionGameScreenState();
+}
+
+class _ReactionGameScreenState extends State<_ReactionGameScreen> {
+  String _phase = 'idle'; // idle | wait | go | early | result
+  int? _ms;
+  int? _best;
+  Timer? _timer;
+  final Stopwatch _sw = Stopwatch();
+  final math.Random _rand = math.Random();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBest();
+  }
+
+  Future<void> _loadBest() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _best = prefs.getInt('game_reaction_best'));
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _start() {
+    setState(() => _phase = 'wait');
+    final delay = 1200 + _rand.nextInt(2600);
+    _timer = Timer(Duration(milliseconds: delay), () {
+      if (!mounted) return;
+      _sw
+        ..reset()
+        ..start();
+      setState(() => _phase = 'go');
+    });
+  }
+
+  Future<void> _saveBest(int ms) async {
+    final prefs = await SharedPreferences.getInstance();
+    final prev = prefs.getInt('game_reaction_best');
+    if (prev == null || ms < prev) {
+      await prefs.setInt('game_reaction_best', ms);
+      if (mounted) setState(() => _best = ms);
+    }
+  }
+
+  void _onTap() {
+    switch (_phase) {
+      case 'wait':
+        _timer?.cancel();
+        setState(() => _phase = 'early');
+      case 'go':
+        _sw.stop();
+        final ms = _sw.elapsedMilliseconds;
+        setState(() {
+          _ms = ms;
+          _phase = 'result';
+        });
+        _saveBest(ms);
+      default:
+        _start();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Color bg = const Color(0xFF4B9A8D);
+    String title = 'اختبر سرعتك';
+    String sub = 'انقر في أي مكان للبدء';
+    if (_phase == 'wait') {
+      bg = const Color(0xFFE53935);
+      title = 'انتظر الأخضر...';
+      sub = 'لا تستعجل';
+    } else if (_phase == 'go') {
+      bg = const Color(0xFF43A047);
+      title = 'انقر الآن!';
+      sub = '';
+    } else if (_phase == 'early') {
+      bg = const Color(0xFFFB8C00);
+      title = 'بدري! 😅';
+      sub = 'انقر للمحاولة من جديد';
+    } else if (_phase == 'result') {
+      bg = const Color(0xFF5C6BC0);
+      title = '$_ms مللي ثانية ⚡';
+      sub = 'انقر للعب مجددًا';
+    }
+    return Scaffold(
+      appBar: AppBar(title: const Text('سرعة البديهة')),
+      body: GestureDetector(
+        onTap: _onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          color: bg,
+          width: double.infinity,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                _phase == 'go' ? Icons.touch_app_rounded : Icons.bolt_rounded,
+                color: Colors.white,
+                size: 64,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (sub.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  sub,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+              if (_best != null) ...[
+                const SizedBox(height: 24),
+                Text(
+                  'أفضل زمن: $_best مللي ثانية',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.9)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
