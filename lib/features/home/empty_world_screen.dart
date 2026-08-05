@@ -14,6 +14,7 @@ import '../../core/api_client.dart';
 import '../../core/offline_outbox.dart';
 import '../../core/realtime_client.dart';
 import '../../core/secure_stores.dart';
+import '../../core/weather_service.dart';
 import '../auth/auth_repository.dart';
 import '../partnerships/partnership_repository.dart';
 import '../space/space_repository.dart';
@@ -3413,6 +3414,24 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
 
   _Forest? _forest;
   String? _forestKey;
+  WeatherNow? _weather;
+  Timer? _weatherTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWeather();
+    // Refresh the real weather periodically while the world is open.
+    _weatherTimer = Timer.periodic(
+      const Duration(minutes: 15),
+      (_) => _loadWeather(),
+    );
+  }
+
+  Future<void> _loadWeather() async {
+    final wx = await WeatherService.instance.current();
+    if (mounted && wx != null) setState(() => _weather = wx);
+  }
 
   @override
   void didUpdateWidget(covariant _MemoryTreeView old) {
@@ -3427,6 +3446,7 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
 
   @override
   void dispose() {
+    _weatherTimer?.cancel();
     _wind.dispose();
     _grow.dispose();
     super.dispose();
@@ -3480,6 +3500,7 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
                       grow: Curves.easeOutCubic.transform(_grow.value),
                       windPhase: _wind.value * math.pi * 2,
                       forest: forest,
+                      weather: _weather,
                     ),
                   );
                 },
@@ -3662,17 +3683,21 @@ class _ScenePainter extends CustomPainter {
     required this.grow,
     required this.windPhase,
     required this.forest,
+    required this.weather,
   });
 
   final DateTime now;
   final double grow;
   final double windPhase;
   final _Forest forest;
+  final WeatherNow? weather;
 
+  // Deep, slightly desaturated greens read as a backlit canopy rather than a
+  // flat cartoon; highlights are added warm on top.
   static const _leafShades = [
+    Color(0xFF1B5E20),
     Color(0xFF2E7D32),
-    Color(0xFF388E3C),
-    Color(0xFF43A047),
+    Color(0xFF33691E),
   ];
 
   @override
@@ -3681,31 +3706,84 @@ class _ScenePainter extends CustomPainter {
     final h = size.height;
     final horizonY = h * 0.62;
     final hour = now.hour + now.minute / 60 + now.second / 3600;
-    final t = now.millisecondsSinceEpoch / 1000.0; // continuous seconds
+    final t = now.millisecondsSinceEpoch / 1000.0;
     final isDay = hour >= 6 && hour < 18;
     final frac =
         (isDay ? (hour - 6) / 12 : ((hour < 6 ? hour + 24 : hour) - 18) / 12)
             .clamp(0.0, 1.0);
     final elevation = math.sin(frac * math.pi);
     final dayLight = isDay ? elevation : 0.0;
+    final warm = (1 - elevation).clamp(0.0, 1.0); // 1 near sunrise/sunset
 
-    final doy = now.difference(DateTime(now.year)).inDays;
-    final rainy = doy % 4 == 0;
+    // --- Real weather → scene parameters ---
+    final wx = weather;
+    final overcast = wx == null
+        ? 0.12
+        : switch (wx.condition) {
+            WeatherCondition.clear => 0.0,
+            WeatherCondition.partlyCloudy => 0.2 + wx.cloudCover * 0.25,
+            WeatherCondition.overcast => 0.85,
+            WeatherCondition.fog => 0.7,
+            WeatherCondition.rain => 0.85,
+            WeatherCondition.snow => 0.7,
+            WeatherCondition.storm => 1.0,
+          };
+    final cloudCover = wx?.cloudCover ?? 0.18;
+    final isRain =
+        wx?.condition == WeatherCondition.rain ||
+        wx?.condition == WeatherCondition.storm;
+    final isSnow = wx?.condition == WeatherCondition.snow;
+    final isFog = wx?.condition == WeatherCondition.fog;
 
-    // --- Sky ---
+    // --- Sky (time gradient, greyed by cloud cover) ---
     final sky = _skyColors(hour);
+    final grey = isDay ? const Color(0xFFAAB2BB) : const Color(0xFF39414B);
+    var top = Color.lerp(sky.$1, grey, overcast * 0.72)!;
+    var bot = Color.lerp(
+      sky.$2,
+      isDay ? const Color(0xFFC7CDD4) : const Color(0xFF2A303A),
+      overcast * 0.68,
+    )!;
+    if (isSnow) {
+      top = Color.lerp(top, const Color(0xFFD7DEE6), 0.4)!;
+      bot = Color.lerp(bot, const Color(0xFFEDF1F5), 0.4)!;
+    }
     canvas.drawRect(
       Rect.fromLTWH(0, 0, w, h),
       Paint()
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [sky.$1, sky.$2],
+          colors: [top, bot],
         ).createShader(Rect.fromLTWH(0, 0, w, h)),
     );
 
-    // --- Stars (night) ---
-    final starOpacity = isDay ? 0.0 : (0.45 + 0.55 * elevation);
+    // --- Warm horizon bloom (backlight behind the tree) ---
+    final bloomColor = Color.lerp(
+      const Color(0xFFFFF4CC),
+      const Color(0xFFFF9248),
+      warm,
+    )!;
+    final bloomAlpha =
+        (isDay ? 0.42 + 0.5 * warm : 0.14) * (1 - overcast * 0.6);
+    if (bloomAlpha > 0.02) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, w, h),
+        Paint()
+          ..shader = RadialGradient(
+            center: Alignment(0, (horizonY / h) * 2 - 1),
+            radius: 0.95,
+            colors: [
+              bloomColor.withValues(alpha: bloomAlpha),
+              bloomColor.withValues(alpha: 0),
+            ],
+          ).createShader(Rect.fromLTWH(0, 0, w, h)),
+      );
+    }
+
+    // --- Stars (night, hidden by cloud) ---
+    final starOpacity =
+        (isDay ? 0.0 : (0.45 + 0.55 * elevation)) * (1 - overcast);
     if (starOpacity > 0.03) {
       final sp = Paint();
       for (var i = 0; i < 46; i++) {
@@ -3723,8 +3801,7 @@ class _ScenePainter extends CustomPainter {
     final cx = w * 0.12 + (w * 0.76) * frac;
     final cy = horizonY - elevation * (horizonY - h * 0.10);
     if (isDay) {
-      // Soft god rays fanning from the sun on clear days.
-      if (dayLight > 0.18 && !rainy) {
+      if (dayLight > 0.18 && overcast < 0.4) {
         canvas.save();
         canvas.translate(cx, cy);
         final ray = Paint()
@@ -3746,64 +3823,81 @@ class _ScenePainter extends CustomPainter {
         }
         canvas.restore();
       }
+      final sunA = (1 - overcast * 0.9).clamp(0.0, 1.0);
       canvas.drawCircle(
         Offset(cx, cy),
         46,
-        Paint()..color = const Color(0xFFFFF3B0).withValues(alpha: 0.14),
+        Paint()..color = const Color(0xFFFFF3B0).withValues(alpha: 0.14 * sunA),
       );
       canvas.drawCircle(
         Offset(cx, cy),
         32,
-        Paint()..color = const Color(0xFFFFE082).withValues(alpha: 0.28),
+        Paint()..color = const Color(0xFFFFE082).withValues(alpha: 0.28 * sunA),
       );
-      canvas.drawCircle(
-        Offset(cx, cy),
-        21,
-        Paint()..color = const Color(0xFFFFD54F),
-      );
-      canvas.drawCircle(
-        Offset(cx - 5, cy - 6),
-        13,
-        Paint()..color = const Color(0xFFFFF59D).withValues(alpha: 0.7),
-      );
+      if (overcast < 0.8) {
+        canvas.drawCircle(
+          Offset(cx, cy),
+          21,
+          Paint()
+            ..color = Color.lerp(
+              const Color(0xFFFFD54F),
+              const Color(0xFFFF7043),
+              warm * 0.5,
+            )!.withValues(alpha: sunA),
+        );
+        canvas.drawCircle(
+          Offset(cx - 5, cy - 6),
+          13,
+          Paint()
+            ..color = const Color(0xFFFFF59D).withValues(alpha: 0.7 * sunA),
+        );
+      }
     } else {
+      final moonA = (1 - overcast * 0.85).clamp(0.0, 1.0);
       canvas.drawCircle(
         Offset(cx, cy),
         30,
-        Paint()..color = Colors.white.withValues(alpha: 0.12),
+        Paint()..color = Colors.white.withValues(alpha: 0.12 * moonA),
       );
       canvas.drawCircle(
         Offset(cx, cy),
         18,
-        Paint()..color = const Color(0xFFECEFF1),
+        Paint()..color = const Color(0xFFECEFF1).withValues(alpha: moonA),
       );
       final crater = Paint()
-        ..color = const Color(0xFFB0BEC5).withValues(alpha: 0.6);
+        ..color = const Color(0xFFB0BEC5).withValues(alpha: 0.6 * moonA);
       canvas.drawCircle(Offset(cx - 6, cy - 4), 3.5, crater);
       canvas.drawCircle(Offset(cx + 5, cy + 3), 2.5, crater);
       canvas.drawCircle(Offset(cx + 2, cy - 6), 2, crater);
     }
 
-    // --- Clouds ---
-    final cloudBase = isDay ? 0.9 : 0.28;
-    final cloudTint = rainy
-        ? const Color(0xFF9AA6B2)
+    // --- Clouds (count & greyness scale with real cloud cover) ---
+    final cloudN = overcast > 0.55 ? 7 : (2 + (cloudCover * 4).round());
+    final cloudTint = overcast > 0.5
+        ? Color.lerp(
+            const Color(0xFFC9D0D8),
+            const Color(0xFF8A93A0),
+            overcast,
+          )!
         : (isDay ? Colors.white : const Color(0xFFB9C4E0));
-    for (var i = 0; i < 3; i++) {
-      final speed = 6.0 + i * 3.0;
-      final span = w + 120;
-      final x = ((t * (speed / 6) + i * 90) % span) - 60;
-      final y = h * (0.10 + i * 0.10);
+    final cloudBase = (isDay ? 0.9 : 0.3) * (0.5 + 0.5 * (overcast + 0.4));
+    for (var i = 0; i < cloudN; i++) {
+      final speed = 5.0 + i * 2.4;
+      final span = w + 160;
+      final x = ((t * (speed / 6) + i * 74) % span) - 80;
+      final y = h * (0.08 + (i % 4) * 0.09);
       _cloud(
         canvas,
         Offset(x, y),
-        1.0 - i * 0.18,
-        cloudTint.withValues(alpha: cloudBase * (0.9 - i * 0.15)),
+        (overcast > 0.55 ? 1.3 : 1.0) - (i % 4) * 0.14,
+        cloudTint.withValues(
+          alpha: (cloudBase * (0.9 - (i % 4) * 0.12)).clamp(0.0, 1.0),
+        ),
       );
     }
 
-    // --- Birds (clear days) ---
-    if (dayLight > 0.15 && !rainy) {
+    // --- Birds (clear days only) ---
+    if (dayLight > 0.15 && overcast < 0.5) {
       final birdPaint = Paint()
         ..color = const Color(0xFF37474F).withValues(alpha: 0.55)
         ..style = PaintingStyle.stroke
@@ -3823,7 +3917,25 @@ class _ScenePainter extends CustomPainter {
       }
     }
 
+    // --- Atmospheric haze at the horizon (depth) ---
+    canvas.drawRect(
+      Rect.fromLTWH(0, horizonY - h * 0.10, w, h * 0.20),
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            bloomColor.withValues(alpha: 0),
+            bloomColor.withValues(
+              alpha: (0.16 + overcast * 0.12) * (isDay ? 1 : 0.4),
+            ),
+            bloomColor.withValues(alpha: 0),
+          ],
+        ).createShader(Rect.fromLTWH(0, horizonY - h * 0.10, w, h * 0.20)),
+    );
+
     // --- Layered hills for depth ---
+    Color hill(Color c) => Color.lerp(c, grey, overcast * 0.35)!;
     final farHill = Path()
       ..moveTo(0, horizonY + 6)
       ..quadraticBezierTo(w * 0.35, horizonY - 20, w * 0.7, horizonY)
@@ -3831,7 +3943,7 @@ class _ScenePainter extends CustomPainter {
       ..lineTo(w, h)
       ..lineTo(0, h)
       ..close();
-    canvas.drawPath(farHill, Paint()..color = const Color(0xFF9CCC65));
+    canvas.drawPath(farHill, Paint()..color = hill(const Color(0xFF9CCC65)));
     final backHill = Path()
       ..moveTo(0, horizonY + 20)
       ..quadraticBezierTo(w * 0.3, horizonY - 6, w * 0.6, horizonY + 16)
@@ -3839,7 +3951,7 @@ class _ScenePainter extends CustomPainter {
       ..lineTo(w, h)
       ..lineTo(0, h)
       ..close();
-    canvas.drawPath(backHill, Paint()..color = const Color(0xFF7CB342));
+    canvas.drawPath(backHill, Paint()..color = hill(const Color(0xFF7CB342)));
     final frontHill = Path()
       ..moveTo(0, horizonY + 46)
       ..quadraticBezierTo(w * 0.25, horizonY + 18, w * 0.5, horizonY + 48)
@@ -3847,9 +3959,22 @@ class _ScenePainter extends CustomPainter {
       ..lineTo(w, h)
       ..lineTo(0, h)
       ..close();
-    canvas.drawPath(frontHill, Paint()..color = const Color(0xFF558B2F));
+    canvas.drawPath(
+      frontHill,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            hill(const Color(0xFF5C8F2E)),
+            hill(const Color(0xFF33691E)),
+          ],
+        ).createShader(Rect.fromLTWH(0, horizonY + 42, w, h - horizonY - 42)),
+    );
 
-    // --- Trees: farthest (highest baseline) first, front tree last ---
+    // --- Trees (farthest first, front tree last), with backlit rim ---
+    final rim = ((isDay ? 0.3 + 0.6 * warm : 0.14) * (1 - overcast * 0.6))
+        .clamp(0.0, 1.0);
     final order = List<int>.generate(forest.trees.length, (i) => i)
       ..sort(
         (a, b) => forest.trees[a].base.dy.compareTo(forest.trees[b].base.dy),
@@ -3858,13 +3983,12 @@ class _ScenePainter extends CustomPainter {
     double newestAng = 0;
     for (final ti in order) {
       final tr = forest.trees[ti];
-      final n = _paintTree(canvas, tr, t);
+      final n = _paintTree(canvas, tr, t, rim, bloomColor);
       if (n != null) {
         newestPos = n.$1;
         newestAng = n.$2;
       }
     }
-    // Freshest memory glows gold on top of everything.
     if (newestPos != null) {
       canvas.drawCircle(
         newestPos,
@@ -3881,22 +4005,30 @@ class _ScenePainter extends CustomPainter {
       );
     }
 
-    // --- Dense swaying grass + wildflowers in the foreground ---
-    final grassColors = [
+    // --- Dense, layered meadow grass (depth-shaded, swaying) ---
+    final bandTop = horizonY + 44;
+    final gPal = [
+      const Color(0xFF33691E),
       const Color(0xFF2E7D32),
-      const Color(0xFF388E3C),
       const Color(0xFF43A047),
+      const Color(0xFF558B2F),
     ];
     final grassPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;
-    for (var i = 0; i < 60; i++) {
-      final gx = (i * 53 % 100) / 100 * w + (i * 17 % 7) - 3;
-      final gy = h - (i * 29 % 14);
-      final hgt = 8 + (i * 13 % 10);
-      final s = math.sin(windPhase + i * 0.4) * 3;
-      grassPaint.color = grassColors[i % 3];
+    for (var i = 0; i < 150; i++) {
+      final gx = (i * 37 % 100) / 100 * w + ((i * 53 % 13) - 6);
+      final depth = (i * 7 % 100) / 100; // 0 far … 1 near
+      final gy = bandTop + depth * (h - bandTop);
+      final hgt = 6 + depth * 20;
+      final s = math.sin(windPhase + i * 0.5 + depth) * (2 + depth * 3);
+      final base = gPal[i % gPal.length];
+      grassPaint.color = Color.lerp(
+        base,
+        const Color(0xFF1B5E20),
+        (1 - depth) * 0.4,
+      )!;
+      grassPaint.strokeWidth = 1.1 + depth * 1.1;
       canvas.drawPath(
         Path()
           ..moveTo(gx, gy)
@@ -3904,55 +4036,78 @@ class _ScenePainter extends CustomPainter {
         grassPaint,
       );
     }
-    const flowerColors = [
-      Color(0xFFFF80AB),
-      Color(0xFFFFF176),
-      Color(0xFFFFFFFF),
-      Color(0xFFB388FF),
-    ];
-    for (var i = 0; i < 10; i++) {
-      final fx = ((i * 61 + 20) % 100) / 100 * w;
-      final fy = h - 6 - (i * 41 % 20);
-      final c = flowerColors[i % flowerColors.length];
-      final petal = Paint()..color = c.withValues(alpha: 0.92);
-      for (var k = 0; k < 4; k++) {
-        final a = k * math.pi / 2;
-        canvas.drawCircle(
-          Offset(fx + math.cos(a) * 2, fy + math.sin(a) * 2),
-          1.7,
-          petal,
-        );
-      }
+
+    // --- Red poppies, clustered to the left like a real meadow ---
+    for (var i = 0; i < 16; i++) {
+      final leftBias = i < 9
+          ? 0.04 + (i / 9) * 0.42
+          : 0.5 + ((i - 9) / 7) * 0.46;
+      final fx = leftBias * w + ((i * 29 % 17) - 8);
+      final depth = 0.45 + (i * 11 % 50) / 100;
+      final fy = bandTop + depth * (h - bandTop);
+      final s = math.sin(windPhase + i) * 2;
+      final r = 2.6 + depth * 1.6;
+      canvas.drawLine(
+        Offset(fx, fy + 8),
+        Offset(fx + s, fy),
+        Paint()
+          ..color = const Color(0xFF2E5E1E)
+          ..strokeWidth = 1.4
+          ..strokeCap = StrokeCap.round,
+      );
+      final petal = Paint()..color = const Color(0xFFD32F2F);
+      canvas.drawCircle(Offset(fx - r * 0.7 + s, fy - r * 0.5), r, petal);
+      canvas.drawCircle(Offset(fx + r * 0.9 + s, fy - r * 0.5), r * 0.9, petal);
+      canvas.drawCircle(Offset(fx + s, fy - r * 1.2), r * 0.9, petal);
       canvas.drawCircle(
-        Offset(fx, fy),
-        1.2,
-        Paint()..color = const Color(0xFFFFD54F),
+        Offset(fx + s, fy),
+        r * 1.05,
+        Paint()..color = const Color(0xFFE53935),
+      );
+      canvas.drawCircle(
+        Offset(fx + s, fy - r * 0.3),
+        r * 0.35,
+        Paint()..color = const Color(0xFF311B1B),
       );
     }
 
-    // --- Leaves drifting on the breeze ---
-    if (!rainy) {
-      for (var i = 0; i < 6; i++) {
-        final prog = ((t * 0.05 + i * 0.17) % 1.0);
+    // --- Things drifting on the breeze: leaves + a few flying pages ---
+    if (!isSnow) {
+      for (var i = 0; i < 8; i++) {
+        final prog = (t * 0.05 + i * 0.13) % 1.0;
         final fx =
-            w * (0.12 + 0.76 * ((i * 0.37) % 1.0)) +
-            math.sin(t * 0.8 + i) * 22 * (0.4 + prog);
-        final fy = -12 + prog * (h + 24);
-        final fa = t * 1.4 + i;
-        final path = Path();
-        _addLeaf(path, Offset(fx, fy), fa, 9);
-        canvas.drawPath(
-          path,
-          Paint()
-            ..color =
-                (i.isEven ? const Color(0xFF9CCC65) : const Color(0xFFFFB74D))
-                    .withValues(alpha: 0.85),
-        );
+            w * (0.1 + 0.8 * ((i * 0.41) % 1.0)) +
+            math.sin(t * 0.8 + i) * 26 * (0.4 + prog);
+        final fy = -14 + prog * (h + 28);
+        final fa = t * 1.3 + i;
+        if (i % 3 == 0) {
+          canvas.save();
+          canvas.translate(fx, fy);
+          canvas.rotate(fa * 0.5);
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromCenter(center: Offset.zero, width: 9, height: 12),
+              const Radius.circular(1.5),
+            ),
+            Paint()..color = const Color(0xFFF3ECD9).withValues(alpha: 0.9),
+          );
+          canvas.restore();
+        } else {
+          final path = Path();
+          _addLeaf(path, Offset(fx, fy), fa, 9);
+          canvas.drawPath(
+            path,
+            Paint()
+              ..color =
+                  (i.isEven ? const Color(0xFF7CB342) : const Color(0xFFC98A3A))
+                      .withValues(alpha: 0.85),
+          );
+        }
       }
     }
 
-    // --- Fireflies (night) ---
-    if (!isDay) {
+    // --- Fireflies (clear nights) ---
+    if (!isDay && overcast < 0.6) {
       final tr = forest.trees.isNotEmpty ? forest.trees.first : null;
       final cxT = tr?.trunkTop.dx ?? w / 2;
       final cyT = tr?.trunkTop.dy ?? h * 0.4;
@@ -3979,28 +4134,57 @@ class _ScenePainter extends CustomPainter {
       }
     }
 
-    // --- Rain (occasional days) ---
-    if (rainy) {
+    // --- Rain ---
+    if (isRain) {
       canvas.drawRect(
         Rect.fromLTWH(0, 0, w, h),
-        Paint()..color = const Color(0xFF5B6B7A).withValues(alpha: 0.12),
+        Paint()..color = const Color(0xFF5B6B7A).withValues(alpha: 0.14),
       );
       final rainPaint = Paint()
         ..color = const Color(0xFFB3E5FC).withValues(alpha: 0.5)
         ..strokeWidth = 1.2
         ..strokeCap = StrokeCap.round;
-      for (var i = 0; i < 60; i++) {
+      final drops = wx?.condition == WeatherCondition.storm ? 90 : 60;
+      for (var i = 0; i < drops; i++) {
         final rx = (i * 53 % 100) / 100 * w + math.sin(t + i) * 2;
-        final speed = 220 + (i % 5) * 40;
+        final speed = 240 + (i % 5) * 50;
         final ry = ((t * speed + i * 37) % (h + 40)) - 20;
-        canvas.drawLine(Offset(rx, ry), Offset(rx - 3, ry + 11), rainPaint);
+        canvas.drawLine(Offset(rx, ry), Offset(rx - 3, ry + 12), rainPaint);
       }
+    }
+
+    // --- Snow ---
+    if (isSnow) {
+      final snow = Paint()..color = Colors.white.withValues(alpha: 0.85);
+      for (var i = 0; i < 70; i++) {
+        final sx = (i * 53 % 100) / 100 * w + math.sin(t * 0.6 + i) * 10;
+        final sy = ((t * 40 + i * 29) % (h + 20)) - 10;
+        canvas.drawCircle(Offset(sx, sy), 1.2 + (i % 3) * 0.6, snow);
+      }
+    }
+
+    // --- Fog veil ---
+    if (isFog) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, w, h),
+        Paint()..color = Colors.white.withValues(alpha: 0.10),
+      );
+      canvas.drawRect(
+        Rect.fromLTWH(0, horizonY - 30, w, 90),
+        Paint()..color = Colors.white.withValues(alpha: 0.14),
+      );
     }
   }
 
   // Draws one tree with wind sway; returns the swayed pos/angle of its freshest
   // leaf so the caller can glow it on top.
-  (Offset, double)? _paintTree(Canvas canvas, _TreeVisual tr, double t) {
+  (Offset, double)? _paintTree(
+    Canvas canvas,
+    _TreeVisual tr,
+    double t,
+    double rim,
+    Color rimColor,
+  ) {
     final trunkH = tr.base.dy - tr.trunkTop.dy;
     Offset sway(Offset p) {
       final hf = ((tr.base.dy - p.dy) / (trunkH <= 0 ? 1 : trunkH)).clamp(
@@ -4013,17 +4197,15 @@ class _ScenePainter extends CustomPainter {
       return Offset(p.dx + dx, p.dy);
     }
 
-    // Ground shadow.
     canvas.drawOval(
       Rect.fromCenter(
         center: Offset(tr.base.dx, tr.base.dy + 4),
         width: 120 * tr.scale * grow,
         height: 18 * tr.scale * grow,
       ),
-      Paint()..color = Colors.black.withValues(alpha: 0.10),
+      Paint()..color = Colors.black.withValues(alpha: 0.12),
     );
 
-    // Trunk (cylinder gradient), swaying at the top.
     final top = sway(tr.trunkTop);
     final tw = tr.trunkWidth * grow;
     final ttw = tw * 0.35;
@@ -4043,15 +4225,20 @@ class _ScenePainter extends CustomPainter {
         tr.base.dy,
       )
       ..close();
+    // A backlit trunk is darker with a warm rim on the lit edge.
     canvas.drawPath(
       trunkPath,
       Paint()
         ..shader =
-            const LinearGradient(
+            LinearGradient(
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
-              colors: [Color(0xFF9C7A6B), Color(0xFF6D4C41), Color(0xFF4E342E)],
-              stops: [0.0, 0.5, 1.0],
+              colors: [
+                Color.lerp(const Color(0xFF5D4433), rimColor, rim * 0.5)!,
+                const Color(0xFF4A342A),
+                const Color(0xFF3B2A22),
+              ],
+              stops: const [0.0, 0.5, 1.0],
             ).createShader(
               Rect.fromLTRB(
                 tr.base.dx - tw,
@@ -4062,13 +4249,12 @@ class _ScenePainter extends CustomPainter {
             ),
     );
 
-    // Branches: dark base + lighter centre → round, 3D limbs.
     final branchDark = Paint()
-      ..color = const Color(0xFF4E342E)
+      ..color = const Color(0xFF3B2A22)
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     final branchLight = Paint()
-      ..color = const Color(0xFF8D6E63)
+      ..color = Color.lerp(const Color(0xFF6D4C41), rimColor, rim * 0.6)!
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     for (final seg in tr.wood) {
@@ -4080,24 +4266,21 @@ class _ScenePainter extends CustomPainter {
         ..quadraticBezierTo(ctrl.dx, ctrl.dy, b.dx, b.dy);
       branchDark.strokeWidth = (seg.width * grow).clamp(0.6, 40);
       canvas.drawPath(path, branchDark);
-      branchLight.strokeWidth = (seg.width * grow * 0.45).clamp(0.3, 20);
+      branchLight.strokeWidth = (seg.width * grow * 0.4).clamp(0.3, 20);
       canvas.drawPath(path, branchLight);
     }
 
-    // Backing canopy masses (dark base + lit top-left) for full limbs.
     for (final c in tr.clumps) {
       final cc = sway(c);
       final r = 22 * tr.scale * grow;
-      canvas.drawCircle(cc, r, Paint()..color = const Color(0xFF2E7D32));
+      canvas.drawCircle(cc, r, Paint()..color = const Color(0xFF1B5E20));
       canvas.drawCircle(
         cc.translate(-r * 0.28, -r * 0.32),
         r * 0.6,
-        Paint()..color = const Color(0xFF66BB6A).withValues(alpha: 0.85),
+        Paint()..color = const Color(0xFF2E7D32).withValues(alpha: 0.85),
       );
     }
 
-    // Leaves, batched into one path per shade + a light highlight pass. Each
-    // leaf flutters in the wind around its rest angle.
     final leafLen = 13 * tr.scale * grow;
     final shadePaths = [Path(), Path(), Path()];
     final lightPath = Path();
@@ -4109,7 +4292,6 @@ class _ScenePainter extends CustomPainter {
           math.sin(windPhase * 1.6 + leaf.pos.dx * 0.06 + leaf.pos.dy * 0.03);
       final a = leaf.angle + flut;
       _addLeaf(shadePaths[leaf.shade], p, a, leafLen);
-      // lighter inner highlight shifted toward the tip
       final hp = Offset(
         p.dx + math.sin(a) * leafLen * 0.18,
         p.dy - math.cos(a) * leafLen * 0.18,
@@ -4120,15 +4302,21 @@ class _ScenePainter extends CustomPainter {
     for (var s = 0; s < 3; s++) {
       canvas.drawPath(shadePaths[s], Paint()..color = _leafShades[s]);
     }
+    // Warm, backlit highlight on the canopy edges.
     canvas.drawPath(
       lightPath,
-      Paint()..color = const Color(0xFF9CCC65).withValues(alpha: 0.8),
+      Paint()
+        ..color = Color.lerp(
+          const Color(0xFF9CCC65),
+          rimColor,
+          rim * 0.7,
+        )!.withValues(alpha: 0.85),
     );
     return newest;
   }
 
   // Appends one leaf polygon (points up from origin, rotated by [angle]) to a
-  // shared [path] so thousands of leaves can be filled in a single draw call.
+  // shared [path] so many leaves fill in a single draw call.
   void _addLeaf(Path path, Offset pos, double angle, double len) {
     final c = math.cos(angle);
     final s = math.sin(angle);
@@ -4146,7 +4334,6 @@ class _ScenePainter extends CustomPainter {
       ..close();
   }
 
-  // A puffy cloud from overlapping circles and a flat rounded base.
   void _cloud(Canvas canvas, Offset c, double scale, Color color) {
     final p = Paint()..color = color;
     canvas.drawCircle(c, 16 * scale, p);
