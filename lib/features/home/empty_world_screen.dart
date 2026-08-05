@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -3520,16 +3521,29 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
   String? _forestKey;
   WeatherNow? _weather;
   Timer? _weatherTimer;
+  ui.FragmentShader? _skyShader;
 
   @override
   void initState() {
     super.initState();
     _loadWeather();
+    _loadShader();
     // Refresh the real weather periodically while the world is open.
     _weatherTimer = Timer.periodic(
       const Duration(minutes: 15),
       (_) => _loadWeather(),
     );
+  }
+
+  // Loads the procedural anime-sky shader; on any failure the painter falls
+  // back to the gradient sky, so the world always renders.
+  Future<void> _loadShader() async {
+    try {
+      final program = await ui.FragmentProgram.fromAsset('shaders/sky.frag');
+      if (mounted) setState(() => _skyShader = program.fragmentShader());
+    } catch (_) {
+      // keep _skyShader null → gradient fallback
+    }
   }
 
   Future<void> _loadWeather() async {
@@ -3605,6 +3619,7 @@ class _MemoryTreeViewState extends State<_MemoryTreeView>
                       windPhase: _wind.value * math.pi * 2,
                       forest: forest,
                       weather: _weather,
+                      skyShader: _skyShader,
                     ),
                   );
                 },
@@ -3788,6 +3803,7 @@ class _ScenePainter extends CustomPainter {
     required this.windPhase,
     required this.forest,
     required this.weather,
+    required this.skyShader,
   });
 
   final DateTime now;
@@ -3795,6 +3811,7 @@ class _ScenePainter extends CustomPainter {
   final double windPhase;
   final _Forest forest;
   final WeatherNow? weather;
+  final ui.FragmentShader? skyShader;
 
   // Deep, slightly desaturated greens read as a backlit canopy rather than a
   // flat cartoon; highlights are added warm on top.
@@ -3839,7 +3856,11 @@ class _ScenePainter extends CustomPainter {
     final isSnow = wx?.condition == WeatherCondition.snow;
     final isFog = wx?.condition == WeatherCondition.fog;
 
-    // --- Sky (time gradient, greyed by cloud cover) ---
+    // Sun / moon centre along a real-time arc (the sky shader needs it too).
+    final cx = w * 0.12 + (w * 0.76) * frac;
+    final cy = horizonY - elevation * (horizonY - h * 0.10);
+
+    // --- Sky colours (time gradient, greyed by cloud cover) ---
     final sky = _skyColors(hour);
     final grey = isDay ? const Color(0xFFAAB2BB) : const Color(0xFF39414B);
     var top = Color.lerp(sky.$1, grey, overcast * 0.72)!;
@@ -3852,37 +3873,63 @@ class _ScenePainter extends CustomPainter {
       top = Color.lerp(top, const Color(0xFFD7DEE6), 0.4)!;
       bot = Color.lerp(bot, const Color(0xFFEDF1F5), 0.4)!;
     }
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, w, h),
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [top, bot],
-        ).createShader(Rect.fromLTWH(0, 0, w, h)),
-    );
-
-    // --- Warm horizon bloom (backlight behind the tree) ---
     final bloomColor = Color.lerp(
       const Color(0xFFFFF4CC),
       const Color(0xFFFF9248),
       warm,
     )!;
-    final bloomAlpha =
-        (isDay ? 0.42 + 0.5 * warm : 0.14) * (1 - overcast * 0.6);
-    if (bloomAlpha > 0.02) {
+
+    final shader = skyShader;
+    if (shader != null) {
+      // Procedural anime sky (gradient + volumetric clouds + bloom + haze).
+      final cloudParam = math.max(cloudCover, overcast).clamp(0.0, 1.0);
+      shader
+        ..setFloat(0, w)
+        ..setFloat(1, h)
+        ..setFloat(2, t % 100000.0)
+        ..setFloat(3, cx)
+        ..setFloat(4, cy)
+        ..setFloat(5, isDay ? 0.0 : 1.0)
+        ..setFloat(6, overcast.clamp(0.0, 1.0))
+        ..setFloat(7, cloudParam)
+        ..setFloat(8, top.r)
+        ..setFloat(9, top.g)
+        ..setFloat(10, top.b)
+        ..setFloat(11, bot.r)
+        ..setFloat(12, bot.g)
+        ..setFloat(13, bot.b)
+        ..setFloat(14, bloomColor.r)
+        ..setFloat(15, bloomColor.g)
+        ..setFloat(16, bloomColor.b)
+        ..setFloat(17, horizonY);
+      canvas.drawRect(Rect.fromLTWH(0, 0, w, h), Paint()..shader = shader);
+    } else {
+      // Fallback: plain gradient sky + a warm horizon bloom.
       canvas.drawRect(
         Rect.fromLTWH(0, 0, w, h),
         Paint()
-          ..shader = RadialGradient(
-            center: Alignment(0, (horizonY / h) * 2 - 1),
-            radius: 0.95,
-            colors: [
-              bloomColor.withValues(alpha: bloomAlpha),
-              bloomColor.withValues(alpha: 0),
-            ],
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [top, bot],
           ).createShader(Rect.fromLTWH(0, 0, w, h)),
       );
+      final bloomAlpha =
+          (isDay ? 0.42 + 0.5 * warm : 0.14) * (1 - overcast * 0.6);
+      if (bloomAlpha > 0.02) {
+        canvas.drawRect(
+          Rect.fromLTWH(0, 0, w, h),
+          Paint()
+            ..shader = RadialGradient(
+              center: Alignment(0, (horizonY / h) * 2 - 1),
+              radius: 0.95,
+              colors: [
+                bloomColor.withValues(alpha: bloomAlpha),
+                bloomColor.withValues(alpha: 0),
+              ],
+            ).createShader(Rect.fromLTWH(0, 0, w, h)),
+        );
+      }
     }
 
     // --- Stars (night, hidden by cloud) ---
@@ -3901,9 +3948,7 @@ class _ScenePainter extends CustomPainter {
       }
     }
 
-    // --- Sun / Moon along a real-time arc ---
-    final cx = w * 0.12 + (w * 0.76) * frac;
-    final cy = horizonY - elevation * (horizonY - h * 0.10);
+    // --- Sun / Moon disk (drawn over the sky) ---
     if (isDay) {
       if (dayLight > 0.18 && overcast < 0.4) {
         canvas.save();
@@ -3975,29 +4020,31 @@ class _ScenePainter extends CustomPainter {
       canvas.drawCircle(Offset(cx + 2, cy - 6), 2, crater);
     }
 
-    // --- Clouds (count & greyness scale with real cloud cover) ---
-    final cloudN = overcast > 0.55 ? 7 : (2 + (cloudCover * 4).round());
-    final cloudTint = overcast > 0.5
-        ? Color.lerp(
-            const Color(0xFFC9D0D8),
-            const Color(0xFF8A93A0),
-            overcast,
-          )!
-        : (isDay ? Colors.white : const Color(0xFFB9C4E0));
-    final cloudBase = (isDay ? 0.9 : 0.3) * (0.5 + 0.5 * (overcast + 0.4));
-    for (var i = 0; i < cloudN; i++) {
-      final speed = 5.0 + i * 2.4;
-      final span = w + 160;
-      final x = ((t * (speed / 6) + i * 74) % span) - 80;
-      final y = h * (0.08 + (i % 4) * 0.09);
-      _cloud(
-        canvas,
-        Offset(x, y),
-        (overcast > 0.55 ? 1.3 : 1.0) - (i % 4) * 0.14,
-        cloudTint.withValues(
-          alpha: (cloudBase * (0.9 - (i % 4) * 0.12)).clamp(0.0, 1.0),
-        ),
-      );
+    // --- Clouds (fallback only; the shader draws its own volumetric clouds) ---
+    if (skyShader == null) {
+      final cloudN = overcast > 0.55 ? 7 : (2 + (cloudCover * 4).round());
+      final cloudTint = overcast > 0.5
+          ? Color.lerp(
+              const Color(0xFFC9D0D8),
+              const Color(0xFF8A93A0),
+              overcast,
+            )!
+          : (isDay ? Colors.white : const Color(0xFFB9C4E0));
+      final cloudBase = (isDay ? 0.9 : 0.3) * (0.5 + 0.5 * (overcast + 0.4));
+      for (var i = 0; i < cloudN; i++) {
+        final speed = 5.0 + i * 2.4;
+        final span = w + 160;
+        final x = ((t * (speed / 6) + i * 74) % span) - 80;
+        final y = h * (0.08 + (i % 4) * 0.09);
+        _cloud(
+          canvas,
+          Offset(x, y),
+          (overcast > 0.55 ? 1.3 : 1.0) - (i % 4) * 0.14,
+          cloudTint.withValues(
+            alpha: (cloudBase * (0.9 - (i % 4) * 0.12)).clamp(0.0, 1.0),
+          ),
+        );
+      }
     }
 
     // --- Birds (clear days only) ---
@@ -4021,22 +4068,24 @@ class _ScenePainter extends CustomPainter {
       }
     }
 
-    // --- Atmospheric haze at the horizon (depth) ---
-    canvas.drawRect(
-      Rect.fromLTWH(0, horizonY - h * 0.10, w, h * 0.20),
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            bloomColor.withValues(alpha: 0),
-            bloomColor.withValues(
-              alpha: (0.16 + overcast * 0.12) * (isDay ? 1 : 0.4),
-            ),
-            bloomColor.withValues(alpha: 0),
-          ],
-        ).createShader(Rect.fromLTWH(0, horizonY - h * 0.10, w, h * 0.20)),
-    );
+    // --- Atmospheric haze at the horizon (fallback only) ---
+    if (skyShader == null) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, horizonY - h * 0.10, w, h * 0.20),
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              bloomColor.withValues(alpha: 0),
+              bloomColor.withValues(
+                alpha: (0.16 + overcast * 0.12) * (isDay ? 1 : 0.4),
+              ),
+              bloomColor.withValues(alpha: 0),
+            ],
+          ).createShader(Rect.fromLTWH(0, horizonY - h * 0.10, w, h * 0.20)),
+      );
+    }
 
     // --- Layered hills for depth ---
     Color hill(Color c) => Color.lerp(c, grey, overcast * 0.35)!;
