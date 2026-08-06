@@ -3846,16 +3846,16 @@ _Forest _buildForest(Size size, int memories) {
     double trunkH;
     double scale;
     if (isGrowing) {
-      base = Offset(w * 0.5, h * 0.985);
-      trunkH = h * 0.30;
+      base = Offset(w * 0.5, h * 0.86);
+      trunkH = h * 0.24;
       scale = 1.0;
     } else {
       final c = ti;
       final n = growingIndex;
       final f = n <= 1 ? 0.5 : c / (n - 1);
-      base = Offset(w * (0.16 + f * 0.68), h * 0.72);
-      trunkH = h * 0.15;
-      scale = 0.42;
+      base = Offset(w * (0.16 + f * 0.68), h * 0.64);
+      trunkH = h * 0.12;
+      scale = 0.4;
     }
     trees.add(
       _makeTree(
@@ -3893,11 +3893,12 @@ _TreeVisual _makeTree({
   }
 
   final trunkTop = Offset(base.dx, base.dy - trunkH);
-  final trunkWidth = (big ? 24.0 : 11.0) * scale;
-  final leafLen = (big ? 12.0 : 8.0) * scale;
+  final trunkWidth = (big ? 22.0 : 10.0) * scale;
+  final leafLen = (big ? 15.0 : 10.0) * scale;
   final tree = _TreeVisual(base, trunkTop, trunkWidth, scale, leafLen);
 
-  final tips = <Offset>[];
+  // Each branch end is a slot where a memory leaf can grow.
+  final slots = <(Offset, double)>[];
   void grow(Offset from, double angle, double length, double width, int depth) {
     final dir = Offset(math.sin(angle), -math.cos(angle));
     final perp = Offset(dir.dy, -dir.dx);
@@ -3906,7 +3907,7 @@ _TreeVisual _makeTree({
     final ctrl = from + dir * (length * 0.5) + perp * (length * curve);
     tree.wood.add(_Seg(from, ctrl, to, width));
     if (depth == 0) {
-      tips.add(to);
+      slots.add((to, angle));
       return;
     }
     final spread = 0.34 + rnd() * 0.16;
@@ -3924,7 +3925,7 @@ _TreeVisual _makeTree({
       width * 0.7,
       depth - 1,
     );
-    if (depth >= 2 && rnd() > 0.35) {
+    if (depth >= 2 && rnd() > 0.4) {
       grow(
         to,
         angle + (rnd() - 0.5) * 0.4,
@@ -3936,87 +3937,30 @@ _TreeVisual _makeTree({
   }
 
   final mains = big ? 4 : 3;
-  final depth = big ? 4 : 3;
+  final depth = big ? 3 : 2;
   for (var i = 0; i < mains; i++) {
     final f = mains == 1 ? 0.5 : i / (mains - 1);
     final a0 = (f - 0.5) * 1.5 + (rnd() - 0.5) * 0.25;
-    grow(trunkTop, a0, trunkH * (0.62 + rnd() * 0.22), trunkWidth * 0.8, depth);
+    grow(trunkTop, a0, trunkH * (0.60 + rnd() * 0.22), trunkWidth * 0.8, depth);
   }
 
-  if (tips.isEmpty) return tree;
+  if (slots.isEmpty) return tree;
 
-  // Crown metrics.
-  var sx = 0.0, sy = 0.0, maxY = -1e9;
-  for (final t in tips) {
-    sx += t.dx;
-    sy += t.dy;
-    if (t.dy > maxY) maxY = t.dy;
-  }
-  final cc = Offset(sx / tips.length, sy / tips.length);
-  var crownR = 0.0;
-  for (final t in tips) {
-    final d = (t - cc).distance;
-    if (d > crownR) crownR = d;
-  }
-  crownR += leafLen * 2;
-  // Anything below the lowest bough end would just hang over the grass.
-  final cullY = maxY + leafLen * 1.4;
-
-  // Directional light: top-left of the crown is brightest (backlit).
-  int shadeFor(Offset p) {
-    final l = ((cc.dy - p.dy) + (cc.dx - p.dx) * 0.5) / crownR;
-    return (((l + 1) / 2) * 4).floor().clamp(0, 3);
-  }
-
-  // Soft base masses (blurred by the painter) so the crown reads as a
-  // continuous volume rather than a cloud of hard circles.
-  final stride = (tips.length / 22).ceil().clamp(1, 999);
-  for (var i = 0; i < tips.length; i += stride) {
-    tree.masses.add(
-      _Blob(tips[i], (big ? 30.0 : 18.0) * scale * (0.8 + rnd() * 0.4)),
-    );
-  }
-  for (var i = 0; i < (big ? 8 : 4); i++) {
-    final ang = rnd() * math.pi * 2;
-    final rr = math.sqrt(rnd()) * crownR * 0.6;
-    final p = cc + Offset(math.cos(ang) * rr, math.sin(ang) * rr * 0.8);
-    if (p.dy <= cullY) {
-      tree.masses.add(_Blob(p, (big ? 34.0 : 20.0) * scale));
-    }
-  }
-
-  // Dense leaves clustered around each bough end — tied to the branches, so
-  // nothing floats free, and directionally shaded for depth.
-  final per = big ? 8 : 5;
-  for (final tip in tips) {
-    for (var k = 0; k < per; k++) {
-      final p =
-          tip +
-          Offset(
-            (rnd() - 0.5) * leafLen * 2.6,
-            (rnd() - 0.5) * leafLen * 2.6 - leafLen * 0.4,
-          );
-      if (p.dy > cullY) continue;
-      final v = p - cc;
-      final outward = math.atan2(v.dx, -v.dy) + (rnd() - 0.5) * 0.9;
-      tree.foliage.add(_LeafInst(p, outward, shadeFor(p), -1));
-    }
-  }
-
-  // Memory leaves spread evenly across the bough ends, on the canopy surface.
+  // Only the memory leaves — one clear, tappable leaf per memory, spread evenly
+  // across the branch ends.
   final show = memCount.clamp(0, _kMaxMemoryLeaves);
   for (var i = 0; i < show; i++) {
-    final tip = tips[(i * tips.length ~/ math.max(1, show)) % tips.length];
-    final v = tip - cc;
-    final vlen = v.distance == 0 ? 1.0 : v.distance;
-    final out = v / vlen;
-    final p =
-        tip +
-        out * (leafLen * 0.7) +
-        Offset((rnd() - 0.5) * leafLen, (rnd() - 0.5) * leafLen);
-    final w = p - cc;
-    final outward = math.atan2(w.dx, -w.dy);
-    tree.memories.add(_LeafInst(p, outward, i % 3, memStart + i));
+    final idx = show <= slots.length
+        ? (i * slots.length ~/ math.max(1, show))
+        : (i % slots.length);
+    final slot = slots[idx.clamp(0, slots.length - 1)];
+    final sp = slot.$1;
+    final sa = slot.$2;
+    final dir = Offset(math.sin(sa), -math.cos(sa));
+    final spreadOut = show > slots.length ? leafLen * 2.2 : leafLen * 0.8;
+    final jitter = Offset((rnd() - 0.5) * spreadOut, (rnd() - 0.5) * spreadOut);
+    final pos = sp + dir * (leafLen * 0.5) + jitter;
+    tree.memories.add(_LeafInst(pos, sa, i % 3, memStart + i));
   }
 
   return tree;
@@ -4729,38 +4673,45 @@ class _ScenePainter extends CustomPainter {
         )!.withValues(alpha: 0.9),
     );
 
-    // Memory leaves — bright lime leaves on the surface, each marked by a small
-    // gently-pulsing light so it clearly reads as tappable, without being noisy.
-    const memShades = [Color(0xFF9CCC65), Color(0xFFAED581), Color(0xFFC5E1A5)];
-    final memLen = leafLen * 1.3;
+    // Memory leaves — the only leaves on the tree. Each is a clear, detailed
+    // leaf (fill + outline + light vein) wrapped in a soft, gently-pulsing aura
+    // so it plainly reads as tappable while staying calm and pretty.
+    const memShades = [Color(0xFF2E7D32), Color(0xFF43A047), Color(0xFF66BB6A)];
+    final memLen = leafLen * 1.6;
     final pulse = 0.5 + 0.5 * math.sin(windPhase + tr.base.dx * 0.01);
+    final aura = Paint()
+      ..color = const Color(0xFFFFF3B0).withValues(alpha: 0.10 + 0.12 * pulse);
     final memPaths = [Path(), Path(), Path()];
-    final dots = <Offset>[];
+    final memHi = Path();
     (Offset, double)? newest;
     for (final m in tr.memories) {
       final p = sway(m.pos);
       final a = m.angle + flutter(m.pos);
-      _addLeaf(memPaths[m.shade], p, a, memLen);
-      // marker sits near the leaf tip
-      dots.add(
-        Offset(
-          p.dx + math.sin(a) * memLen * 0.5,
-          p.dy - math.cos(a) * memLen * 0.5,
-        ),
+      final centre = Offset(
+        p.dx + math.sin(a) * memLen * 0.45,
+        p.dy - math.cos(a) * memLen * 0.45,
       );
+      canvas.drawCircle(centre, memLen * 0.72 * (0.92 + 0.12 * pulse), aura);
+      _addLeaf(memPaths[m.shade], p, a, memLen);
+      final hp = Offset(
+        p.dx + math.sin(a) * memLen * 0.14,
+        p.dy - math.cos(a) * memLen * 0.14,
+      );
+      _addLeaf(memHi, hp, a, memLen * 0.5);
       if (m.memoryIndex == forest.newestIndex) newest = (p, a);
     }
+    final outline = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1 * tr.scale + 0.4
+      ..color = const Color(0xFF1B5E20);
     for (var s = 0; s < 3; s++) {
       canvas.drawPath(memPaths[s], Paint()..color = memShades[s]);
+      canvas.drawPath(memPaths[s], outline);
     }
-    final glow = Paint()
-      ..color = const Color(0xFFFFF59D).withValues(alpha: 0.20 + 0.18 * pulse);
-    final core = Paint()
-      ..color = Colors.white.withValues(alpha: 0.7 + 0.25 * pulse);
-    for (final d in dots) {
-      canvas.drawCircle(d, (memLen * 0.42) * (0.9 + 0.2 * pulse), glow);
-      canvas.drawCircle(d, 1.8 * tr.scale + 0.6, core);
-    }
+    canvas.drawPath(
+      memHi,
+      Paint()..color = const Color(0xFFC5E1A5).withValues(alpha: 0.85),
+    );
     return newest;
   }
 
