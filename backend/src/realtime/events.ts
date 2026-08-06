@@ -35,6 +35,8 @@ export type RealtimeEventType =
   | 'watch.room.invited'
   | 'watch.room.joined'
   | 'watch.playback.updated'
+  | 'room.reaction'
+  | 'room.comment'
   | 'notification.created';
 
 export type RealtimeEvent<TPayload extends Record<string, unknown> = Record<string, unknown>> = {

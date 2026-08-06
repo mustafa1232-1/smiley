@@ -155,6 +155,8 @@ abstract interface class SpaceRepository {
     String? sourceUrl,
     String? title,
   });
+  Future<void> sendRoomReaction(String room, String emoji);
+  Future<void> sendRoomComment(String room, String text);
   Future<TreeDayModel> todayTree();
   Future<List<TreeLeafItem>> allTreeLeaves();
   Future<void> createTreeLeaf({String? title, required String body});
@@ -797,6 +799,16 @@ class HttpSpaceRepository implements SpaceRepository {
     if (title != null) body['title'] = title;
     final json = await _api.postJson('/watch-room/playback', body);
     return RoomModel.fromWatchJson(json['room'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> sendRoomReaction(String room, String emoji) async {
+    await _api.postJson('/rooms/reaction', {'room': room, 'emoji': emoji});
+  }
+
+  @override
+  Future<void> sendRoomComment(String room, String text) async {
+    await _api.postJson('/rooms/comment', {'room': room, 'text': text.trim()});
   }
 
   @override

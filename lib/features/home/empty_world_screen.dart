@@ -8494,6 +8494,161 @@ class _AlbumsScreenState extends State<_AlbumsScreen> {
   }
 }
 
+class _RoomReaction {
+  const _RoomReaction(this.id, this.emoji, this.x);
+  final int id;
+  final String emoji;
+  final double x; // 0..1 horizontal start
+}
+
+class _RoomComment {
+  const _RoomComment(this.id, this.text);
+  final int id;
+  final String text;
+}
+
+// A single emoji floating up and fading — the watch-together reaction effect.
+class _FloatingReaction extends StatefulWidget {
+  const _FloatingReaction({
+    required this.emoji,
+    required this.x,
+    required this.onDone,
+  });
+
+  final String emoji;
+  final double x;
+  final VoidCallback onDone;
+
+  @override
+  State<_FloatingReaction> createState() => _FloatingReactionState();
+}
+
+class _FloatingReactionState extends State<_FloatingReaction>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2600),
+  )..forward();
+
+  @override
+  void initState() {
+    super.initState();
+    _c.addStatusListener((s) {
+      if (s == AnimationStatus.completed) {
+        widget.onDone();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        final t = _c.value;
+        final ax = ((widget.x * 2 - 1) + math.sin(t * 6) * 0.05).clamp(
+          -1.0,
+          1.0,
+        );
+        final ay = (0.7 - 1.5 * t).clamp(-1.0, 1.0);
+        final opacity = (t < 0.8 ? 1.0 : (1 - (t - 0.8) / 0.2)).clamp(0.0, 1.0);
+        final scale =
+            0.6 + 0.6 * Curves.easeOut.transform((t * 3).clamp(0.0, 1.0));
+        return Align(
+          alignment: Alignment(ax, ay),
+          child: Opacity(
+            opacity: opacity,
+            child: Transform.scale(
+              scale: scale,
+              child: Text(
+                widget.emoji,
+                style: const TextStyle(
+                  fontSize: 32,
+                  shadows: [Shadow(color: Colors.black38, blurRadius: 6)],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// A short comment that rises and fades — live "chat" over the shared room.
+class _FloatingComment extends StatefulWidget {
+  const _FloatingComment({required this.text, required this.onDone});
+
+  final String text;
+  final VoidCallback onDone;
+
+  @override
+  State<_FloatingComment> createState() => _FloatingCommentState();
+}
+
+class _FloatingCommentState extends State<_FloatingComment>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 4200),
+  )..forward();
+
+  @override
+  void initState() {
+    super.initState();
+    _c.addStatusListener((s) {
+      if (s == AnimationStatus.completed) {
+        widget.onDone();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        final t = _c.value;
+        final ay = (0.5 - 1.1 * t).clamp(-1.0, 1.0);
+        final opacity =
+            (t < 0.15 ? t / 0.15 : (t > 0.8 ? (1 - (t - 0.8) / 0.2) : 1.0))
+                .clamp(0.0, 1.0);
+        return Align(
+          alignment: Alignment(-0.9, ay),
+          child: Opacity(
+            opacity: opacity,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              constraints: const BoxConstraints(maxWidth: 240),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Text(
+                widget.text,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _RoomScreen extends StatefulWidget {
   const _RoomScreen.music({required this.repository, this.events})
     : title = 'الموسيقى',
@@ -8596,8 +8751,10 @@ class _RoomScreenState extends State<_RoomScreen> {
   late Future<RoomModel> _future = widget.load(widget.repository);
   final _title = TextEditingController();
   final _sourceUrl = TextEditingController();
+  final _comment = TextEditingController();
   bool _busy = false;
   bool _uploading = false;
+  bool _fullscreen = false;
 
   final AudioPlayer _player = AudioPlayer();
   VideoPlayerController? _video;
@@ -8606,13 +8763,63 @@ class _RoomScreenState extends State<_RoomScreen> {
   StreamSubscription<Map<String, dynamic>>? _sync;
   bool _applyingRemote = false;
 
+  final math.Random _rand = math.Random();
+  final List<_RoomReaction> _reactions = [];
+  final List<_RoomComment> _comments = [];
+  int _rxSeq = 0;
+
+  static const _emojis = ['❤️', '😍', '🔥', '😂', '👏', '😮', '🎉', '💋'];
+
+  String get _roomKind => widget.isAudio ? 'music' : 'watch';
+
   @override
   void initState() {
     super.initState();
     final events = widget.events;
     if (events != null) {
-      _sync = events.listen(_onRemotePlayback);
+      _sync = events.listen(_onEvent);
     }
+  }
+
+  // Routes realtime events: partner playback keeps us in sync, while live
+  // reactions and comments float over the room like a watch-together app.
+  void _onEvent(Map<String, dynamic> event) {
+    final type = event['type']?.toString();
+    if (type == widget.eventType) {
+      _onRemotePlayback(event);
+      return;
+    }
+    if (type == 'room.reaction' || type == 'room.comment') {
+      final payload = event['payload'];
+      if (payload is! Map) return;
+      if (payload['room']?.toString() != _roomKind) return;
+      if (type == 'room.reaction') {
+        _spawnReaction(payload['emoji']?.toString() ?? '❤️');
+      } else {
+        _spawnComment(payload['text']?.toString() ?? '');
+      }
+    }
+  }
+
+  void _spawnReaction(String emoji) {
+    if (!mounted || emoji.isEmpty) return;
+    final rx = _RoomReaction(_rxSeq++, emoji, 0.12 + _rand.nextDouble() * 0.76);
+    setState(() => _reactions.add(rx));
+  }
+
+  void _spawnComment(String text) {
+    if (!mounted || text.trim().isEmpty) return;
+    setState(() => _comments.add(_RoomComment(_rxSeq++, text.trim())));
+  }
+
+  void _sendReaction(String emoji) =>
+      widget.repository.sendRoomReaction(_roomKind, emoji);
+
+  void _sendComment() {
+    final text = _comment.text.trim();
+    if (text.isEmpty) return;
+    _comment.clear();
+    widget.repository.sendRoomComment(_roomKind, text);
   }
 
   // Applies the partner's play/pause/seek to the local player so both sides stay
@@ -8738,6 +8945,7 @@ class _RoomScreenState extends State<_RoomScreen> {
     _sync?.cancel();
     _title.dispose();
     _sourceUrl.dispose();
+    _comment.dispose();
     _player.dispose();
     _video?.dispose();
     _youtube?.dispose();
@@ -8746,127 +8954,312 @@ class _RoomScreenState extends State<_RoomScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_fullscreen) return _buildFullscreen(context);
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+      body: Stack(
         children: [
-          _SectionHeader(
-            icon: widget.icon,
-            title: widget.title,
-            subtitle: widget.isAudio
-                ? 'ارفعا أغنية أو أضيفا رابطًا، واستمعا معًا.'
-                : 'مساحة مشتركة تحفظ ما تريدان مشاهدته.',
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _title,
-            decoration: const InputDecoration(labelText: 'عنوان جديد'),
-            onSubmitted: (_) => _create(),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _sourceUrl,
-            keyboardType: TextInputType.url,
-            decoration: const InputDecoration(
-              labelText: 'رابط اختياري',
-              prefixIcon: Icon(Icons.link_rounded),
+          Positioned.fill(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 116),
+              children: [
+                _SectionHeader(
+                  icon: widget.icon,
+                  title: widget.title,
+                  subtitle: widget.isAudio
+                      ? 'ارفعا أغنية أو أضيفا رابطًا، واستمعا معًا.'
+                      : 'مساحة مشتركة تحفظ ما تريدان مشاهدته.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _title,
+                  decoration: const InputDecoration(labelText: 'عنوان جديد'),
+                  onSubmitted: (_) => _create(),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _sourceUrl,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    labelText: 'رابط اختياري',
+                    prefixIcon: Icon(Icons.link_rounded),
+                  ),
+                  onSubmitted: (_) => _create(),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _busy ? null : _create,
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('إضافة'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: (_busy || _uploading) ? null : _uploadMedia,
+                      icon: _uploading
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.upload_rounded),
+                      label: Text(widget.isAudio ? 'رفع أغنية' : 'رفع فيديو'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (widget.isAudio && _current != null)
+                  _AudioPlayerBar(
+                    player: _player,
+                    title: _current!.title,
+                    onToggle: _togglePlay,
+                    onSeek: (position) {
+                      _player.seek(position);
+                      widget.playback(
+                        widget.repository,
+                        'seek',
+                        position.inMilliseconds,
+                        _current,
+                      );
+                    },
+                  )
+                else if (!widget.isAudio &&
+                    _youtube != null &&
+                    _current != null)
+                  _withFullscreen(
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: YoutubePlayer(
+                        controller: _youtube!,
+                        showVideoProgressIndicator: true,
+                      ),
+                    ),
+                  )
+                else if (!widget.isAudio && _video != null && _current != null)
+                  _withFullscreen(
+                    _VideoPlayerBar(
+                      controller: _video!,
+                      title: _current!.title,
+                      onToggle: _toggleVideo,
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                FutureBuilder<RoomModel>(
+                  future: _future,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const LinearProgressIndicator();
+                    }
+                    final room = snapshot.requireData;
+                    final items = room.items;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (items.isEmpty)
+                          const Text('لا توجد عناصر بعد.')
+                        else
+                          for (final item in items)
+                            ListTile(
+                              leading: Icon(
+                                _current?.id == item.id
+                                    ? Icons.graphic_eq_rounded
+                                    : widget.icon,
+                                color: _current?.id == item.id
+                                    ? Theme.of(context).colorScheme.primary
+                                    : null,
+                              ),
+                              title: Text(item.title),
+                              subtitle: Text(item.sourceUrl ?? item.source),
+                              trailing: item.sourceUrl != null
+                                  ? IconButton(
+                                      icon: const Icon(
+                                        Icons.play_circle_fill_rounded,
+                                      ),
+                                      onPressed: () => _playItem(item),
+                                    )
+                                  : null,
+                              onTap: item.sourceUrl != null
+                                  ? () => _playItem(item)
+                                  : null,
+                            ),
+                      ],
+                    );
+                  },
+                ),
+              ],
             ),
-            onSubmitted: (_) => _create(),
+          ),
+          ..._overlay(),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(top: false, child: _liveBar(context)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _withFullscreen(Widget child) {
+    return Stack(
+      children: [
+        child,
+        Positioned(
+          right: 6,
+          top: 6,
+          child: Material(
+            color: Colors.black45,
+            shape: const CircleBorder(),
+            child: IconButton(
+              icon: const Icon(Icons.fullscreen_rounded, color: Colors.white),
+              onPressed: () => setState(() => _fullscreen = true),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFullscreen(BuildContext context) {
+    Widget player = const SizedBox();
+    if (_youtube != null) {
+      player = YoutubePlayer(
+        controller: _youtube!,
+        showVideoProgressIndicator: true,
+      );
+    } else if (_video != null && _video!.value.isInitialized) {
+      player = AspectRatio(
+        aspectRatio: _video!.value.aspectRatio,
+        child: VideoPlayer(_video!),
+      );
+    }
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Center(child: player),
+          ..._overlay(),
+          Positioned(
+            top: 4,
+            left: 4,
+            child: SafeArea(
+              child: IconButton(
+                icon: const Icon(
+                  Icons.fullscreen_exit_rounded,
+                  color: Colors.white,
+                ),
+                onPressed: () => setState(() => _fullscreen = false),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(top: false, child: _liveBar(context)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _overlay() {
+    return [
+      for (final rx in _reactions)
+        Positioned.fill(
+          key: ValueKey('rx${rx.id}'),
+          child: IgnorePointer(
+            child: _FloatingReaction(
+              emoji: rx.emoji,
+              x: rx.x,
+              onDone: () =>
+                  setState(() => _reactions.removeWhere((e) => e.id == rx.id)),
+            ),
+          ),
+        ),
+      for (final c in _comments)
+        Positioned.fill(
+          key: ValueKey('cm${c.id}'),
+          child: IgnorePointer(
+            child: _FloatingComment(
+              text: c.text,
+              onDone: () =>
+                  setState(() => _comments.removeWhere((e) => e.id == c.id)),
+            ),
+          ),
+        ),
+    ];
+  }
+
+  Widget _liveBar(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [Color(0xCC000000), Color(0x00000000)],
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final e in _emojis)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: GestureDetector(
+                      onTap: () => _sendReaction(e),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(
+                          color: Colors.white24,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(e, style: const TextStyle(fontSize: 20)),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : _create,
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text('إضافة'),
+                child: TextField(
+                  controller: _comment,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _sendComment(),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'علّقا معًا…',
+                    hintStyle: const TextStyle(color: Colors.white54),
+                    filled: true,
+                    fillColor: Colors.white24,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: (_busy || _uploading) ? null : _uploadMedia,
-                icon: _uploading
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.upload_rounded),
-                label: Text(widget.isAudio ? 'رفع أغنية' : 'رفع فيديو'),
+              IconButton(
+                onPressed: _sendComment,
+                icon: const Icon(Icons.send_rounded, color: Colors.white),
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-          if (widget.isAudio && _current != null)
-            _AudioPlayerBar(
-              player: _player,
-              title: _current!.title,
-              onToggle: _togglePlay,
-              onSeek: (position) {
-                _player.seek(position);
-                widget.playback(
-                  widget.repository,
-                  'seek',
-                  position.inMilliseconds,
-                  _current,
-                );
-              },
-            )
-          else if (!widget.isAudio && _youtube != null && _current != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: YoutubePlayer(
-                controller: _youtube!,
-                showVideoProgressIndicator: true,
-              ),
-            )
-          else if (!widget.isAudio && _video != null && _current != null)
-            _VideoPlayerBar(
-              controller: _video!,
-              title: _current!.title,
-              onToggle: _toggleVideo,
-            ),
-          const SizedBox(height: 12),
-          FutureBuilder<RoomModel>(
-            future: _future,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const LinearProgressIndicator();
-              final room = snapshot.requireData;
-              final items = room.items;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (items.isEmpty)
-                    const Text('لا توجد عناصر بعد.')
-                  else
-                    for (final item in items)
-                      ListTile(
-                        leading: Icon(
-                          _current?.id == item.id
-                              ? Icons.graphic_eq_rounded
-                              : widget.icon,
-                          color: _current?.id == item.id
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
-                        ),
-                        title: Text(item.title),
-                        subtitle: Text(item.sourceUrl ?? item.source),
-                        trailing: item.sourceUrl != null
-                            ? IconButton(
-                                icon: const Icon(
-                                  Icons.play_circle_fill_rounded,
-                                ),
-                                onPressed: () => _playItem(item),
-                              )
-                            : null,
-                        onTap: item.sourceUrl != null
-                            ? () => _playItem(item)
-                            : null,
-                      ),
-                ],
-              );
-            },
           ),
         ],
       ),

@@ -836,6 +836,12 @@ class FakeSpaceRepository implements SpaceRepository {
   }
 
   @override
+  Future<void> sendRoomReaction(String room, String emoji) async {}
+
+  @override
+  Future<void> sendRoomComment(String room, String text) async {}
+
+  @override
   Future<List<TreeLeafItem>> allTreeLeaves() async => const [];
 
   @override

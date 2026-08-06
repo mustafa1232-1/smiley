@@ -2135,6 +2135,43 @@ spaceRouter.post('/watch-room/playback', requireAuth, async (request, response) 
   response.json({ room: updated });
 });
 
+// Ephemeral live reactions & comments for the shared music / watch rooms (like
+// floating emojis in a watch-together app). Broadcast to the partner only; not
+// persisted.
+const roomReactionSchema = z.object({
+  room: z.enum(['music', 'watch']),
+  emoji: z.string().trim().min(1).max(16)
+});
+
+spaceRouter.post('/rooms/reaction', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = roomReactionSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  emitToPartnership('room.reaction', userId, partnership.id, {
+    room: input.room,
+    emoji: input.emoji,
+    actorId: userId
+  });
+  response.status(202).json({ ok: true });
+});
+
+const roomCommentSchema = z.object({
+  room: z.enum(['music', 'watch']),
+  text: z.string().trim().min(1).max(200)
+});
+
+spaceRouter.post('/rooms/comment', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = roomCommentSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  emitToPartnership('room.comment', userId, partnership.id, {
+    room: input.room,
+    text: input.text,
+    actorId: userId
+  });
+  response.status(202).json({ ok: true });
+});
+
 spaceRouter.get('/tree/today', requireAuth, async (request, response) => {
   const partnership = await requireActivePartnership(request.user!.sub);
   const date = startOfUtcDay(new Date());
