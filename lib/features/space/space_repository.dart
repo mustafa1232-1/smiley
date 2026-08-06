@@ -157,6 +157,12 @@ abstract interface class SpaceRepository {
   });
   Future<void> sendRoomReaction(String room, String emoji);
   Future<void> sendRoomComment(String room, String text);
+  Future<void> updatePresence({
+    required String status,
+    String? label,
+    String? room,
+    String? avatar,
+  });
   Future<TreeDayModel> todayTree();
   Future<List<TreeLeafItem>> allTreeLeaves();
   Future<void> createTreeLeaf({String? title, required String body});
@@ -809,6 +815,21 @@ class HttpSpaceRepository implements SpaceRepository {
   @override
   Future<void> sendRoomComment(String room, String text) async {
     await _api.postJson('/rooms/comment', {'room': room, 'text': text.trim()});
+  }
+
+  @override
+  Future<void> updatePresence({
+    required String status,
+    String? label,
+    String? room,
+    String? avatar,
+  }) async {
+    await _api.postJson('/presence', {
+      'status': status,
+      'label': ?label,
+      'room': ?room,
+      'avatar': ?avatar,
+    });
   }
 
   @override

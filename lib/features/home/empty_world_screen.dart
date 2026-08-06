@@ -49,6 +49,8 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
   int _index = 0;
   late Future<_WorldState> _state = _load();
   StreamSubscription<Map<String, dynamic>>? _realtimeSubscription;
+  _PartnerPresence? _partnerPresence;
+  Timer? _presenceExpiry;
 
   @override
   void initState() {
@@ -59,6 +61,8 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
       if (type == 'notification.created') {
         _showIncomingNotification(event);
         _reload();
+      } else if (type == 'presence.updated') {
+        _handlePresence(event);
       } else if (type.startsWith('partnership.')) {
         _reload();
       }
@@ -68,7 +72,48 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
   @override
   void dispose() {
     _realtimeSubscription?.cancel();
+    _presenceExpiry?.cancel();
     super.dispose();
+  }
+
+  // Shows/updates a banner telling where the partner is (with their avatar), and
+  // auto-hides it if no fresh update arrives.
+  void _handlePresence(Map<String, dynamic> event) {
+    if (!mounted) return;
+    final payload = event['payload'];
+    if (payload is! Map) return;
+    final status = payload['status']?.toString() ?? 'idle';
+    if (status == 'idle') {
+      _presenceExpiry?.cancel();
+      setState(() => _partnerPresence = null);
+      return;
+    }
+    final presence = _PartnerPresence(
+      status: status,
+      label: payload['label']?.toString() ?? 'شريكك متصل',
+      room: payload['room']?.toString(),
+      avatar: Avatar.decode(payload['avatar']?.toString()),
+    );
+    _presenceExpiry?.cancel();
+    _presenceExpiry = Timer(const Duration(seconds: 50), () {
+      if (mounted) setState(() => _partnerPresence = null);
+    });
+    setState(() => _partnerPresence = presence);
+  }
+
+  void _onJoinPartner() {
+    final p = _partnerPresence;
+    if (p == null || p.room == null) return;
+    final screen = p.room == 'watch'
+        ? _RoomScreen.watch(
+            repository: widget.spaceRepository,
+            events: widget.realtimeClient.events,
+          )
+        : _RoomScreen.music(
+            repository: widget.spaceRepository,
+            events: widget.realtimeClient.events,
+          );
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
   // Shows a floating in-app banner when a realtime notification arrives, with a
@@ -133,34 +178,48 @@ class _EmptyWorldScreenState extends State<EmptyWorldScreen> {
               ),
             ],
           ),
-          body: snapshot.hasError
-              ? _ErrorState(
-                  message: snapshot.error.toString(),
-                  onRetry: _reload,
-                )
-              : !snapshot.hasData
-              ? const Center(child: CircularProgressIndicator())
-              : AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 350),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0, 0.03),
-                          end: Offset.zero,
-                        ).animate(animation),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: KeyedSubtree(
-                    key: ValueKey<int>(_index),
-                    child: _pageFor(state!),
-                  ),
+          body: Column(
+            children: [
+              if (_partnerPresence != null)
+                _PartnerPresenceBanner(
+                  presence: _partnerPresence!,
+                  onJoin: _partnerPresence!.room != null
+                      ? _onJoinPartner
+                      : null,
+                  onDismiss: () => setState(() => _partnerPresence = null),
                 ),
+              Expanded(
+                child: snapshot.hasError
+                    ? _ErrorState(
+                        message: snapshot.error.toString(),
+                        onRetry: _reload,
+                      )
+                    : !snapshot.hasData
+                    ? const Center(child: CircularProgressIndicator())
+                    : AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 350),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, 0.03),
+                                end: Offset.zero,
+                              ).animate(animation),
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: KeyedSubtree(
+                          key: ValueKey<int>(_index),
+                          child: _pageFor(state!),
+                        ),
+                      ),
+              ),
+            ],
+          ),
           floatingActionButton: active
               ? null
               : PopIn(
@@ -356,6 +415,124 @@ class _WorldState {
 
   final CurrentPartnership? current;
   final List<PartnershipRequest> requests;
+}
+
+class _PartnerPresence {
+  const _PartnerPresence({
+    required this.status,
+    required this.label,
+    required this.avatar,
+    this.room,
+  });
+
+  final String status;
+  final String label;
+  final Avatar avatar;
+  final String? room;
+}
+
+// Top banner showing where the partner is now, with their avatar and a Join
+// button when they're in a shared music/watch room.
+class _PartnerPresenceBanner extends StatelessWidget {
+  const _PartnerPresenceBanner({
+    required this.presence,
+    required this.onJoin,
+    required this.onDismiss,
+  });
+
+  final _PartnerPresence presence;
+  final VoidCallback? onJoin;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+        child: Row(
+          children: [
+            AvatarView(
+              avatar: presence.avatar,
+              size: 34,
+              background: Colors.white,
+              ringColor: scheme.primary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                presence.label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: scheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (onJoin != null)
+              FilledButton.icon(
+                onPressed: onJoin,
+                icon: const Icon(Icons.login_rounded, size: 18),
+                label: const Text('انضم'),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            IconButton(
+              onPressed: onDismiss,
+              icon: Icon(Icons.close_rounded, color: scheme.onPrimaryContainer),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Reports the local user's presence (with avatar) to the partner while a screen
+// is open, refreshing periodically and clearing on exit.
+mixin _PresenceReporter<T extends StatefulWidget> on State<T> {
+  Timer? _presenceHeartbeat;
+  String _presenceStatus = 'idle';
+  String? _presenceLabel;
+  String? _presenceRoom;
+
+  SpaceRepository get presenceRepository;
+
+  void reportPresence(String status, {String? label, String? room}) {
+    _presenceStatus = status;
+    _presenceLabel = label;
+    _presenceRoom = room;
+    _sendPresence();
+    _presenceHeartbeat?.cancel();
+    _presenceHeartbeat = Timer.periodic(
+      const Duration(seconds: 25),
+      (_) => _sendPresence(),
+    );
+  }
+
+  Future<void> _sendPresence() async {
+    try {
+      final avatar = await AvatarStore.load();
+      await presenceRepository.updatePresence(
+        status: _presenceStatus,
+        label: _presenceLabel,
+        room: _presenceRoom,
+        avatar: avatar.encode(),
+      );
+    } catch (_) {
+      // presence is best-effort
+    }
+  }
+
+  @override
+  void dispose() {
+    _presenceHeartbeat?.cancel();
+    // Best-effort clear so the partner's banner disappears when we leave.
+    presenceRepository.updatePresence(status: 'idle');
+    super.dispose();
+  }
 }
 
 class _NoPartnerTab extends StatelessWidget {
@@ -3208,7 +3385,11 @@ class _TreeScreen extends StatefulWidget {
   State<_TreeScreen> createState() => _TreeScreenState();
 }
 
-class _TreeScreenState extends State<_TreeScreen> {
+class _TreeScreenState extends State<_TreeScreen>
+    with _PresenceReporter<_TreeScreen> {
+  @override
+  SpaceRepository get presenceRepository => widget.repository;
+
   late Future<List<TreeLeafItem>> _future = widget.repository.allTreeLeaves();
   final _title = TextEditingController();
   final _body = TextEditingController();
@@ -3220,6 +3401,7 @@ class _TreeScreenState extends State<_TreeScreen> {
   @override
   void initState() {
     super.initState();
+    reportPresence('tree', label: 'شريكك عند الشجرة 🌳');
     AvatarStore.load().then((a) {
       if (mounted) setState(() => _avatar = a);
     });
@@ -6553,10 +6735,20 @@ class _GamesScreen extends StatefulWidget {
   State<_GamesScreen> createState() => _GamesScreenState();
 }
 
-class _GamesScreenState extends State<_GamesScreen> {
+class _GamesScreenState extends State<_GamesScreen>
+    with _PresenceReporter<_GamesScreen> {
+  @override
+  SpaceRepository get presenceRepository => widget.repository;
+
   late Future<List<GameSessionModel>> _future = widget.repository.games();
   final _promptAnswer = TextEditingController();
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    reportPresence('game', label: 'شريكك يلعب 🎮');
+  }
 
   @override
   void dispose() {
@@ -8747,7 +8939,11 @@ class _RoomScreen extends StatefulWidget {
   }
 }
 
-class _RoomScreenState extends State<_RoomScreen> {
+class _RoomScreenState extends State<_RoomScreen>
+    with _PresenceReporter<_RoomScreen> {
+  @override
+  SpaceRepository get presenceRepository => widget.repository;
+
   late Future<RoomModel> _future = widget.load(widget.repository);
   final _title = TextEditingController();
   final _sourceUrl = TextEditingController();
@@ -8775,6 +8971,13 @@ class _RoomScreenState extends State<_RoomScreen> {
   @override
   void initState() {
     super.initState();
+    reportPresence(
+      'room',
+      label: widget.isAudio
+          ? 'شريكك يستمع للموسيقى 🎵'
+          : 'شريكك يشاهد فيلمًا 🎬',
+      room: _roomKind,
+    );
     final events = widget.events;
     if (events != null) {
       _sync = events.listen(_onEvent);

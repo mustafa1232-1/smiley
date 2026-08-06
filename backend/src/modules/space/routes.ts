@@ -2172,6 +2172,33 @@ spaceRouter.post('/rooms/comment', requireAuth, async (request, response) => {
   response.status(202).json({ ok: true });
 });
 
+// Live presence — tells the partner (only) where this user is in the app (at the
+// tree, in a game, watching a movie, …) plus their avatar, so the partner can
+// see and join. Ephemeral: sent to the partner's socket, never persisted.
+const presenceSchema = z.object({
+  status: z.string().trim().min(1).max(32),
+  label: z.string().trim().max(80).optional(),
+  room: z.enum(['music', 'watch']).optional(),
+  avatar: z.string().trim().max(40).optional()
+});
+
+spaceRouter.post('/presence', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = presenceSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const partnerId = otherPartnerId(partnership, userId);
+  if (partnerId) {
+    emitToUser(partnerId, 'presence.updated', userId, {
+      status: input.status,
+      label: input.label,
+      room: input.room,
+      avatar: input.avatar,
+      actorId: userId
+    });
+  }
+  response.status(202).json({ ok: true });
+});
+
 spaceRouter.get('/tree/today', requireAuth, async (request, response) => {
   const partnership = await requireActivePartnership(request.user!.sub);
   const date = startOfUtcDay(new Date());
