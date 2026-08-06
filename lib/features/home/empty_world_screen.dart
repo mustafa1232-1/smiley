@@ -6632,6 +6632,52 @@ class _GamesScreenState extends State<_GamesScreen> {
               ),
               const SizedBox(height: 24),
               const _SectionHeader(
+                icon: Icons.whatshot_rounded,
+                title: 'للعشّاق فقط 🔥',
+                subtitle: 'ألعاب وأسئلة جريئة بينكما وحدكما.',
+              ),
+              const SizedBox(height: 14),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.45,
+                children: [
+                  _MiniGameCard(
+                    icon: Icons.favorite_rounded,
+                    title: 'بطاقات الرغبة',
+                    subtitle: 'همسات وتحدّيات',
+                    colors: const [Color(0xFFD81B60), Color(0xFFFF7043)],
+                    onTap: () => _open(const _DesireCardsScreen()),
+                  ),
+                  _MiniGameCard(
+                    icon: Icons.local_fire_department_rounded,
+                    title: 'صراحة جريئة',
+                    subtitle: 'أسئلة وتحدّيات جريئة',
+                    colors: const [Color(0xFF8E24AA), Color(0xFFD81B60)],
+                    onTap: () =>
+                        _open(const _TruthOrDareScreen(startBold: true)),
+                  ),
+                  _MiniGameCard(
+                    icon: Icons.people_alt_rounded,
+                    title: 'مَن الأغلب؟',
+                    subtitle: 'من منكما يفعلها؟',
+                    colors: const [Color(0xFFEC407A), Color(0xFFAB47BC)],
+                    onTap: () => _open(const _MostLikelyScreen()),
+                  ),
+                  _MiniGameCard(
+                    icon: Icons.casino_rounded,
+                    title: 'لو خيّروك',
+                    subtitle: 'خيارات رومانسية',
+                    colors: const [Color(0xFFFF5FA2), Color(0xFFFF9E80)],
+                    onTap: () => _open(const _WouldYouRatherScreen()),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              const _SectionHeader(
                 icon: Icons.wifi_rounded,
                 title: 'ألعاب مع الشريك',
                 subtitle: 'تُلعب أونلاين ومتزامنة بينكما.',
@@ -7177,6 +7223,16 @@ class _WouldYouRatherScreenState extends State<_WouldYouRatherScreen> {
     ['نحتفل بصخب مع الجميع', 'نحتفل بهدوء بيننا'],
     ['نكتب مذكرات مشتركة', 'نصوّر فيديو لكل ذكرى'],
     ['فطور في السرير', 'نزهة صباحية'],
+    ['قبلة على الجبين', 'قبلة على اليد'],
+    ['عناق طويل دافئ', 'قبلة سريعة خاطفة'],
+    ['رسالة حب صباحية', 'همسة قبل النوم'],
+    ['نتعانق ونشاهد فيلمًا', 'نتسامر في الظلام'],
+    ['رقصة بطيئة بيننا', 'نزهة متشابكَي الأيدي'],
+    ['موعد على ضوء الشموع', 'موعد سرّي تحت النجوم'],
+    ['أناديك بلقب مدلّل', 'تناديني أنت أولًا'],
+    ['نتبادل النظرات بصمت', 'نتبادل الغمزات'],
+    ['تكتب لي كلمة حب', 'تهمس لي بها في أذني'],
+    ['غيرة خفيفة لطيفة', 'ثقة مطلقة وهدوء'],
   ];
 
   late List<int> _order;
@@ -7310,13 +7366,17 @@ class _WouldYouRatherScreenState extends State<_WouldYouRatherScreen> {
 // --- Truth or dare --------------------------------------------------------
 
 class _TruthOrDareScreen extends StatefulWidget {
-  const _TruthOrDareScreen();
+  const _TruthOrDareScreen({this.startBold = false});
+
+  final bool startBold;
 
   @override
   State<_TruthOrDareScreen> createState() => _TruthOrDareScreenState();
 }
 
 class _TruthOrDareScreenState extends State<_TruthOrDareScreen> {
+  late bool _bold = widget.startBold;
+
   static const _truths = <String>[
     'ما أول شيء لاحظته فيّ؟',
     'ما أكثر لحظة تتمنى تكرارها معي؟',
@@ -7363,12 +7423,57 @@ class _TruthOrDareScreenState extends State<_TruthOrDareScreen> {
     'صِف شعورك بأول لقاء جمعنا.',
   ];
 
+  // Bolder, flirtier deck — tasteful but daring, for the two of you only.
+  static const _boldTruths = <String>[
+    'ما أكثر صفة فيّ تعشقها بنظرة واحدة؟',
+    'أين تحب أن تطبع أول قبلة الليلة؟',
+    'ما الذي يجعلك تشتاق إليّ في منتصف الليل؟',
+    'ما اللمسة التي تُذيبك مني؟',
+    'ما أكثر لحظة تمنيت فيها لو كنا وحدنا؟',
+    'ما الشيء الذي أرتديه ويثير إعجابك؟',
+    'ما الكلمة التي إن همستها في أذنك تفقدك تركيزك؟',
+    'متى شعرت برغبة قوية بي ولم تخبرني؟',
+    'ما أكثر مكان تتمنى أن نتبادل فيه قبلة طويلة؟',
+    'ما الذي تحب أن أفعله لك حين نخلو ببعضنا؟',
+    'صِف أجمل عناق تخيّلته بيننا بأدق التفاصيل.',
+    'ما أجرأ رسالة تمنيت أن ترسلها لي؟',
+    'متى كانت آخر مرة فكّرت بي قبل النوم؟',
+    'أي عطر عليّ يجعلك تقترب أكثر؟',
+    'ما أكثر جزء تحب أن تنظر إليه في وجهي؟',
+    'لو كان لنا موعد سرّي الليلة، أين سيكون؟',
+    'ما الذي يشعل حماسك حين نتقارب؟',
+    'ما أكثر لحظة أثارت مشاعرك تجاهي؟',
+  ];
+
+  static const _boldDares = <String>[
+    'اهمس في أذن شريكك بأجرأ جملة تخطر ببالك.',
+    'قبّل شريكك في المكان الذي يختاره هو.',
+    'امنح شريكك تدليكًا للكتفين لمدة دقيقة.',
+    'انظر في عيني شريكك 30 ثانية بصمت، ثم قبّل جبينه.',
+    'صِف بصوت منخفض ما ستفعله في أول لحظة خلوة.',
+    'اكتب رسالة جريئة الآن وأرسلها لشريكك.',
+    'اقترب وهمس باسم شريكك بأكثر طريقة مغرية.',
+    'قبّل يد شريكك ثم رقبته برفق.',
+    'عانق شريكك من الخلف لمدة 20 ثانية.',
+    'ادعُ شريكك لرقصة بطيئة الآن.',
+    'قل ثلاثة أشياء تتمنى فعلها لشريكك الليلة.',
+    'أغمض عينيك ودع شريكك يقبّلك حيث يشاء.',
+    'اكتب أكثر مكان تحب تقبيله وأرِه لشريكك.',
+    'ضع يدك على قلب شريكك ودعه يشعر بنبضك.',
+    'امسح خصلة شعر عن وجه شريكك ثم قبّل خدّه.',
+    'قلّد كيف ستغازل شريكك لو التقيتما اليوم لأول مرة.',
+    'اهمس أمنية جريئة واحدة تتمناها الليلة.',
+    'اقترب ببطء وكأنك ستقبّله ثم ابتسم فقط.',
+  ];
+
   final math.Random _rand = math.Random();
   String? _card;
   bool _isDare = false;
 
   void _draw(bool dare) {
-    final deck = dare ? _dares : _truths;
+    final deck = _bold
+        ? (dare ? _boldDares : _boldTruths)
+        : (dare ? _dares : _truths);
     String pick;
     do {
       pick = deck[_rand.nextInt(deck.length)];
@@ -7389,6 +7494,25 @@ class _TruthOrDareScreenState extends State<_TruthOrDareScreen> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.local_fire_department_rounded,
+                  color: _bold ? const Color(0xFFD81B60) : Colors.grey,
+                  size: 20,
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'وضع جريء',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const Spacer(),
+                Switch(
+                  value: _bold,
+                  onChanged: (v) => setState(() => _bold = v),
+                ),
+              ],
+            ),
             Expanded(
               child: Center(
                 child: hasCard
@@ -7399,9 +7523,25 @@ class _TruthOrDareScreenState extends State<_TruthOrDareScreen> {
                           gradient: LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                            colors: _isDare
-                                ? const [Color(0xFFFF7043), Color(0xFFFFB300)]
-                                : const [Color(0xFF5C6BC0), Color(0xFF26C6DA)],
+                            colors: _bold
+                                ? (_isDare
+                                      ? const [
+                                          Color(0xFFD81B60),
+                                          Color(0xFFFF7043),
+                                        ]
+                                      : const [
+                                          Color(0xFF8E24AA),
+                                          Color(0xFFD81B60),
+                                        ])
+                                : (_isDare
+                                      ? const [
+                                          Color(0xFFFF7043),
+                                          Color(0xFFFFB300),
+                                        ]
+                                      : const [
+                                          Color(0xFF5C6BC0),
+                                          Color(0xFF26C6DA),
+                                        ]),
                           ),
                           boxShadow: [
                             BoxShadow(
@@ -7490,6 +7630,310 @@ class _TruthOrDareScreenState extends State<_TruthOrDareScreen> {
                 ),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- Desire cards ---------------------------------------------------------
+
+class _DesireCardsScreen extends StatefulWidget {
+  const _DesireCardsScreen();
+
+  @override
+  State<_DesireCardsScreen> createState() => _DesireCardsScreenState();
+}
+
+class _DesireCardsScreenState extends State<_DesireCardsScreen> {
+  // Tasteful but daring — desire, longing and flirtation, for the two of you.
+  static const _cards = <List<String>>[
+    ['همسة', 'اهمس لشريكك: «أفكّر بك الآن أكثر مما تتخيّل».'],
+    ['سؤال', 'ما أول شيء يخطر ببالك حين تشتاق إليّ؟'],
+    ['تحدّي', 'اقترب واحتضن شريكك حتى تسمع نبضه.'],
+    ['سؤال', 'ما اللحظة التي تمنيت فيها لو أوقفنا الزمن؟'],
+    ['همسة', 'قل لشريكك بصوت خافت: «أنت لي وحدي».'],
+    ['تحدّي', 'قبّل جبين شريكك ثم انظر في عينيه بصمت.'],
+    ['سؤال', 'ما الذي يشعل اشتياقك إليّ أكثر؟'],
+    ['همسة', 'اهمس بأمنية تتمنى أن تعيشها معي الليلة.'],
+    ['تحدّي', 'امسك يد شريكك وارسم عليها قلبًا بإصبعك.'],
+    ['سؤال', 'أي لمسة صغيرة مني تُسعدك أكثر؟'],
+    ['همسة', 'قل: «لو كنت هنا الآن، لما تركتك تذهب».'],
+    ['تحدّي', 'ادعُ شريكك لرقصة بطيئة على أغنية تحبانها.'],
+    ['سؤال', 'ما الحلم الجريء الذي تتمنى أن نحققه معًا؟'],
+    ['همسة', 'اهمس باسم شريكك بأحلى طريقة تعرفها.'],
+    ['تحدّي', 'أغمض عينيك ودع شريكك يفاجئك بقبلة.'],
+    ['سؤال', 'متى شعرت بأقوى انجذاب نحوي؟'],
+    ['همسة', 'قل لشريكك: «قربك يكفيني عن العالم».'],
+    ['تحدّي', 'اكتب على ورقة أكثر ما تحبه فيه وأعطه إياها.'],
+    ['سؤال', 'ما أكثر تفصيل صغير فيّ يأسرك؟'],
+    ['همسة', 'اهمس: «أريدك أن تبقى إلى جانبي الليلة».'],
+  ];
+
+  final math.Random _rand = math.Random();
+  List<String>? _card;
+
+  void _draw() {
+    List<String> pick;
+    do {
+      pick = _cards[_rand.nextInt(_cards.length)];
+    } while (_cards.length > 1 && pick == _card);
+    setState(() => _card = pick);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final has = _card != null;
+    return Scaffold(
+      appBar: AppBar(title: const Text('بطاقات الرغبة')),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: has
+                    ? Container(
+                        padding: const EdgeInsets.all(26),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFD81B60), Color(0xFFFF7043)],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.14),
+                              blurRadius: 18,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white24,
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              child: Text(
+                                _card![0],
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            Text(
+                              _card![1],
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w600,
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Text(
+                        'اسحبا بطاقة رغبة 💋',
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 16,
+                        ),
+                      ),
+              ),
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _draw,
+                icon: const Icon(Icons.favorite_rounded),
+                label: Text(has ? 'بطاقة أخرى' : 'اسحب بطاقة'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  backgroundColor: const Color(0xFFD81B60),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- Most likely to -------------------------------------------------------
+
+class _MostLikelyScreen extends StatefulWidget {
+  const _MostLikelyScreen();
+
+  @override
+  State<_MostLikelyScreen> createState() => _MostLikelyScreenState();
+}
+
+class _MostLikelyScreenState extends State<_MostLikelyScreen> {
+  static const _prompts = <String>[
+    'من الأغلب أن يبدأ القبلة؟',
+    'من الأغلب أن يرسل رسالة اشتياق أولًا؟',
+    'من الأغلب أن يحمرّ خجلًا؟',
+    'من الأغلب أن يخطّط لليلة رومانسية؟',
+    'من الأغلب أن يغار بلطف؟',
+    'من الأغلب أن يقول «أحبك» أولًا كل يوم؟',
+    'من الأغلب أن يبادر بالعناق؟',
+    'من الأغلب أن يشتاق أسرع؟',
+    'من الأغلب أن يفاجئ الآخر بهدية؟',
+    'من الأغلب أن يطيل النظر في عيني الآخر؟',
+    'من الأغلب أن يهمس كلامًا معسولًا؟',
+    'من الأغلب أن يطلب رقصة بطيئة؟',
+    'من الأغلب أن ينام متعانقًا؟',
+    'من الأغلب أن يبدأ المغازلة؟',
+    'من الأغلب أن يحفظ أدقّ التفاصيل عن الآخر؟',
+  ];
+
+  late List<int> _order;
+  int _pos = 0;
+  int? _choice;
+
+  @override
+  void initState() {
+    super.initState();
+    _order = List<int>.generate(_prompts.length, (i) => i)
+      ..shuffle(math.Random());
+  }
+
+  void _next() {
+    setState(() {
+      _choice = null;
+      _pos++;
+      if (_pos >= _prompts.length) {
+        _pos = 0;
+        _order.shuffle(math.Random());
+      }
+    });
+  }
+
+  Widget _btn(int i, String label, List<Color> colors) {
+    final selected = _choice == i;
+    final dim = _choice != null && !selected;
+    return GestureDetector(
+      onTap: () => setState(() => _choice = i),
+      child: AnimatedOpacity(
+        opacity: dim ? 0.4 : 1,
+        duration: const Duration(milliseconds: 200),
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: colors,
+            ),
+            border: selected ? Border.all(color: Colors.white, width: 3) : null,
+            boxShadow: [
+              BoxShadow(
+                color: colors.last.withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (selected)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Icon(
+                    Icons.check_circle_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final p = _prompts[_order[_pos]];
+    return Scaffold(
+      appBar: AppBar(title: const Text('مَن الأغلب؟')),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Text(
+              '${_pos + 1} / ${_prompts.length}',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                p,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  height: 1.4,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Expanded(
+              child: _btn(0, 'أنا 🙋', const [
+                Color(0xFF7C4DFF),
+                Color(0xFF9575CD),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _btn(1, 'شريكي ❤️', const [
+                Color(0xFFFF5FA2),
+                Color(0xFFFF8A65),
+              ]),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _next,
+                icon: const Icon(Icons.skip_next_rounded),
+                label: const Text('التالي'),
+              ),
+            ),
           ],
         ),
       ),
