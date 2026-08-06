@@ -2582,7 +2582,7 @@ class _MoreHubTabV2 extends StatelessWidget {
         () => guarded(
           'الألعاب',
           Icons.grid_3x3_rounded,
-          () => _GamesScreen(repository: repository),
+          () => _GamesScreen(repository: repository, events: events),
         ),
       ),
       _MoreItem(
@@ -6727,9 +6727,10 @@ class _SharedListsScreenState extends State<_SharedListsScreen> {
 }
 
 class _GamesScreen extends StatefulWidget {
-  const _GamesScreen({required this.repository});
+  const _GamesScreen({required this.repository, this.events});
 
   final SpaceRepository repository;
+  final Stream<Map<String, dynamic>>? events;
 
   @override
   State<_GamesScreen> createState() => _GamesScreenState();
@@ -6867,6 +6868,19 @@ class _GamesScreenState extends State<_GamesScreen>
                     onTap: () => _open(const _WouldYouRatherScreen()),
                   ),
                 ],
+              ),
+              const SizedBox(height: 14),
+              _MiniGameCard(
+                icon: Icons.public_rounded,
+                title: 'العبا معًا أونلاين 🌐',
+                subtitle: 'بطاقات وأسئلة جريئة متزامنة بينكما لحظيًا',
+                colors: const [Color(0xFF7C4DFF), Color(0xFFD81B60)],
+                onTap: () => _open(
+                  _SyncedPartyScreen(
+                    repository: widget.repository,
+                    events: widget.events,
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
               const _SectionHeader(
@@ -8128,6 +8142,363 @@ class _MostLikelyScreenState extends State<_MostLikelyScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// --- Play together online (synced) ----------------------------------------
+
+const _togTruths = <String>[
+  'ما أكثر لحظة تمنيت فيها لو كنا وحدنا؟',
+  'ما اللمسة التي تُذيبك مني؟',
+  'ما الذي يجعلك تشتاق إليّ ليلًا؟',
+  'أين تحب أن تطبع أول قبلة الليلة؟',
+  'ما أكثر صفة فيّ تعشقها؟',
+  'ما أجرأ رسالة تمنيت أن ترسلها لي؟',
+  'ما الذي يشعل حماسك حين نتقارب؟',
+  'ما أكثر مكان تتمنى أن نتبادل فيه قبلة؟',
+  'ما أكثر تفصيل صغير فيّ يأسرك؟',
+  'ما الحلم الجريء الذي تتمنى أن نحققه معًا؟',
+  'متى شعرت بأقوى انجذاب نحوي؟',
+  'ما الكلمة التي إن همستها في أذنك تفقدك تركيزك؟',
+];
+
+const _togWyr = <List<String>>[
+  ['قبلة على الجبين', 'قبلة على اليد'],
+  ['عناق طويل دافئ', 'قبلة خاطفة'],
+  ['رسالة حب صباحية', 'همسة قبل النوم'],
+  ['رقصة بطيئة', 'نزهة متشابكَي الأيدي'],
+  ['موعد على ضوء الشموع', 'موعد تحت النجوم'],
+  ['نسهر نتكلم للفجر', 'ننام متعانقين'],
+  ['أناديك بلقب مدلّل', 'تناديني أولًا'],
+  ['نتبادل النظرات بصمت', 'نتبادل الغمزات'],
+  ['فطور في السرير', 'نزهة صباحية'],
+  ['هدية مفاجئة', 'رسالة بخط اليد'],
+];
+
+const _togMostLikely = <String>[
+  'من الأغلب أن يبدأ القبلة؟',
+  'من الأغلب أن يرسل رسالة اشتياق أولًا؟',
+  'من الأغلب أن يحمرّ خجلًا؟',
+  'من الأغلب أن يخطّط لليلة رومانسية؟',
+  'من الأغلب أن يغار بلطف؟',
+  'من الأغلب أن يبادر بالعناق؟',
+  'من الأغلب أن يشتاق أسرع؟',
+  'من الأغلب أن يهمس كلامًا معسولًا؟',
+  'من الأغلب أن يطلب رقصة بطيئة؟',
+  'من الأغلب أن يبدأ المغازلة؟',
+];
+
+const _togDesire = <List<String>>[
+  ['همسة', 'اهمس لشريكك: «أفكّر بك الآن».'],
+  ['سؤال', 'ما أول شيء يخطر ببالك حين تشتاق إليّ؟'],
+  ['تحدّي', 'قبّل جبين شريكك وانظر في عينيه بصمت.'],
+  ['همسة', 'قل: «أنت لي وحدي».'],
+  ['سؤال', 'ما الذي يشعل اشتياقك إليّ أكثر؟'],
+  ['تحدّي', 'ادعُ شريكك لرقصة بطيئة الآن.'],
+  ['سؤال', 'ما أكثر تفصيل صغير فيّ يأسرك؟'],
+  ['همسة', 'اهمس باسم شريكك بأحلى طريقة.'],
+  ['تحدّي', 'أغمض عينيك ودع شريكك يفاجئك بقبلة.'],
+  ['سؤال', 'متى شعرت بأقوى انجذاب نحوي؟'],
+];
+
+class _SyncedPartyScreen extends StatefulWidget {
+  const _SyncedPartyScreen({required this.repository, this.events});
+
+  final SpaceRepository repository;
+  final Stream<Map<String, dynamic>>? events;
+
+  @override
+  State<_SyncedPartyScreen> createState() => _SyncedPartyScreenState();
+}
+
+class _SyncedPartyScreenState extends State<_SyncedPartyScreen> {
+  final math.Random _rand = math.Random();
+  StreamSubscription<Map<String, dynamic>>? _sub;
+  String _game = 'truth';
+  int _index = 0;
+  int? _myChoice;
+  int? _partnerChoice;
+
+  bool get _isChoice => _game == 'wyr' || _game == 'mostlikely';
+
+  int get _deckLen => switch (_game) {
+    'truth' => _togTruths.length,
+    'wyr' => _togWyr.length,
+    'mostlikely' => _togMostLikely.length,
+    _ => _togDesire.length,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = widget.events?.listen(_onEvent);
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  void _onEvent(Map<String, dynamic> event) {
+    if (event['type']?.toString() != 'game.sync') return;
+    final p = event['payload'];
+    if (p is! Map) return;
+    final action = p['action']?.toString();
+    if (action == 'card') {
+      setState(() {
+        _game = p['game']?.toString() ?? _game;
+        _index = (p['index'] as num?)?.toInt() ?? 0;
+        _myChoice = null;
+        _partnerChoice = null;
+      });
+    } else if (action == 'choice') {
+      setState(() => _partnerChoice = (p['option'] as num?)?.toInt());
+    }
+  }
+
+  void _pick(String game) {
+    _game = game;
+    _drawCard();
+  }
+
+  void _drawCard() {
+    final len = _deckLen;
+    var next = _rand.nextInt(len);
+    if (len > 1 && next == _index) next = (next + 1) % len;
+    setState(() {
+      _index = next;
+      _myChoice = null;
+      _partnerChoice = null;
+    });
+    widget.repository.syncGame(game: _game, action: 'card', index: next);
+  }
+
+  void _choose(int option) {
+    setState(() => _myChoice = option);
+    widget.repository.syncGame(game: _game, action: 'choice', option: option);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('العبا معًا')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text(
+              'افتحا هذه الشاشة معًا لتلعبا لحظيًا 🌐',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                for (final g in const [
+                  ['truth', 'صراحة 🔥'],
+                  ['wyr', 'لو خيّروك'],
+                  ['mostlikely', 'مَن الأغلب؟'],
+                  ['desire', 'الرغبة 💋'],
+                ])
+                  ChoiceChip(
+                    label: Text(g[1]),
+                    selected: _game == g[0],
+                    onSelected: (_) => _pick(g[0]),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(child: _cardArea(scheme)),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _drawCard,
+                icon: const Icon(Icons.skip_next_rounded),
+                label: const Text('بطاقة جديدة'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cardArea(ColorScheme scheme) {
+    if (_isChoice) return _choiceArea();
+    final String badge;
+    final String text;
+    if (_game == 'desire') {
+      final c = _togDesire[_index % _togDesire.length];
+      badge = c[0];
+      text = c[1];
+    } else {
+      badge = 'صراحة';
+      text = _togTruths[_index % _togTruths.length];
+    }
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(26),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF8E24AA), Color(0xFFD81B60)],
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: Text(
+                badge,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _choiceArea() {
+    final List<String> opts;
+    final String prompt;
+    if (_game == 'wyr') {
+      final d = _togWyr[_index % _togWyr.length];
+      prompt = 'لو خيّروك…';
+      opts = [d[0], d[1]];
+    } else {
+      prompt = _togMostLikely[_index % _togMostLikely.length];
+      opts = ['أنا 🙋', 'شريكي ❤️'];
+    }
+    final bothChosen = _myChoice != null && _partnerChoice != null;
+    final matched = bothChosen && _myChoice == _partnerChoice;
+    return Column(
+      children: [
+        Text(
+          prompt,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 14),
+        _choiceButton(0, opts[0], bothChosen),
+        const SizedBox(height: 12),
+        _choiceButton(1, opts[1], bothChosen),
+        const SizedBox(height: 14),
+        if (!bothChosen)
+          Text(
+            _myChoice == null ? 'اختر إجابتك' : 'بانتظار شريكك…',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          )
+        else
+          Text(
+            matched ? 'توافقتما! 💞' : 'اختلفتما 😄',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: matched
+                  ? const Color(0xFFD81B60)
+                  : Theme.of(context).colorScheme.primary,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _choiceButton(int i, String label, bool reveal) {
+    final mine = _myChoice == i;
+    final partner = _partnerChoice == i;
+    final colors = i == 0
+        ? const [Color(0xFF7C4DFF), Color(0xFF9575CD)]
+        : const [Color(0xFFFF5FA2), Color(0xFFFF8A65)];
+    return Expanded(
+      child: GestureDetector(
+        onTap: _myChoice == null ? () => _choose(i) : null,
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: LinearGradient(colors: colors),
+            border: mine ? Border.all(color: Colors.white, width: 3) : null,
+          ),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (reveal && (mine || partner)) ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (mine) const _PartyTag(text: 'أنت'),
+                    if (mine && partner) const SizedBox(width: 6),
+                    if (partner) const _PartyTag(text: 'شريكك'),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PartyTag extends StatelessWidget {
+  const _PartyTag({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white24,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontSize: 11),
       ),
     );
   }

@@ -2199,6 +2199,32 @@ spaceRouter.post('/presence', requireAuth, async (request, response) => {
   response.status(202).json({ ok: true });
 });
 
+// Live sync for the "play together" party games: the current card and each
+// partner's choice are relayed to the other partner in real time. Ephemeral.
+const gameSyncSchema = z.object({
+  game: z.enum(['truth', 'wyr', 'mostlikely', 'desire']),
+  action: z.enum(['card', 'choice']),
+  index: z.number().int().min(0).max(999).optional(),
+  option: z.number().int().min(0).max(3).optional()
+});
+
+spaceRouter.post('/games/sync', requireAuth, async (request, response) => {
+  const userId = request.user!.sub;
+  const input = gameSyncSchema.parse(request.body);
+  const partnership = await requireActivePartnership(userId);
+  const partnerId = otherPartnerId(partnership, userId);
+  if (partnerId) {
+    emitToUser(partnerId, 'game.sync', userId, {
+      game: input.game,
+      action: input.action,
+      index: input.index,
+      option: input.option,
+      actorId: userId
+    });
+  }
+  response.status(202).json({ ok: true });
+});
+
 spaceRouter.get('/tree/today', requireAuth, async (request, response) => {
   const partnership = await requireActivePartnership(request.user!.sub);
   const date = startOfUtcDay(new Date());

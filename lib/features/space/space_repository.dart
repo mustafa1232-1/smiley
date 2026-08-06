@@ -163,6 +163,12 @@ abstract interface class SpaceRepository {
     String? room,
     String? avatar,
   });
+  Future<void> syncGame({
+    required String game,
+    required String action,
+    int? index,
+    int? option,
+  });
   Future<TreeDayModel> todayTree();
   Future<List<TreeLeafItem>> allTreeLeaves();
   Future<void> createTreeLeaf({String? title, required String body});
@@ -829,6 +835,21 @@ class HttpSpaceRepository implements SpaceRepository {
       'label': ?label,
       'room': ?room,
       'avatar': ?avatar,
+    });
+  }
+
+  @override
+  Future<void> syncGame({
+    required String game,
+    required String action,
+    int? index,
+    int? option,
+  }) async {
+    await _api.postJson('/games/sync', {
+      'game': game,
+      'action': action,
+      'index': ?index,
+      'option': ?option,
     });
   }
 

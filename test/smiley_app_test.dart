@@ -850,6 +850,14 @@ class FakeSpaceRepository implements SpaceRepository {
   }) async {}
 
   @override
+  Future<void> syncGame({
+    required String game,
+    required String action,
+    int? index,
+    int? option,
+  }) async {}
+
+  @override
   Future<List<TreeLeafItem>> allTreeLeaves() async => const [];
 
   @override

@@ -38,6 +38,7 @@ export type RealtimeEventType =
   | 'room.reaction'
   | 'room.comment'
   | 'presence.updated'
+  | 'game.sync'
   | 'notification.created';
 
 export type RealtimeEvent<TPayload extends Record<string, unknown> = Record<string, unknown>> = {
