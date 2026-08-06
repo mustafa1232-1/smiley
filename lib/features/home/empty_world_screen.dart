@@ -3894,7 +3894,7 @@ _TreeVisual _makeTree({
 
   final trunkTop = Offset(base.dx, base.dy - trunkH);
   final trunkWidth = (big ? 24.0 : 11.0) * scale;
-  final leafLen = (big ? 13.0 : 8.0) * scale;
+  final leafLen = (big ? 12.0 : 8.0) * scale;
   final tree = _TreeVisual(base, trunkTop, trunkWidth, scale, leafLen);
 
   final tips = <Offset>[];
@@ -3913,14 +3913,14 @@ _TreeVisual _makeTree({
     grow(
       to,
       angle - spread + (rnd() - 0.5) * 0.12,
-      length * (0.70 + rnd() * 0.08),
+      length * (0.72 + rnd() * 0.08),
       width * 0.7,
       depth - 1,
     );
     grow(
       to,
       angle + spread + (rnd() - 0.5) * 0.12,
-      length * (0.70 + rnd() * 0.08),
+      length * (0.72 + rnd() * 0.08),
       width * 0.7,
       depth - 1,
     );
@@ -3928,7 +3928,7 @@ _TreeVisual _makeTree({
       grow(
         to,
         angle + (rnd() - 0.5) * 0.4,
-        length * 0.6,
+        length * 0.62,
         width * 0.6,
         depth - 1,
       );
@@ -3940,65 +3940,82 @@ _TreeVisual _makeTree({
   for (var i = 0; i < mains; i++) {
     final f = mains == 1 ? 0.5 : i / (mains - 1);
     final a0 = (f - 0.5) * 1.5 + (rnd() - 0.5) * 0.25;
-    grow(trunkTop, a0, trunkH * (0.55 + rnd() * 0.2), trunkWidth * 0.8, depth);
+    grow(trunkTop, a0, trunkH * (0.62 + rnd() * 0.22), trunkWidth * 0.8, depth);
   }
 
   if (tips.isEmpty) return tree;
 
-  // Crown envelope from where the boughs reach.
-  var sx = 0.0, sy = 0.0;
+  // Crown metrics.
+  var sx = 0.0, sy = 0.0, maxY = -1e9;
   for (final t in tips) {
     sx += t.dx;
     sy += t.dy;
+    if (t.dy > maxY) maxY = t.dy;
   }
   final cc = Offset(sx / tips.length, sy / tips.length);
-  var maxR = 0.0;
+  var crownR = 0.0;
   for (final t in tips) {
     final d = (t - cc).distance;
-    if (d > maxR) maxR = d;
+    if (d > crownR) crownR = d;
   }
-  final crownR = maxR + leafLen * 2.0;
-  const flat = 0.92; // crown a touch wider than tall
+  crownR += leafLen * 2;
+  // Anything below the lowest bough end would just hang over the grass.
+  final cullY = maxY + leafLen * 1.4;
 
-  Offset inCrown(double radius, double ang) =>
-      cc + Offset(math.cos(ang) * radius, math.sin(ang) * radius * flat);
-
-  // Volumetric masses fill the crown into a continuous rounded shape.
-  for (final t in tips) {
-    tree.masses.add(_Blob(t, (big ? 22.0 : 13.0) * scale));
+  // Directional light: top-left of the crown is brightest (backlit).
+  int shadeFor(Offset p) {
+    final l = ((cc.dy - p.dy) + (cc.dx - p.dx) * 0.5) / crownR;
+    return (((l + 1) / 2) * 4).floor().clamp(0, 3);
   }
-  final massN = big ? 30 : 16;
-  for (var i = 0; i < massN; i++) {
-    final ang = rnd() * math.pi * 2;
-    final rr = math.sqrt(rnd()) * crownR * 0.85;
+
+  // Soft base masses (blurred by the painter) so the crown reads as a
+  // continuous volume rather than a cloud of hard circles.
+  final stride = (tips.length / 22).ceil().clamp(1, 999);
+  for (var i = 0; i < tips.length; i += stride) {
     tree.masses.add(
-      _Blob(
-        inCrown(rr, ang),
-        (big ? 26.0 : 15.0) * scale * (0.7 + rnd() * 0.5),
-      ),
+      _Blob(tips[i], (big ? 30.0 : 18.0) * scale * (0.8 + rnd() * 0.4)),
     );
   }
-
-  // Dense filler leaves across the crown, each fanning outward from the centre.
-  final fillN = big ? 300 : 130;
-  for (var i = 0; i < fillN; i++) {
+  for (var i = 0; i < (big ? 8 : 4); i++) {
     final ang = rnd() * math.pi * 2;
-    final rr = math.sqrt(rnd()) * crownR;
-    final p = inCrown(rr, ang);
-    final v = p - cc;
-    final outward = math.atan2(v.dx, -v.dy) + (rnd() - 0.5) * 0.8;
-    tree.foliage.add(_LeafInst(p, outward, i % 3, -1));
+    final rr = math.sqrt(rnd()) * crownR * 0.6;
+    final p = cc + Offset(math.cos(ang) * rr, math.sin(ang) * rr * 0.8);
+    if (p.dy <= cullY) {
+      tree.masses.add(_Blob(p, (big ? 34.0 : 20.0) * scale));
+    }
   }
 
-  // Memory leaves on the crown surface, spread by a golden-angle spiral so they
-  // never bunch up; each fans outward and stays clearly visible.
+  // Dense leaves clustered around each bough end — tied to the branches, so
+  // nothing floats free, and directionally shaded for depth.
+  final per = big ? 8 : 5;
+  for (final tip in tips) {
+    for (var k = 0; k < per; k++) {
+      final p =
+          tip +
+          Offset(
+            (rnd() - 0.5) * leafLen * 2.6,
+            (rnd() - 0.5) * leafLen * 2.6 - leafLen * 0.4,
+          );
+      if (p.dy > cullY) continue;
+      final v = p - cc;
+      final outward = math.atan2(v.dx, -v.dy) + (rnd() - 0.5) * 0.9;
+      tree.foliage.add(_LeafInst(p, outward, shadeFor(p), -1));
+    }
+  }
+
+  // Memory leaves spread evenly across the bough ends, on the canopy surface.
   final show = memCount.clamp(0, _kMaxMemoryLeaves);
   for (var i = 0; i < show; i++) {
-    final ang = i * 2.399963;
-    final rr = crownR * (0.42 + 0.52 * math.sqrt((i + 0.5) / show));
-    final p = inCrown(rr, ang);
-    final v = p - cc;
-    final outward = math.atan2(v.dx, -v.dy);
+    final tip = tips[(i * tips.length ~/ math.max(1, show)) % tips.length];
+    final v = tip - cc;
+    final vlen = v.distance == 0 ? 1.0 : v.distance;
+    final out = v / vlen;
+    final p =
+        tip +
+        out * (leafLen * 0.7) +
+        Offset((rnd() - 0.5) * leafLen, (rnd() - 0.5) * leafLen);
+    final w = p - cc;
+    final outward = math.atan2(w.dx, -w.dy);
     tree.memories.add(_LeafInst(p, outward, i % 3, memStart + i));
   }
 
@@ -4022,12 +4039,13 @@ class _ScenePainter extends CustomPainter {
   final WeatherNow? weather;
   final ui.FragmentShader? skyShader;
 
-  // Deep, slightly desaturated greens read as a backlit canopy rather than a
-  // flat cartoon; highlights are added warm on top.
-  static const _leafShades = [
+  // Four foliage tones, dark → light, chosen per leaf by how much light it
+  // catches (top-left of the crown is brightest) for painterly, shaded depth.
+  static const _leafTones = [
+    Color(0xFF10380F),
     Color(0xFF1B5E20),
     Color(0xFF2E7D32),
-    Color(0xFF33691E),
+    Color(0xFF5AA02C),
   ];
 
   @override
@@ -4662,77 +4680,87 @@ class _ScenePainter extends CustomPainter {
       canvas.drawPath(path, branchLight);
     }
 
+    // Soft, blurred base masses → a continuous canopy volume (kills the flat
+    // hard-circle "cartoon" look). Dark underside, lighter top-left.
+    final blurBase = Paint()
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 4 * tr.scale + 2)
+      ..color = const Color(0xFF123A12);
+    final blurTop = Paint()
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 4 * tr.scale + 2)
+      ..color = const Color(0xFF2E7D32).withValues(alpha: 0.85);
     for (final b in tr.masses) {
       final cc = sway(b.c);
       final r = b.r * grow;
-      canvas.drawCircle(cc, r, Paint()..color = const Color(0xFF1B5E20));
-      canvas.drawCircle(
-        cc.translate(-r * 0.28, -r * 0.34),
-        r * 0.62,
-        Paint()..color = const Color(0xFF2E7D32).withValues(alpha: 0.85),
-      );
+      canvas.drawCircle(cc, r, blurBase);
+      canvas.drawCircle(cc.translate(-r * 0.3, -r * 0.36), r * 0.6, blurTop);
     }
 
     final leafLen = tr.leafLen * grow;
     double flutter(Offset base) =>
         0.20 * math.sin(windPhase * 1.6 + base.dx * 0.06 + base.dy * 0.03);
 
-    // Lush filler canopy (batched into a few draw calls).
-    final shadePaths = [Path(), Path(), Path()];
-    final lightPath = Path();
+    // Textured foliage: thousands of small leaves in four light-shaded tones so
+    // the canopy reads as real, backlit leaves rather than solid blobs.
+    final tonePaths = [Path(), Path(), Path(), Path()];
+    final hiPath = Path();
     for (final leaf in tr.foliage) {
       final p = sway(leaf.pos);
       final a = leaf.angle + flutter(leaf.pos);
-      _addLeaf(shadePaths[leaf.shade], p, a, leafLen);
-      final hp = Offset(
-        p.dx + math.sin(a) * leafLen * 0.18,
-        p.dy - math.cos(a) * leafLen * 0.18,
-      );
-      _addLeaf(lightPath, hp, a, leafLen * 0.55);
+      _addLeaf(tonePaths[leaf.shade], p, a, leafLen);
+      if (leaf.shade == 3) {
+        final hp = Offset(
+          p.dx + math.sin(a) * leafLen * 0.2,
+          p.dy - math.cos(a) * leafLen * 0.2,
+        );
+        _addLeaf(hiPath, hp, a, leafLen * 0.5);
+      }
     }
-    for (var s = 0; s < 3; s++) {
-      canvas.drawPath(shadePaths[s], Paint()..color = _leafShades[s]);
+    for (var s = 0; s < 4; s++) {
+      canvas.drawPath(tonePaths[s], Paint()..color = _leafTones[s]);
     }
+    // Warm, backlit rim highlight on the brightest (top) leaves.
     canvas.drawPath(
-      lightPath,
+      hiPath,
       Paint()
         ..color = Color.lerp(
-          const Color(0xFF9CCC65),
+          const Color(0xFFAED581),
           rimColor,
-          rim * 0.7,
-        )!.withValues(alpha: 0.85),
+          rim * 0.8,
+        )!.withValues(alpha: 0.9),
     );
 
-    // Memory leaves — brighter, clearer leaves on top of the canopy, each with
-    // a soft, gently pulsing halo so it reads as tappable without being noisy.
-    const memShades = [Color(0xFF66BB6A), Color(0xFF81C784), Color(0xFF9CCC65)];
-    final memLen = leafLen * 1.35;
+    // Memory leaves — bright lime leaves on the surface, each marked by a small
+    // gently-pulsing light so it clearly reads as tappable, without being noisy.
+    const memShades = [Color(0xFF9CCC65), Color(0xFFAED581), Color(0xFFC5E1A5)];
+    final memLen = leafLen * 1.3;
     final pulse = 0.5 + 0.5 * math.sin(windPhase + tr.base.dx * 0.01);
-    final haloPaint = Paint()
-      ..color = const Color(0xFFFFF8C4).withValues(alpha: 0.10 + 0.10 * pulse);
-    final haloR = memLen * 0.95;
     final memPaths = [Path(), Path(), Path()];
-    final memHi = Path();
+    final dots = <Offset>[];
     (Offset, double)? newest;
     for (final m in tr.memories) {
       final p = sway(m.pos);
       final a = m.angle + flutter(m.pos);
-      canvas.drawCircle(p.translate(0, -memLen * 0.4), haloR, haloPaint);
       _addLeaf(memPaths[m.shade], p, a, memLen);
-      final hp = Offset(
-        p.dx + math.sin(a) * memLen * 0.16,
-        p.dy - math.cos(a) * memLen * 0.16,
+      // marker sits near the leaf tip
+      dots.add(
+        Offset(
+          p.dx + math.sin(a) * memLen * 0.5,
+          p.dy - math.cos(a) * memLen * 0.5,
+        ),
       );
-      _addLeaf(memHi, hp, a, memLen * 0.5);
       if (m.memoryIndex == forest.newestIndex) newest = (p, a);
     }
     for (var s = 0; s < 3; s++) {
       canvas.drawPath(memPaths[s], Paint()..color = memShades[s]);
     }
-    canvas.drawPath(
-      memHi,
-      Paint()..color = const Color(0xFFF1F8E9).withValues(alpha: 0.85),
-    );
+    final glow = Paint()
+      ..color = const Color(0xFFFFF59D).withValues(alpha: 0.20 + 0.18 * pulse);
+    final core = Paint()
+      ..color = Colors.white.withValues(alpha: 0.7 + 0.25 * pulse);
+    for (final d in dots) {
+      canvas.drawCircle(d, (memLen * 0.42) * (0.9 + 0.2 * pulse), glow);
+      canvas.drawCircle(d, 1.8 * tr.scale + 0.6, core);
+    }
     return newest;
   }
 
