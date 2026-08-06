@@ -3866,6 +3866,8 @@ _Forest _buildForest(Size size, int memories) {
         memStart: ti * _kLeavesPerTree,
         memCount: memThis,
         big: isGrowing,
+        w: w,
+        h: h,
       ),
     );
   }
@@ -3884,20 +3886,21 @@ _TreeVisual _makeTree({
   required int memStart,
   required int memCount,
   required bool big,
+  required double w,
+  required double h,
 }) {
-  var s = seed;
+  var st = seed;
   double rnd() {
-    s++;
-    final x = math.sin(s * 12.9898) * 43758.5453;
+    st++;
+    final x = math.sin(st * 12.9898) * 43758.5453;
     return x - x.floorToDouble();
   }
 
-  final trunkTop = Offset(base.dx, base.dy - trunkH);
-  final trunkWidth = (big ? 22.0 : 10.0) * scale;
-  final leafLen = (big ? 15.0 : 10.0) * scale;
-  final tree = _TreeVisual(base, trunkTop, trunkWidth, scale, leafLen);
+  final trunkTopRaw = Offset(base.dx, base.dy - trunkH);
+  final leafLen0 = (big ? 15.0 : 10.0) * scale;
 
-  // Each branch end is a slot where a memory leaf can grow.
+  // Generate the skeleton in "raw" space first, then fit it to the screen.
+  final woodRaw = <_Seg>[];
   final slots = <(Offset, double)>[];
   void grow(Offset from, double angle, double length, double width, int depth) {
     final dir = Offset(math.sin(angle), -math.cos(angle));
@@ -3905,12 +3908,12 @@ _TreeVisual _makeTree({
     final curve = (rnd() - 0.5) * 0.4;
     final to = from + dir * length;
     final ctrl = from + dir * (length * 0.5) + perp * (length * curve);
-    tree.wood.add(_Seg(from, ctrl, to, width));
+    woodRaw.add(_Seg(from, ctrl, to, width));
     if (depth == 0) {
       slots.add((to, angle));
       return;
     }
-    final spread = 0.34 + rnd() * 0.16;
+    final spread = 0.32 + rnd() * 0.14;
     grow(
       to,
       angle - spread + (rnd() - 0.5) * 0.12,
@@ -3925,11 +3928,11 @@ _TreeVisual _makeTree({
       width * 0.7,
       depth - 1,
     );
-    if (depth >= 2 && rnd() > 0.4) {
+    if (depth >= 2 && rnd() > 0.45) {
       grow(
         to,
         angle + (rnd() - 0.5) * 0.4,
-        length * 0.62,
+        length * 0.6,
         width * 0.6,
         depth - 1,
       );
@@ -3938,31 +3941,91 @@ _TreeVisual _makeTree({
 
   final mains = big ? 4 : 3;
   final depth = big ? 3 : 2;
+  final baseWidth = (big ? 22.0 : 10.0) * scale;
   for (var i = 0; i < mains; i++) {
     final f = mains == 1 ? 0.5 : i / (mains - 1);
-    final a0 = (f - 0.5) * 1.5 + (rnd() - 0.5) * 0.25;
-    grow(trunkTop, a0, trunkH * (0.60 + rnd() * 0.22), trunkWidth * 0.8, depth);
+    final a0 = (f - 0.5) * 1.35 + (rnd() - 0.5) * 0.22;
+    grow(
+      trunkTopRaw,
+      a0,
+      trunkH * (0.60 + rnd() * 0.2),
+      baseWidth * 0.8,
+      depth,
+    );
   }
 
-  if (slots.isEmpty) return tree;
-
-  // Only the memory leaves — one clear, tappable leaf per memory, spread evenly
-  // across the branch ends.
-  final show = memCount.clamp(0, _kMaxMemoryLeaves);
-  for (var i = 0; i < show; i++) {
-    final idx = show <= slots.length
-        ? (i * slots.length ~/ math.max(1, show))
-        : (i % slots.length);
-    final slot = slots[idx.clamp(0, slots.length - 1)];
-    final sp = slot.$1;
-    final sa = slot.$2;
-    final dir = Offset(math.sin(sa), -math.cos(sa));
-    final spreadOut = show > slots.length ? leafLen * 2.2 : leafLen * 0.8;
-    final jitter = Offset((rnd() - 0.5) * spreadOut, (rnd() - 0.5) * spreadOut);
-    final pos = sp + dir * (leafLen * 0.5) + jitter;
-    tree.memories.add(_LeafInst(pos, sa, i % 3, memStart + i));
+  // One clear, tappable leaf per memory, spread evenly across the branch ends.
+  final memRaw = <_LeafInst>[];
+  if (slots.isNotEmpty) {
+    final show = memCount.clamp(0, _kMaxMemoryLeaves);
+    for (var i = 0; i < show; i++) {
+      final idx = show <= slots.length
+          ? (i * slots.length ~/ math.max(1, show))
+          : (i % slots.length);
+      final slot = slots[idx.clamp(0, slots.length - 1)];
+      final sp = slot.$1;
+      final sa = slot.$2;
+      final dir = Offset(math.sin(sa), -math.cos(sa));
+      final spreadOut = show > slots.length ? leafLen0 * 2.2 : leafLen0 * 0.8;
+      final jitter = Offset(
+        (rnd() - 0.5) * spreadOut,
+        (rnd() - 0.5) * spreadOut,
+      );
+      final pos = sp + dir * (leafLen0 * 0.5) + jitter;
+      memRaw.add(_LeafInst(pos, sa, i % 3, memStart + i));
+    }
   }
 
+  // --- Fit the whole tree within screen margins, scaling around the base so
+  // the trunk stays planted and the entire crown + every leaf stays visible. ---
+  var minX = base.dx, maxX = base.dx, minY = base.dy;
+  void acc(Offset p) {
+    if (p.dx < minX) minX = p.dx;
+    if (p.dx > maxX) maxX = p.dx;
+    if (p.dy < minY) minY = p.dy;
+  }
+
+  for (final s0 in woodRaw) {
+    acc(s0.a);
+    acc(s0.ctrl);
+    acc(s0.b);
+  }
+  for (final m in memRaw) {
+    acc(m.pos + Offset(0, -leafLen0));
+    acc(m.pos + Offset(leafLen0, 0));
+    acc(m.pos + Offset(-leafLen0, 0));
+  }
+
+  final left = w * 0.07;
+  final right = w * 0.93;
+  final topM = h * 0.17;
+  var fit = 1.0;
+  if (maxX - base.dx > 1) {
+    fit = math.min(fit, (right - base.dx) / (maxX - base.dx));
+  }
+  if (base.dx - minX > 1) {
+    fit = math.min(fit, (base.dx - left) / (base.dx - minX));
+  }
+  if (base.dy - minY > 1) {
+    fit = math.min(fit, (base.dy - topM) / (base.dy - minY));
+  }
+  fit = fit.clamp(0.25, 1.0);
+
+  Offset tf(Offset p) => base + (p - base) * fit;
+
+  final tree = _TreeVisual(
+    base,
+    tf(trunkTopRaw),
+    baseWidth * fit,
+    scale * fit,
+    leafLen0 * fit,
+  );
+  for (final s0 in woodRaw) {
+    tree.wood.add(_Seg(tf(s0.a), tf(s0.ctrl), tf(s0.b), s0.width * fit));
+  }
+  for (final m in memRaw) {
+    tree.memories.add(_LeafInst(tf(m.pos), m.angle, m.shade, m.memoryIndex));
+  }
   return tree;
 }
 
